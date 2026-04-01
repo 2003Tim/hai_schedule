@@ -1,0 +1,6 @@
+# Copy this file to android/local/key.properties
+# and place your keystore at android/local/upload-keystore.jks
+storeFile=upload-keystore.jks
+storePassword=replace-with-your-store-password
+keyAlias=hai_schedule
+keyPassword=replace-with-your-key-password

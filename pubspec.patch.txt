@@ -1,0 +1,3 @@
+在 pubspec.yaml 的 dependencies 中新增：
+
+  home_widget: ^0.9.0
