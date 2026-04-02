@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/schedule_parser.dart';
 import '../services/schedule_provider.dart';
+import '../utils/semester_code_formatter.dart';
 
 class ImportScreen extends StatefulWidget {
   const ImportScreen({super.key, this.initialSemesterCode});
@@ -26,7 +27,11 @@ class _ImportScreenState extends State<ImportScreen> {
     super.dispose();
   }
 
-  String get _targetSemesterLabel {
+  String get _targetSemesterLabel => formatOptionalSemesterCode(
+    widget.initialSemesterCode,
+    emptyLabel: '\u5f53\u524d\u5b66\u671f',
+  );
+  /*
     final code = widget.initialSemesterCode;
     if (code == null || code.isEmpty) return '当前学期';
     if (!RegExp(r'^\d{4}[12]$').hasMatch(code)) return code;
@@ -35,6 +40,8 @@ class _ImportScreenState extends State<ImportScreen> {
     final term = code.endsWith('1') ? '第一学期' : '第二学期';
     return '$startYear-$endYear $term';
   }
+
+  */
 
   @override
   Widget build(BuildContext context) {

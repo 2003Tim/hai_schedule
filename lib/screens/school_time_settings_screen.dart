@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/school_time.dart';
 import '../services/app_repositories.dart';
 import '../services/schedule_provider.dart';
+import '../widgets/school_time_sections.dart';
 
 class SchoolTimeSettingsScreen extends StatefulWidget {
   const SchoolTimeSettingsScreen({super.key});
@@ -121,6 +122,12 @@ class _SchoolTimeSettingsScreenState extends State<SchoolTimeSettingsScreen> {
         endTime: isStart ? current.endTime : _formatTimeOfDay(picked),
       );
     });
+  }
+
+  Future<void> _editSection(int index) async {
+    await _pickTime(index: index, isStart: true);
+    if (!mounted) return;
+    await _pickTime(index: index, isStart: false);
   }
 
   Future<void> _pickGeneratorStart({required String period}) async {
@@ -336,7 +343,7 @@ class _SchoolTimeSettingsScreenState extends State<SchoolTimeSettingsScreen> {
       await provider.updateTimeConfig(_buildTimeConfig(normalized));
       if (!mounted) return;
       setState(() => _classTimes = normalized);
-      _showSnack('已生成并应用作息时间，下面可以继续微调');
+      _showSnack('已生成并应用作息时间，下方可以继续微调');
     } finally {
       if (mounted) {
         setState(() => _saving = false);
@@ -383,7 +390,9 @@ class _SchoolTimeSettingsScreenState extends State<SchoolTimeSettingsScreen> {
   }
 
   void _showSnack(String text, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
       SnackBar(
         content: Text(text),
         behavior: SnackBarBehavior.floating,
@@ -414,279 +423,6 @@ class _SchoolTimeSettingsScreenState extends State<SchoolTimeSettingsScreen> {
     return '$hour:$minute';
   }
 
-  InputDecoration _filledDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      filled: true,
-      fillColor: Theme.of(
-        context,
-      ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.38),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(
-          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.45),
-        ),
-      ),
-      isDense: true,
-    );
-  }
-
-  Widget _buildCompactNumberField(
-    TextEditingController controller,
-    String label,
-  ) {
-    return TextField(
-      controller: controller,
-      keyboardType: TextInputType.number,
-      decoration: _filledDecoration(label),
-    );
-  }
-
-  Widget _buildTitleBadge(String value) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        value,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: scheme.onPrimaryContainer,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStartTimeTile({
-    required IconData icon,
-    required String label,
-    required TimeOfDay value,
-    required String period,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => _pickGeneratorStart(period: period),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
-            Text(
-              _formatTimeOfDay(value),
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: scheme.primary,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCountStepper(String label, TextEditingController controller) {
-    final scheme = Theme.of(context).colorScheme;
-    final value = int.tryParse(controller.text.trim()) ?? 0;
-
-    void update(int next) {
-      if (next < 0) return;
-      setState(() {
-        controller.text = next.toString();
-        _syncLongBreakAfterInputs();
-      });
-    }
-
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-        ),
-        child: Column(
-          children: [
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: () => update(value - 1),
-                    icon: const Icon(Icons.remove_rounded, size: 14),
-                  ),
-                  const SizedBox(width: 2),
-                  SizedBox(
-                    width: 16,
-                    child: Text(
-                      '$value',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  const SizedBox(width: 2),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: () => update(value + 1),
-                    icon: const Icon(Icons.add_rounded, size: 14),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionBlock({
-    required String title,
-    required Widget child,
-    String? subtitle,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-          if (subtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-            ),
-          ],
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBreakToggleRow({
-    required String title,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        Switch(value: value, onChanged: onChanged),
-      ],
-    );
-  }
-
-  Widget _buildLongBreakPlacementTile({
-    required String title,
-    required TextEditingController controller,
-    required int count,
-    required int fallback,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final value = int.tryParse(controller.text.trim()) ?? fallback;
-    final max = _maxLongBreakAfter(count);
-    final canInsert = count > 1;
-
-    void update(int delta) {
-      if (!canInsert) return;
-      final next = (value + delta).clamp(1, max);
-      setState(() {
-        controller.text = next.toString();
-      });
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: scheme.surface.withValues(alpha: 0.58),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  canInsert ? '插在该时段第$value节后' : '当前时段不足2节，大课间不会插入',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            onPressed: canInsert ? () => update(-1) : null,
-            icon: const Icon(Icons.remove_rounded, size: 18),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
-              color: scheme.primaryContainer.withValues(alpha: 0.82),
-            ),
-            child: Text(
-              '第$value节后',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: scheme.onPrimaryContainer,
-              ),
-            ),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            onPressed: canInsert ? () => update(1) : null,
-            icon: const Icon(Icons.add_rounded, size: 18),
-          ),
-        ],
-      ),
-    );
-  }
-
   int _maxLongBreakAfter(int count) => count > 1 ? count - 1 : 1;
 
   int _clampLongBreakAfter(
@@ -714,6 +450,23 @@ class _SchoolTimeSettingsScreenState extends State<SchoolTimeSettingsScreen> {
         ).toString();
   }
 
+  void _updateCountController(TextEditingController controller, int next) {
+    if (next < 0) return;
+    setState(() {
+      controller.text = next.toString();
+      _syncLongBreakAfterInputs();
+    });
+  }
+
+  void _updateLongBreakAfterController(
+    TextEditingController controller,
+    int next,
+  ) {
+    setState(() {
+      controller.text = next.toString();
+    });
+  }
+
   List<ClassTime> _normalizeClassTimes(List<ClassTime> classTimes) {
     return classTimes
         .asMap()
@@ -732,73 +485,20 @@ class _SchoolTimeSettingsScreenState extends State<SchoolTimeSettingsScreen> {
     );
   }
 
-  Widget _buildSectionTile(int index, ClassTime item) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 2),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: scheme.outlineVariant.withValues(alpha: 0.45),
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 24,
-            height: 24,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: scheme.primaryContainer.withValues(alpha: 0.8),
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              '${index + 1}',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: scheme.onPrimaryContainer,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 44,
-            child: Text(
-              '第${index + 1}节',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '${item.startTime} - ${item.endTime}',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-            ),
-          ),
-          IconButton(
-            tooltip: '编辑时间',
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-            onPressed: () async {
-              await _pickTime(index: index, isStart: true);
-              if (!mounted) return;
-              await _pickTime(index: index, isStart: false);
-            },
-            icon: const Icon(Icons.edit_outlined, size: 18),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final plannedSections =
         (int.tryParse(_morningCountController.text.trim()) ?? 0) +
         (int.tryParse(_afternoonCountController.text.trim()) ?? 0) +
         (int.tryParse(_eveningCountController.text.trim()) ?? 0);
+    final morningCount = int.tryParse(_morningCountController.text.trim()) ?? 0;
+    final afternoonCount =
+        int.tryParse(_afternoonCountController.text.trim()) ?? 0;
+    final eveningCount = int.tryParse(_eveningCountController.text.trim()) ?? 0;
+    final morningLongBreakAfter =
+        int.tryParse(_morningLongBreakAfterController.text.trim()) ?? 2;
+    final afternoonLongBreakAfter =
+        int.tryParse(_afternoonLongBreakAfterController.text.trim()) ?? 2;
 
     return Scaffold(
       appBar: AppBar(
@@ -813,241 +513,62 @@ class _SchoolTimeSettingsScreenState extends State<SchoolTimeSettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Card(
-            elevation: 1,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '基础信息',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _nameController,
-                    decoration: _filledDecoration(
-                      '作息名称',
-                    ).copyWith(hintText: '例如：海南大学 / 自定义作息'),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '当前共 ${_classTimes.length} 节课。提醒、自动静音、小组件都会直接复用这份逐节时间表。',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.70),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.tonalIcon(
-                        onPressed: _addSection,
-                        icon: const Icon(Icons.add_rounded),
-                        label: const Text('增加一节'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed:
-                            _classTimes.length <= 1 ? null : _removeSection,
-                        icon: const Icon(Icons.remove_rounded),
-                        label: const Text('减少一节'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+          SchoolTimeBasicsCard(
+            nameController: _nameController,
+            classTimesCount: _classTimes.length,
+            onAddSection: _addSection,
+            onRemoveSection: _removeSection,
+            canRemoveSection: _classTimes.length > 1,
           ),
           const SizedBox(height: 16),
-          Card(
-            elevation: 1,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        '快速生成作息',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      _buildTitleBadge('将生成 $plannedSections 节'),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '一键生成后会立即生效，下方逐节时间只在你想继续精调时再使用。',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.70),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  _buildSectionBlock(
-                    title: '全局参数',
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _buildCompactNumberField(
-                            _lessonMinutesController,
-                            '单节时长(分钟)',
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _buildCompactNumberField(
-                            _breakMinutesController,
-                            '普通课间(分钟)',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildSectionBlock(
-                    title: '节数分配',
-                    child: Row(
-                      children: [
-                        _buildCountStepper('上午', _morningCountController),
-                        const SizedBox(width: 8),
-                        _buildCountStepper('下午', _afternoonCountController),
-                        const SizedBox(width: 8),
-                        _buildCountStepper('晚上', _eveningCountController),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildSectionBlock(
-                    title: '各时段首节开始',
-                    child: Column(
-                      children: [
-                        _buildStartTimeTile(
-                          icon: Icons.wb_sunny_outlined,
-                          label: '上午首节',
-                          value: _morningStart,
-                          period: 'morning',
-                        ),
-                        _buildStartTimeTile(
-                          icon: Icons.wb_twilight_outlined,
-                          label: '下午首节',
-                          value: _afternoonStart,
-                          period: 'afternoon',
-                        ),
-                        _buildStartTimeTile(
-                          icon: Icons.nights_stay_outlined,
-                          label: '晚上首节',
-                          value: _eveningStart,
-                          period: 'evening',
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildSectionBlock(
-                    title: '大课间',
-                    subtitle:
-                        '默认按各时段内部节次计算，上午和下午都默认插在该时段第2节后；若上午有4节课，下午插在第2节后就会落在全天第6和第7节之间。',
-                    child: Column(
-                      children: [
-                        _buildBreakToggleRow(
-                          title: '上午大课间',
-                          value: _enableMorningLongBreak,
-                          onChanged:
-                              (value) => setState(
-                                () => _enableMorningLongBreak = value,
-                              ),
-                        ),
-                        _buildCompactNumberField(
-                          _morningLongBreakController,
-                          '上午大课间时长(分钟)',
-                        ),
-                        const SizedBox(height: 10),
-                        _buildLongBreakPlacementTile(
-                          title: '上午大课间位置',
-                          controller: _morningLongBreakAfterController,
-                          count:
-                              int.tryParse(
-                                _morningCountController.text.trim(),
-                              ) ??
-                              0,
-                          fallback: 2,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildBreakToggleRow(
-                          title: '下午大课间',
-                          value: _enableAfternoonLongBreak,
-                          onChanged:
-                              (value) => setState(
-                                () => _enableAfternoonLongBreak = value,
-                              ),
-                        ),
-                        _buildCompactNumberField(
-                          _afternoonLongBreakController,
-                          '下午大课间时长(分钟)',
-                        ),
-                        const SizedBox(height: 10),
-                        _buildLongBreakPlacementTile(
-                          title: '下午大课间位置',
-                          controller: _afternoonLongBreakAfterController,
-                          count:
-                              int.tryParse(
-                                _afternoonCountController.text.trim(),
-                              ) ??
-                              0,
-                          fallback: 2,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton.tonalIcon(
-                    onPressed: _saving ? null : _generateSchedule,
-                    icon: const Icon(Icons.auto_fix_high_rounded),
-                    label: const Text('生成并应用作息'),
-                  ),
-                ],
-              ),
-            ),
+          SchoolTimeGeneratorCard(
+            plannedSections: plannedSections,
+            saving: _saving,
+            lessonMinutesController: _lessonMinutesController,
+            breakMinutesController: _breakMinutesController,
+            morningCount: morningCount,
+            afternoonCount: afternoonCount,
+            eveningCount: eveningCount,
+            onMorningCountChanged:
+                (next) => _updateCountController(_morningCountController, next),
+            onAfternoonCountChanged:
+                (next) =>
+                    _updateCountController(_afternoonCountController, next),
+            onEveningCountChanged:
+                (next) => _updateCountController(_eveningCountController, next),
+            morningStartText: _formatTimeOfDay(_morningStart),
+            afternoonStartText: _formatTimeOfDay(_afternoonStart),
+            eveningStartText: _formatTimeOfDay(_eveningStart),
+            onPickMorningStart: () => _pickGeneratorStart(period: 'morning'),
+            onPickAfternoonStart:
+                () => _pickGeneratorStart(period: 'afternoon'),
+            onPickEveningStart: () => _pickGeneratorStart(period: 'evening'),
+            enableMorningLongBreak: _enableMorningLongBreak,
+            enableAfternoonLongBreak: _enableAfternoonLongBreak,
+            onMorningLongBreakChanged:
+                (value) => setState(() => _enableMorningLongBreak = value),
+            onAfternoonLongBreakChanged:
+                (value) => setState(() => _enableAfternoonLongBreak = value),
+            morningLongBreakController: _morningLongBreakController,
+            afternoonLongBreakController: _afternoonLongBreakController,
+            morningLongBreakAfter: morningLongBreakAfter,
+            afternoonLongBreakAfter: afternoonLongBreakAfter,
+            onMorningLongBreakAfterChanged:
+                (next) => _updateLongBreakAfterController(
+                  _morningLongBreakAfterController,
+                  next,
+                ),
+            onAfternoonLongBreakAfterChanged:
+                (next) => _updateLongBreakAfterController(
+                  _afternoonLongBreakAfterController,
+                  next,
+                ),
+            onGenerate: _generateSchedule,
           ),
           const SizedBox(height: 16),
-          Card(
-            elevation: 1,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '逐节时间',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '需要更细地修改每节上下课时间时，再在这里微调并保存。',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  ..._classTimes.asMap().entries.map(
-                    (entry) => _buildSectionTile(entry.key, entry.value),
-                  ),
-                ],
-              ),
-            ),
+          SchoolTimeSectionListCard(
+            classTimes: _classTimes,
+            onEditSection: _editSection,
           ),
           const SizedBox(height: 16),
           FilledButton.icon(

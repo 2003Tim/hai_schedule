@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../services/app_backup_service.dart';
 import '../services/schedule_provider.dart';
 import '../services/theme_provider.dart';
+import '../widgets/backup_restore_sections.dart';
 
 class BackupRestoreScreen extends StatefulWidget {
   const BackupRestoreScreen({super.key});
@@ -123,6 +124,26 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen> {
     }
   }
 
+  void _handleRestoreInputChanged(String value) {
+    final text = value.trim();
+    if (text.isEmpty) {
+      setState(() => _restoreSummary = null);
+      return;
+    }
+    try {
+      setState(() {
+        _restoreSummary = AppBackupService.parseSummaryFromJson(text);
+      });
+    } catch (_) {
+      setState(() => _restoreSummary = null);
+    }
+  }
+
+  void _clearRestoreInput() {
+    _restoreController.clear();
+    setState(() => _restoreSummary = null);
+  }
+
   Future<void> _restoreBackup() async {
     final json = _restoreController.text.trim();
     if (json.isEmpty) {
@@ -139,32 +160,10 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen> {
     final scheduleProvider = context.read<ScheduleProvider>();
     final themeProvider = context.read<ThemeProvider>();
 
-    final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) {
-            return AlertDialog(
-              title: const Text('确认恢复'),
-              content: Text(
-                '恢复会覆盖当前本地数据。此操作不可撤销。\n\n'
-                '学期数：${summary.semesterCount}\n'
-                '临时安排：${summary.overrideCount}\n'
-                '课前提醒：${summary.reminderEnabled ? '已开启' : '未开启'}\n'
-                '上课自动静音：${summary.silenceEnabled ? '已开启' : '未开启'}',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('恢复'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
+    final confirmed = await showRestoreBackupConfirmDialog(
+      context,
+      summary: summary,
+    );
     if (!confirmed) return;
 
     setState(() => _busy = true);
@@ -192,7 +191,9 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen> {
   }
 
   void _showSnack(String text, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
       SnackBar(
         content: Text(text),
         behavior: SnackBarBehavior.floating,
@@ -204,264 +205,37 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('备份与恢复'),
-      ),
+      appBar: AppBar(title: const Text('备份与恢复')),
       body: IgnorePointer(
         ignoring: _busy,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '导出备份',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '会导出多学期课表、临时安排、提醒、同步、显示偏好和主题设置。',
-                    ),
-                    if (_currentSummary != null) ...[
-                      const SizedBox(height: 12),
-                      _buildSummaryPanel(
-                        context,
-                        title: '当前备份摘要',
-                        summary: _currentSummary!,
-                      ),
-                    ],
-                    const SizedBox(height: 14),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: 0.45),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '当前导出目录',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 6),
-                          SelectableText(
-                            _selectedExportDirectory ?? '正在读取默认目录...',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.75),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: _pickExportDirectory,
-                                icon: const Icon(Icons.folder_open_rounded),
-                                label: const Text('选择导出目录'),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: _selectedExportDirectory == null
-                                    ? null
-                                    : _copyBackupPath,
-                                icon: const Icon(Icons.copy_rounded),
-                                label: const Text('复制目录路径'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: _exportBackup,
-                          icon: const Icon(Icons.save_alt_rounded),
-                          label: const Text('导出到该目录'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _backupJson == null ? null : _copyBackupJson,
-                          icon: const Icon(Icons.copy_all_rounded),
-                          label: const Text('复制备份内容'),
-                        ),
-                      ],
-                    ),
-                    if (_backupPath != null) ...[
-                      const SizedBox(height: 12),
-                      SelectableText(
-                        '最近导出文件：$_backupPath',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.72),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+            BackupExportCard(
+              currentSummary: _currentSummary,
+              selectedExportDirectory: _selectedExportDirectory,
+              onPickExportDirectory: _pickExportDirectory,
+              onCopyBackupPath: _copyBackupPath,
+              onExportBackup: _exportBackup,
+              onCopyBackupJson: _copyBackupJson,
+              backupJson: _backupJson,
+              backupPath: _backupPath,
             ),
             const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '恢复备份',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text('可以直接选择备份文件，或手动粘贴备份 JSON 内容。'),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _pickBackupFile,
-                          icon: const Icon(Icons.upload_file_rounded),
-                          label: const Text('选择备份文件'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: () => _restoreController.clear(),
-                          icon: const Icon(Icons.clear_rounded),
-                          label: const Text('清空'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _restoreController,
-                      onChanged: (value) {
-                        final text = value.trim();
-                        if (text.isEmpty) {
-                          setState(() => _restoreSummary = null);
-                          return;
-                        }
-                        try {
-                          setState(() {
-                            _restoreSummary =
-                                AppBackupService.parseSummaryFromJson(text);
-                          });
-                        } catch (_) {
-                          setState(() => _restoreSummary = null);
-                        }
-                      },
-                      minLines: 8,
-                      maxLines: 14,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        hintText: '在这里粘贴备份 JSON ...',
-                      ),
-                    ),
-                    if (_restoreSummary != null) ...[
-                      const SizedBox(height: 12),
-                      _buildSummaryPanel(
-                        context,
-                        title: '待恢复摘要',
-                        summary: _restoreSummary!,
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: _restoreBackup,
-                      icon: const Icon(Icons.restore_rounded),
-                      label: const Text('恢复备份'),
-                    ),
-                  ],
-                ),
-              ),
+            BackupRestoreCard(
+              restoreController: _restoreController,
+              restoreSummary: _restoreSummary,
+              onPickBackupFile: _pickBackupFile,
+              onClear: _clearRestoreInput,
+              onRestoreChanged: _handleRestoreInputChanged,
+              onRestoreBackup: _restoreBackup,
             ),
             if (_backupJson != null) ...[
               const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '最近导出的备份内容',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 12),
-                      SelectableText(
-                        _backupJson!,
-                        style: const TextStyle(fontSize: 12.5, height: 1.45),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              RecentBackupJsonCard(backupJson: _backupJson!),
             ],
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildSummaryPanel(
-    BuildContext context, {
-    required String title,
-    required BackupSummary summary,
-  }) {
-    final secondary = Theme.of(context)
-        .colorScheme
-        .onSurface
-        .withValues(alpha: 0.70);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: Theme.of(context)
-            .colorScheme
-            .surfaceContainerHighest
-            .withValues(alpha: 0.45),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          Text('学期数：${summary.semesterCount}'),
-          Text('临时安排：${summary.overrideCount}'),
-          Text('课前提醒：${summary.reminderEnabled ? '已开启' : '未开启'}'),
-          Text('上课自动静音：${summary.silenceEnabled ? '已开启' : '未开启'}'),
-          const SizedBox(height: 6),
-          Text(
-            [
-              if (summary.hasSemesterData) '包含多学期课表',
-              if (summary.hasOverrideData) '包含临时安排',
-              if (summary.hasAutomationSettings) '包含自动化设置',
-              if (summary.hasAppearanceSettings) '包含主题与外观设置',
-            ].join(' · '),
-            style: TextStyle(fontSize: 12, color: secondary),
-          ),
-        ],
       ),
     );
   }

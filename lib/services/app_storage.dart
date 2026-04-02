@@ -6,87 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/course.dart';
 import '../models/schedule_override.dart';
 import '../models/school_time.dart';
-import '../utils/app_logger.dart';
+import '../models/storage_records.dart';
+import '../utils/app_storage_codec.dart';
 
-class ScheduleViewPreferences {
-  final int displayDays;
-  final bool showNonCurrentWeek;
-
-  const ScheduleViewPreferences({
-    required this.displayDays,
-    required this.showNonCurrentWeek,
-  });
-}
-
-class StoredAutoSyncRecord {
-  final String frequency;
-  final int? customIntervalMinutes;
-  final DateTime? lastFetchTime;
-  final DateTime? lastAttemptTime;
-  final DateTime? nextSyncTime;
-  final String? state;
-  final String? message;
-  final String? lastError;
-  final String? lastSource;
-  final String? lastDiffSummary;
-  final String? semesterCode;
-  final String? cookieSnapshot;
-  final String? rawScheduleJson;
-
-  const StoredAutoSyncRecord({
-    required this.frequency,
-    this.customIntervalMinutes,
-    this.lastFetchTime,
-    this.lastAttemptTime,
-    this.nextSyncTime,
-    this.state,
-    this.message,
-    this.lastError,
-    this.lastSource,
-    this.lastDiffSummary,
-    this.semesterCode,
-    this.cookieSnapshot,
-    this.rawScheduleJson,
-  });
-
-  bool get credentialReady =>
-      (semesterCode?.isNotEmpty ?? false) &&
-      (cookieSnapshot?.isNotEmpty ?? false);
-}
-
-class StoredReminderRecord {
-  final int leadMinutes;
-  final DateTime? lastBuildTime;
-  final DateTime? horizonEnd;
-  final int scheduledCount;
-  final bool exactAlarmEnabled;
-
-  const StoredReminderRecord({
-    required this.leadMinutes,
-    this.lastBuildTime,
-    this.horizonEnd,
-    required this.scheduledCount,
-    required this.exactAlarmEnabled,
-  });
-}
-
-class StoredSemesterSchedule {
-  final List<Course> courses;
-  final String? rawScheduleJson;
-  final String semesterCode;
-
-  const StoredSemesterSchedule({
-    required this.courses,
-    required this.semesterCode,
-    this.rawScheduleJson,
-  });
-}
-
-class StoredScheduleOverrideRecord {
-  final List<ScheduleOverride> overrides;
-
-  const StoredScheduleOverrideRecord({required this.overrides});
-}
+export '../models/storage_records.dart';
 
 class AppStorage {
   AppStorage._();
@@ -140,29 +63,25 @@ class AppStorage {
   }
 
   Future<List<Course>> loadCourses() async {
-    final activeSemester = await loadActiveSemesterCode();
+    final prefs = await _reloadedPrefs();
+    final activeSemester = _readActiveSemesterCode(prefs);
     if (activeSemester != null && activeSemester.isNotEmpty) {
-      final archive = await loadSemesterArchive(activeSemester);
-      if (archive != null && archive.courses.isNotEmpty) {
-        return archive.courses;
-      }
+      final archive = AppStorageCodec.readSemesterArchive(
+        await _loadScheduleArchiveMapFromPrefs(prefs),
+        activeSemester,
+      );
+      return archive?.courses ?? const <Course>[];
     }
 
-    final prefs = await _prefs;
-    final jsonList = prefs.getStringList(_coursesKey);
-    if (jsonList == null || jsonList.isEmpty) {
-      return const <Course>[];
-    }
-
-    return jsonList.map((s) {
-      final data = json.decode(s) as Map<String, dynamic>;
-      return Course.fromJson(data);
-    }).toList();
+    return AppStorageCodec.decodeGlobalCourseMirror(
+      prefs.getStringList(_coursesKey),
+    );
   }
 
   Future<void> saveCourses(List<Course> courses) async {
     final prefs = await _prefs;
-    final jsonList = courses.map((c) => json.encode(c.toJson())).toList();
+    final jsonList =
+        courses.map((course) => json.encode(course.toJson())).toList();
     await prefs.setStringList(_coursesKey, jsonList);
 
     final activeSemester = await loadActiveSemesterCode();
@@ -172,72 +91,74 @@ class AppStorage {
   }
 
   Future<String?> loadRawScheduleJson() async {
-    final activeSemester = await loadActiveSemesterCode();
+    final prefs = await _reloadedPrefs();
+    final activeSemester = _readActiveSemesterCode(prefs);
     if (activeSemester != null && activeSemester.isNotEmpty) {
-      final archive = await loadSemesterArchive(activeSemester);
-      if (archive?.rawScheduleJson?.isNotEmpty ?? false) {
-        return archive!.rawScheduleJson;
-      }
+      final archive = AppStorageCodec.readSemesterArchive(
+        await _loadScheduleArchiveMapFromPrefs(prefs),
+        activeSemester,
+      );
+      return archive?.rawScheduleJson;
     }
 
-    final prefs = await _prefs;
     return prefs.getString(_lastScheduleJsonKey);
   }
 
-  Future<void> saveRawScheduleJson(String json) async {
+  Future<void> saveRawScheduleJson(String jsonValue) async {
     final prefs = await _prefs;
-    await prefs.setString(_lastScheduleJsonKey, json);
+    await prefs.setString(_lastScheduleJsonKey, jsonValue);
 
     final activeSemester = await loadActiveSemesterCode();
     if (activeSemester != null && activeSemester.isNotEmpty) {
       await saveSemesterArchive(
         semesterCode: activeSemester,
-        rawScheduleJson: json,
+        rawScheduleJson: jsonValue,
       );
     }
   }
 
   Future<String?> loadSemesterCode() async {
-    final prefs = await _prefs;
-    return prefs.getString(_semesterKey) ?? prefs.getString(_legacySemesterKey);
+    final prefs = await _reloadedPrefs();
+    return _readSemesterCode(prefs);
   }
 
   Future<String?> loadActiveSemesterCode() async {
-    final prefs = await _prefs;
-    return prefs.getString(_activeSemesterKey) ??
-        prefs.getString(_semesterKey) ??
-        prefs.getString(_legacySemesterKey);
+    final prefs = await _reloadedPrefs();
+    return _readActiveSemesterCode(prefs);
   }
 
   Future<void> saveSemesterCode(String semester) async {
-    final prefs = await _prefs;
+    final prefs = await _reloadedPrefs();
     await prefs.setString(_semesterKey, semester);
     await prefs.setString(_legacySemesterKey, semester);
     await prefs.setString(_activeSemesterKey, semester);
   }
 
   Future<void> saveActiveSemesterCode(String semester) async {
-    final prefs = await _prefs;
-    await prefs.setString(_activeSemesterKey, semester);
+    final prefs = await _reloadedPrefs();
+    final archive = await _loadScheduleArchiveMapFromPrefs(prefs);
+    final entry =
+        archive[semester] is Map<String, dynamic>
+            ? Map<String, dynamic>.from(
+              archive[semester] as Map<String, dynamic>,
+            )
+            : null;
+    await _applyActiveSemesterSnapshot(
+      prefs,
+      semesterCode: semester,
+      entry: entry,
+    );
   }
 
   Future<List<String>> loadAvailableSemesterCodes() async {
-    final prefs = await _prefs;
-    final raw = prefs.getString(_scheduleArchiveKey);
-    if (raw == null || raw.isEmpty) {
-      final legacy = await loadSemesterCode();
+    final prefs = await _reloadedPrefs();
+    final archive = AppStorageCodec.decodeScheduleArchiveMap(
+      prefs.getString(_scheduleArchiveKey),
+    );
+    final codes = archive.keys.toList()..sort((a, b) => b.compareTo(a));
+    if (codes.isEmpty) {
+      final legacy = _readSemesterCode(prefs);
       return legacy == null || legacy.isEmpty ? const [] : <String>[legacy];
-    }
-
-    final decoded = json.decode(raw);
-    if (decoded is! Map<String, dynamic>) {
-      return const [];
-    }
-
-    final codes = decoded.keys.toList()..sort((a, b) => b.compareTo(a));
-    final legacy = await loadSemesterCode();
-    if (legacy != null && legacy.isNotEmpty && !codes.contains(legacy)) {
-      codes.insert(0, legacy);
     }
     return codes;
   }
@@ -245,26 +166,10 @@ class AppStorage {
   Future<StoredSemesterSchedule?> loadSemesterArchive(
     String semesterCode,
   ) async {
-    final archive = await _loadScheduleArchiveMap();
-    final raw = archive[semesterCode];
-    if (raw is! Map<String, dynamic>) {
-      return null;
-    }
-
-    final rawScheduleJson = raw['rawScheduleJson'] as String?;
-    final coursesJson = raw['courses'];
-    final courses =
-        coursesJson is List
-            ? coursesJson
-                .whereType<Map>()
-                .map((item) => Course.fromJson(Map<String, dynamic>.from(item)))
-                .toList()
-            : const <Course>[];
-
-    return StoredSemesterSchedule(
-      courses: courses,
-      rawScheduleJson: rawScheduleJson,
-      semesterCode: semesterCode,
+    final prefs = await _reloadedPrefs();
+    return AppStorageCodec.readSemesterArchive(
+      await _loadScheduleArchiveMapFromPrefs(prefs),
+      semesterCode,
     );
   }
 
@@ -274,7 +179,8 @@ class AppStorage {
     List<Course>? courses,
     bool makeActive = false,
   }) async {
-    final archive = await _loadScheduleArchiveMap();
+    final prefs = await _reloadedPrefs();
+    final archive = await _loadScheduleArchiveMapFromPrefs(prefs);
     final previous = archive[semesterCode];
     final previousMap =
         previous is Map<String, dynamic>
@@ -291,46 +197,63 @@ class AppStorage {
 
     archive[semesterCode] = previousMap;
 
-    final prefs = await _prefs;
-    await prefs.setString(_scheduleArchiveKey, json.encode(archive));
+    await prefs.setString(
+      _scheduleArchiveKey,
+      AppStorageCodec.encodeScheduleArchiveMap(archive),
+    );
 
     if (makeActive) {
-      await saveSemesterCode(semesterCode);
-      if (rawScheduleJson != null) {
-        await prefs.setString(_lastScheduleJsonKey, rawScheduleJson);
-      }
-      if (courses != null) {
-        await prefs.setStringList(
-          _coursesKey,
-          courses.map((c) => json.encode(c.toJson())).toList(),
-        );
-      }
+      await _applyActiveSemesterSnapshot(
+        prefs,
+        semesterCode: semesterCode,
+        entry: previousMap,
+      );
     }
   }
 
   Future<void> deleteSemesterArchive(String semesterCode) async {
-    final archive = await _loadScheduleArchiveMap();
+    final prefs = await _reloadedPrefs();
+    final archive = await _loadScheduleArchiveMapFromPrefs(prefs);
     archive.remove(semesterCode);
 
-    final prefs = await _prefs;
-    await prefs.setString(_scheduleArchiveKey, json.encode(archive));
+    await prefs.setString(
+      _scheduleArchiveKey,
+      AppStorageCodec.encodeScheduleArchiveMap(archive),
+    );
 
-    final overrides = await loadScheduleOverrides();
+    final overrides = AppStorageCodec.decodeScheduleOverrides(
+      prefs.getString(_scheduleOverridesKey),
+    );
     final retainedOverrides =
         overrides.where((item) => item.semesterCode != semesterCode).toList();
     await prefs.setString(
       _scheduleOverridesKey,
-      json.encode(retainedOverrides.map((item) => item.toJson()).toList()),
+      AppStorageCodec.encodeScheduleOverrides(retainedOverrides),
     );
 
-    final activeSemester = await loadActiveSemesterCode();
-    if (activeSemester == semesterCode) {
+    final activeSemester = _readActiveSemesterCode(prefs);
+    final storedSemester = _readSemesterCode(prefs);
+    final legacySemester = prefs.getString(_legacySemesterKey);
+    if (activeSemester == semesterCode ||
+        storedSemester == semesterCode ||
+        legacySemester == semesterCode) {
       final fallbackCodes =
           archive.keys.toList()..sort((a, b) => b.compareTo(a));
       if (fallbackCodes.isNotEmpty) {
-        await saveActiveSemesterCode(fallbackCodes.first);
+        final fallbackCode = fallbackCodes.first;
+        final fallbackEntry =
+            archive[fallbackCode] is Map<String, dynamic>
+                ? Map<String, dynamic>.from(
+                  archive[fallbackCode] as Map<String, dynamic>,
+                )
+                : null;
+        await _applyActiveSemesterSnapshot(
+          prefs,
+          semesterCode: fallbackCode,
+          entry: fallbackEntry,
+        );
       } else {
-        await prefs.remove(_activeSemesterKey);
+        await _applyActiveSemesterSnapshot(prefs);
       }
     }
   }
@@ -338,23 +261,12 @@ class AppStorage {
   Future<List<ScheduleOverride>> loadScheduleOverrides({
     String? semesterCode,
   }) async {
-    final prefs = await _prefs;
-    final raw = prefs.getString(_scheduleOverridesKey);
-    if (raw == null || raw.isEmpty) {
-      return const <ScheduleOverride>[];
-    }
-
-    final decoded = json.decode(raw);
-    if (decoded is! List) {
-      return const <ScheduleOverride>[];
-    }
-
-    final activeSemester = semesterCode ?? await loadActiveSemesterCode();
-    return decoded
-        .whereType<Map>()
-        .map(
-          (item) => ScheduleOverride.fromJson(Map<String, dynamic>.from(item)),
-        )
+    final prefs = await _reloadedPrefs();
+    final allOverrides = AppStorageCodec.decodeScheduleOverrides(
+      prefs.getString(_scheduleOverridesKey),
+    );
+    final activeSemester = semesterCode ?? _readActiveSemesterCode(prefs);
+    return allOverrides
         .where(
           (item) =>
               activeSemester == null || item.semesterCode == activeSemester,
@@ -366,21 +278,10 @@ class AppStorage {
     List<ScheduleOverride> overrides, {
     required String semesterCode,
   }) async {
-    final prefs = await _prefs;
-    final raw = prefs.getString(_scheduleOverridesKey);
-    final existing = <ScheduleOverride>[];
-
-    if (raw != null && raw.isNotEmpty) {
-      final decoded = json.decode(raw);
-      if (decoded is List) {
-        existing.addAll(
-          decoded.whereType<Map>().map(
-            (item) =>
-                ScheduleOverride.fromJson(Map<String, dynamic>.from(item)),
-          ),
-        );
-      }
-    }
+    final prefs = await _reloadedPrefs();
+    final existing = AppStorageCodec.decodeScheduleOverrides(
+      prefs.getString(_scheduleOverridesKey),
+    );
 
     final merged =
         existing.where((item) => item.semesterCode != semesterCode).toList()
@@ -388,30 +289,15 @@ class AppStorage {
 
     await prefs.setString(
       _scheduleOverridesKey,
-      json.encode(merged.map((item) => item.toJson()).toList()),
+      AppStorageCodec.encodeScheduleOverrides(merged),
     );
   }
 
   Future<SchoolTimeConfig> loadSchoolTimeConfig() async {
     final prefs = await _prefs;
-    final raw = prefs.getString(_schoolTimeConfigKey);
-    if (raw == null || raw.isEmpty) {
-      return SchoolTimeConfig.hainanuDefault();
-    }
-    try {
-      final decoded = json.decode(raw);
-      if (decoded is! Map<String, dynamic>) {
-        return SchoolTimeConfig.hainanuDefault();
-      }
-      final config = SchoolTimeConfig.fromJson(decoded);
-      if (config.classTimes.isEmpty) {
-        return SchoolTimeConfig.hainanuDefault();
-      }
-      return config;
-    } catch (e) {
-      AppLogger.warn('AppStorage', '读取课程时间配置失败，使用默认值', e);
-      return SchoolTimeConfig.hainanuDefault();
-    }
+    return AppStorageCodec.decodeSchoolTimeConfig(
+      prefs.getString(_schoolTimeConfigKey),
+    );
   }
 
   Future<void> saveSchoolTimeConfig(SchoolTimeConfig config) async {
@@ -427,20 +313,9 @@ class AppStorage {
 
   Future<SchoolTimeGeneratorSettings> loadSchoolTimeGeneratorSettings() async {
     final prefs = await _prefs;
-    final raw = prefs.getString(_schoolTimeGeneratorSettingsKey);
-    if (raw == null || raw.isEmpty) {
-      return SchoolTimeGeneratorSettings.defaults();
-    }
-    try {
-      final decoded = json.decode(raw);
-      if (decoded is! Map<String, dynamic>) {
-        return SchoolTimeGeneratorSettings.defaults();
-      }
-      return SchoolTimeGeneratorSettings.fromJson(decoded);
-    } catch (e) {
-      AppLogger.warn('AppStorage', '读取课程时间生成器设置失败，使用默认值', e);
-      return SchoolTimeGeneratorSettings.defaults();
-    }
+    return AppStorageCodec.decodeSchoolTimeGeneratorSettings(
+      prefs.getString(_schoolTimeGeneratorSettingsKey),
+    );
   }
 
   Future<void> saveSchoolTimeGeneratorSettings(
@@ -476,9 +351,13 @@ class AppStorage {
     return StoredAutoSyncRecord(
       frequency: prefs.getString(_frequencyKey) ?? 'daily',
       customIntervalMinutes: prefs.getInt(_customIntervalMinutesKey),
-      lastFetchTime: _readTime(prefs.getString(_lastFetchTimeKey)),
-      lastAttemptTime: _readTime(prefs.getString(_lastAttemptTimeKey)),
-      nextSyncTime: _readTime(prefs.getString(_nextSyncTimeKey)),
+      lastFetchTime: AppStorageCodec.readTime(
+        prefs.getString(_lastFetchTimeKey),
+      ),
+      lastAttemptTime: AppStorageCodec.readTime(
+        prefs.getString(_lastAttemptTimeKey),
+      ),
+      nextSyncTime: AppStorageCodec.readTime(prefs.getString(_nextSyncTimeKey)),
       state: prefs.getString(_lastStateKey),
       message: prefs.getString(_lastMessageKey),
       lastError: prefs.getString(_lastErrorKey),
@@ -556,7 +435,10 @@ class AppStorage {
       await prefs.remove(_nextSyncTimeKey);
     }
     if (cookieSnapshot != null) {
-      await _secureStorage.write(key: _cookieSnapshotKey, value: cookieSnapshot);
+      await _secureStorage.write(
+        key: _cookieSnapshotKey,
+        value: cookieSnapshot,
+      );
       await prefs.remove(_cookieSnapshotKey);
     }
   }
@@ -568,7 +450,7 @@ class AppStorage {
 
   Future<void> saveCookieSnapshot(String cookie) async {
     await _secureStorage.write(key: _cookieSnapshotKey, value: cookie);
-    // 清除旧的明文存储（迁移清理）
+    // 清理旧版本保存在 SharedPreferences 里的明文副本。
     final prefs = await _prefs;
     await prefs.remove(_cookieSnapshotKey);
   }
@@ -576,7 +458,8 @@ class AppStorage {
   Future<String?> loadCookieSnapshot() async {
     final secure = await _secureStorage.read(key: _cookieSnapshotKey);
     if (secure != null && secure.isNotEmpty) return secure;
-    // 从旧版明文存储迁移
+
+    // 从旧版 SharedPreferences 明文存储迁移。
     final prefs = await _prefs;
     final legacy = prefs.getString(_cookieSnapshotKey);
     if (legacy != null && legacy.isNotEmpty) {
@@ -585,6 +468,12 @@ class AppStorage {
       return legacy;
     }
     return null;
+  }
+
+  Future<void> clearCookieSnapshot() async {
+    await _secureStorage.delete(key: _cookieSnapshotKey);
+    final prefs = await _prefs;
+    await prefs.remove(_cookieSnapshotKey);
   }
 
   Future<void> saveStudentId(String studentId) async {
@@ -601,8 +490,12 @@ class AppStorage {
     final prefs = await _prefs;
     return StoredReminderRecord(
       leadMinutes: prefs.getInt(_reminderLeadTimeKey) ?? 0,
-      lastBuildTime: _readTime(prefs.getString(_reminderLastBuildTimeKey)),
-      horizonEnd: _readTime(prefs.getString(_reminderHorizonEndKey)),
+      lastBuildTime: AppStorageCodec.readTime(
+        prefs.getString(_reminderLastBuildTimeKey),
+      ),
+      horizonEnd: AppStorageCodec.readTime(
+        prefs.getString(_reminderHorizonEndKey),
+      ),
       scheduledCount: prefs.getInt(_reminderScheduledCountKey) ?? 0,
       exactAlarmEnabled: prefs.getBool(_reminderExactAlarmEnabledKey) ?? false,
     );
@@ -616,6 +509,7 @@ class AppStorage {
   Future<void> saveReminderRecord({
     int? scheduledCount,
     DateTime? lastBuildTime,
+    bool clearLastBuildTime = false,
     DateTime? horizonEnd,
     bool? exactAlarmEnabled,
     bool clearHorizonEnd = false,
@@ -629,6 +523,8 @@ class AppStorage {
         _reminderLastBuildTimeKey,
         lastBuildTime.toIso8601String(),
       );
+    } else if (clearLastBuildTime) {
+      await prefs.remove(_reminderLastBuildTimeKey);
     }
     if (horizonEnd != null) {
       await prefs.setString(
@@ -643,22 +539,58 @@ class AppStorage {
     }
   }
 
-  static DateTime? _readTime(String? value) {
-    if (value == null || value.isEmpty) return null;
-    return DateTime.tryParse(value)?.toLocal();
+  Future<SharedPreferences> _reloadedPrefs() async {
+    final prefs = await _prefs;
+    await prefs.reload();
+    return prefs;
   }
 
-  Future<Map<String, dynamic>> _loadScheduleArchiveMap() async {
-    final prefs = await _prefs;
-    final raw = prefs.getString(_scheduleArchiveKey);
-    if (raw == null || raw.isEmpty) {
-      return <String, dynamic>{};
+  String? _readSemesterCode(SharedPreferences prefs) {
+    return prefs.getString(_semesterKey) ?? prefs.getString(_legacySemesterKey);
+  }
+
+  String? _readActiveSemesterCode(SharedPreferences prefs) {
+    return prefs.getString(_activeSemesterKey) ?? _readSemesterCode(prefs);
+  }
+
+  Future<void> _applyActiveSemesterSnapshot(
+    SharedPreferences prefs, {
+    String? semesterCode,
+    Map<String, dynamic>? entry,
+  }) async {
+    if (semesterCode == null || semesterCode.isEmpty) {
+      await prefs.remove(_activeSemesterKey);
+      await prefs.remove(_semesterKey);
+      await prefs.remove(_legacySemesterKey);
+      await prefs.remove(_lastScheduleJsonKey);
+      await prefs.remove(_coursesKey);
+      return;
     }
 
-    final decoded = json.decode(raw);
-    if (decoded is! Map<String, dynamic>) {
-      return <String, dynamic>{};
+    await prefs.setString(_activeSemesterKey, semesterCode);
+    await prefs.setString(_semesterKey, semesterCode);
+    await prefs.setString(_legacySemesterKey, semesterCode);
+
+    final rawScheduleJson = entry?['rawScheduleJson'] as String?;
+    if (rawScheduleJson != null && rawScheduleJson.isNotEmpty) {
+      await prefs.setString(_lastScheduleJsonKey, rawScheduleJson);
+    } else {
+      await prefs.remove(_lastScheduleJsonKey);
     }
-    return Map<String, dynamic>.from(decoded);
+
+    final mirroredCourses = AppStorageCodec.encodeMirroredCourses(entry);
+    if (mirroredCourses != null) {
+      await prefs.setStringList(_coursesKey, mirroredCourses);
+    } else {
+      await prefs.remove(_coursesKey);
+    }
+  }
+
+  Future<Map<String, dynamic>> _loadScheduleArchiveMapFromPrefs(
+    SharedPreferences prefs,
+  ) async {
+    return AppStorageCodec.decodeScheduleArchiveMap(
+      prefs.getString(_scheduleArchiveKey),
+    );
   }
 }

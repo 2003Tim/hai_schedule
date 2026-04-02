@@ -207,6 +207,7 @@ class ReminderRepository {
   Future<void> saveState({
     int? scheduledCount,
     DateTime? lastBuildTime,
+    bool clearLastBuildTime = false,
     DateTime? horizonEnd,
     bool? exactAlarmEnabled,
     bool clearHorizonEnd = false,
@@ -214,6 +215,7 @@ class ReminderRepository {
     return _storage.saveReminderRecord(
       scheduledCount: scheduledCount,
       lastBuildTime: lastBuildTime,
+      clearLastBuildTime: clearLastBuildTime,
       horizonEnd: horizonEnd,
       exactAlarmEnabled: exactAlarmEnabled,
       clearHorizonEnd: clearHorizonEnd,

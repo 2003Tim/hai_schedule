@@ -16,8 +16,13 @@ class CourseColors {
   ];
 
   static Color getColor(String courseName) {
-    final index = courseName.hashCode.abs() % cardColors.length;
-    return cardColors[index];
+    // FNV-1a 32-bit：跨平台/跨 Dart 版本确定性哈希，不依赖 String.hashCode
+    var hash = 0x811c9dc5;
+    for (final unit in courseName.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xFFFFFFFF;
+    }
+    return cardColors[hash % cardColors.length];
   }
 }
 

@@ -17,7 +17,11 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   if (Platform.isAndroid) {
-    await ClassReminderService.initialize();
+    try {
+      await ClassReminderService.initialize();
+    } catch (e, st) {
+      debugPrint('课前提醒初始化失败，继续启动: $e\n$st');
+    }
   }
 
   if (Platform.isWindows) {

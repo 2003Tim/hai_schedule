@@ -173,6 +173,57 @@ void main() {
         expect(movedDisplay.teacher, '李老师');
       },
     );
+
+    test(
+      'modify override with targetCourseId does not hide other slots of the same course',
+      () async {
+        final provider = ScheduleProvider();
+        await provider.setCourses([
+          _buildCourseWithTwoSlots(
+            teacher: '张老师',
+            slotTeacher: '',
+          ),
+        ], semesterCode: '20252');
+        final date = provider.getDateForSlot(1, 1);
+
+        await provider.upsertOverride(
+          ScheduleOverride(
+            id: 'override-multi-slot-modify',
+            semesterCode: '20252',
+            dateKey: _dateKey(date),
+            weekday: 1,
+            startSection: 5,
+            endSection: 6,
+            type: ScheduleOverrideType.modify,
+            targetCourseId: 'course-1',
+            courseName: '高等数学-调课',
+            teacher: '李老师',
+            location: '教二-202',
+            sourceCourseName: '高等数学',
+            sourceTeacher: '张老师',
+            sourceLocation: '教一-101',
+            sourceStartSection: 1,
+            sourceEndSection: 2,
+          ),
+        );
+
+        expect(provider.getDisplaySlotAt(1, 1, 1), isNull);
+
+        final movedDisplay = provider.getDisplaySlotAt(1, 1, 5);
+        expect(movedDisplay, isNotNull);
+        expect(movedDisplay!.overrideType, ScheduleOverrideType.modify);
+        expect(movedDisplay.slot.startSection, 5);
+        expect(movedDisplay.slot.endSection, 6);
+
+        final untouchedDisplay = provider.getDisplaySlotAt(1, 1, 3);
+        expect(untouchedDisplay, isNotNull);
+        expect(untouchedDisplay!.isActive, isTrue);
+        expect(untouchedDisplay.overrideType, isNull);
+        expect(untouchedDisplay.slot.startSection, 3);
+        expect(untouchedDisplay.slot.endSection, 4);
+        expect(untouchedDisplay.slot.location, '教三-303');
+      },
+    );
   });
 }
 
@@ -196,6 +247,45 @@ Course _buildCourse({required String teacher, required String slotTeacher}) {
         startSection: 1,
         endSection: 2,
         location: '教一-101',
+        weekRanges: [WeekRange(start: 1, end: 16)],
+      ),
+    ],
+  );
+}
+
+Course _buildCourseWithTwoSlots({
+  required String teacher,
+  required String slotTeacher,
+}) {
+  return Course(
+    id: 'course-1',
+    code: 'MATH001',
+    name: '高等数学',
+    className: '数学一班',
+    teacher: teacher,
+    college: '理学院',
+    credits: 4,
+    totalHours: 64,
+    semester: '20252',
+    slots: [
+      ScheduleSlot(
+        courseId: 'course-1',
+        courseName: '高等数学',
+        teacher: slotTeacher,
+        weekday: 1,
+        startSection: 1,
+        endSection: 2,
+        location: '教一-101',
+        weekRanges: [WeekRange(start: 1, end: 16)],
+      ),
+      ScheduleSlot(
+        courseId: 'course-1',
+        courseName: '高等数学',
+        teacher: slotTeacher,
+        weekday: 1,
+        startSection: 3,
+        endSection: 4,
+        location: '教三-303',
         weekRanges: [WeekRange(start: 1, end: 16)],
       ),
     ],
