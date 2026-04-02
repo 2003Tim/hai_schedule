@@ -262,16 +262,7 @@ LoginRouter（平台分发）
 
 ---
 
-## Android 签名配置
 
-发布签名材料建议放置于：
-
-- `android/local/key.properties`
-- `android/local/upload-keystore.jks`
-
-`android/local/` 已加入 `.gitignore`，不会误提交。`android/app/build.gradle.kts` 会优先读取该路径，并兼容旧版 `android/key.properties` 格式。
-
----
 
 ## 已知注意事项
 
