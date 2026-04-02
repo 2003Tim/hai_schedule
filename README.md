@@ -262,6 +262,48 @@ LoginRouter（平台分发）
 
 ---
 
+## 打包发布
+
+### 版本号管理
+
+版本号在 `pubspec.yaml` 中维护：
+
+```yaml
+version: 1.0.0+1
+#         ↑       ↑
+#    versionName  versionCode（每次发布必须递增）
+```
+
+### Android
+
+确保 `android/local/key.properties` 和对应 keystore 文件已就位，然后：
+
+```bash
+# 生成 APK（直接安装用）
+flutter build apk --release
+
+# 生成 AAB（上传 Google Play 用）
+flutter build appbundle --release
+```
+
+产物路径：
+- APK：`build/app/outputs/flutter-apk/app-release.apk`
+- AAB：`build/app/outputs/bundle/release/app-release.aab`
+
+未配置签名时会自动回退使用 debug key，产物无法发布到 Play Store。
+
+### Windows
+
+```bash
+flutter build windows --release
+```
+
+产物路径：`build/windows/x64/runner/Release/`
+
+将整个 `Release/` 目录打包为 zip 即可分发，或使用 `msix` 工具生成安装包。
+
+---
+
 ## Android 签名配置
 
 发布签名材料建议放置于：
