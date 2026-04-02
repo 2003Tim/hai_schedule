@@ -1,167 +1,22 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../models/auto_sync_models.dart';
 import '../models/course.dart';
 import '../models/schedule_parser.dart';
+import '../utils/auto_sync_course_diff.dart';
+import '../utils/auto_sync_schedule_policy.dart';
+import '../utils/auto_sync_text.dart';
 import 'api_service.dart';
 import 'app_repositories.dart';
 import 'auth_credentials_service.dart';
 import 'schedule_provider.dart';
 
-enum AutoSyncFrequency {
-  manual('manual', '仅手动'),
-  daily('daily', '每天'),
-  weekly('weekly', '每周'),
-  monthly('monthly', '每月'),
-  custom('custom', '自定义');
-
-  final String value;
-  final String label;
-  const AutoSyncFrequency(this.value, this.label);
-
-  static AutoSyncFrequency fromValue(String? value) {
-    return AutoSyncFrequency.values.firstWhere(
-      (item) => item.value == value,
-      orElse: () => AutoSyncFrequency.daily,
-    );
-  }
-}
-
-enum AutoSyncState {
-  idle('idle'),
-  syncing('syncing'),
-  success('success'),
-  failed('failed'),
-  loginRequired('login_required');
-
-  final String value;
-  const AutoSyncState(this.value);
-
-  static AutoSyncState fromValue(String? value) {
-    return AutoSyncState.values.firstWhere(
-      (item) => item.value == value,
-      orElse: () => AutoSyncState.idle,
-    );
-  }
-}
-
-class AutoSyncSettings {
-  final AutoSyncFrequency frequency;
-  final int customIntervalMinutes;
-
-  const AutoSyncSettings({
-    required this.frequency,
-    required this.customIntervalMinutes,
-  });
-
-  bool get backgroundEnabled => frequency != AutoSyncFrequency.manual;
-
-  Duration get interval {
-    switch (frequency) {
-      case AutoSyncFrequency.manual:
-        return const Duration(days: 36500);
-      case AutoSyncFrequency.daily:
-        return const Duration(days: 1);
-      case AutoSyncFrequency.weekly:
-        return const Duration(days: 7);
-      case AutoSyncFrequency.monthly:
-        return const Duration(days: 30);
-      case AutoSyncFrequency.custom:
-        return Duration(minutes: customIntervalMinutes);
-    }
-  }
-}
-
-class AutoSyncSnapshot {
-  final AutoSyncSettings settings;
-  final AutoSyncState state;
-  final String message;
-  final DateTime? lastFetchTime;
-  final DateTime? lastAttemptTime;
-  final DateTime? nextSyncTime;
-  final String? lastError;
-  final String? lastSource;
-  final String? lastDiffSummary;
-  final bool credentialReady;
-
-  const AutoSyncSnapshot({
-    required this.settings,
-    required this.state,
-    required this.message,
-    this.lastFetchTime,
-    this.lastAttemptTime,
-    this.nextSyncTime,
-    this.lastError,
-    this.lastSource,
-    this.lastDiffSummary,
-    this.credentialReady = false,
-  });
-
-  bool get requiresLogin => state == AutoSyncState.loginRequired;
-}
-
-class AutoSyncResult {
-  final bool attempted;
-  final bool didSync;
-  final bool requiresLogin;
-  final int? courseCount;
-  final String message;
-  final AutoSyncSnapshot snapshot;
-
-  const AutoSyncResult({
-    required this.attempted,
-    required this.didSync,
-    required this.requiresLogin,
-    required this.message,
-    required this.snapshot,
-    this.courseCount,
-  });
-
-  factory AutoSyncResult.skipped(String message, AutoSyncSnapshot snapshot) {
-    return AutoSyncResult(
-      attempted: false,
-      didSync: false,
-      requiresLogin: false,
-      message: message,
-      snapshot: snapshot,
-    );
-  }
-
-  factory AutoSyncResult.loginRequired(String message, AutoSyncSnapshot snapshot) {
-    return AutoSyncResult(
-      attempted: true,
-      didSync: false,
-      requiresLogin: true,
-      message: message,
-      snapshot: snapshot,
-    );
-  }
-
-  factory AutoSyncResult.failed(String message, AutoSyncSnapshot snapshot) {
-    return AutoSyncResult(
-      attempted: true,
-      didSync: false,
-      requiresLogin: false,
-      message: message,
-      snapshot: snapshot,
-    );
-  }
-
-  factory AutoSyncResult.success(int count, String message, AutoSyncSnapshot snapshot) {
-    return AutoSyncResult(
-      attempted: true,
-      didSync: true,
-      requiresLogin: false,
-      message: message,
-      snapshot: snapshot,
-      courseCount: count,
-    );
-  }
-}
+export '../models/auto_sync_models.dart';
 
 class AutoSyncService {
   static const MethodChannel _channel = MethodChannel('hai_schedule/auto_sync');
@@ -171,16 +26,20 @@ class AutoSyncService {
   static const String _apiUrl =
       'https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/modules/xskcb/xsjxrwcx.do';
 
-  static const Duration retryBackoff = Duration(minutes: 30);
-  static const int defaultCustomIntervalMinutes = 12 * 60;
-  static const int minCustomIntervalMinutes = 60;
-  static const int maxCustomIntervalMinutes = 30 * 24 * 60;
+  static const Duration retryBackoff = AutoSyncSchedulePolicy.retryBackoff;
+  static const int defaultCustomIntervalMinutes =
+      AutoSyncSchedulePolicy.defaultCustomIntervalMinutes;
+  static const int minCustomIntervalMinutes =
+      AutoSyncSchedulePolicy.minCustomIntervalMinutes;
+  static const int maxCustomIntervalMinutes =
+      AutoSyncSchedulePolicy.maxCustomIntervalMinutes;
 
   static final ScheduleRepository _scheduleRepository = ScheduleRepository();
   static final SyncRepository _syncRepository = SyncRepository();
   static bool _isRunning = false;
 
-  static bool get _supportsTimedAutoSync => Platform.isAndroid || Platform.isWindows;
+  static bool get _supportsTimedAutoSync =>
+      Platform.isAndroid || Platform.isWindows;
   static bool get supportsForegroundDesktopAutoSync => Platform.isWindows;
 
   static Future<AutoSyncSettings> loadSettings() async {
@@ -201,9 +60,10 @@ class AutoSyncService {
       throw StateError('请先“登录并刷新课表”一次，再开启自动同步');
     }
 
-    final normalizedCustomIntervalMinutes = frequency == AutoSyncFrequency.custom
-        ? normalizeCustomIntervalMinutes(customIntervalMinutes)
-        : null;
+    final normalizedCustomIntervalMinutes =
+        frequency == AutoSyncFrequency.custom
+            ? normalizeCustomIntervalMinutes(customIntervalMinutes)
+            : null;
     final nextSettings = AutoSyncSettings(
       frequency: frequency,
       customIntervalMinutes:
@@ -215,9 +75,10 @@ class AutoSyncService {
     );
     await _syncRepository.saveStatus(
       state: AutoSyncState.idle.value,
-      message: frequency == AutoSyncFrequency.manual
-          ? '已切换为仅手动同步'
-          : '已切换为${describeSettings(nextSettings)}',
+      message:
+          frequency == AutoSyncFrequency.manual
+              ? '已切换为仅手动同步'
+              : '已切换为${describeSettings(nextSettings)}',
       clearError: true,
     );
 
@@ -379,10 +240,7 @@ class AutoSyncService {
     String source = 'foreground',
   }) async {
     if (!Platform.isAndroid) {
-      return AutoSyncResult.skipped(
-        '当前平台不需要自动同步',
-        await loadSnapshot(),
-      );
+      return AutoSyncResult.skipped('当前平台不需要自动同步', await loadSnapshot());
     }
 
     if (_isRunning) {
@@ -435,10 +293,7 @@ class AutoSyncService {
       final courses = ScheduleParser.parseApiResponse(rawData);
       if (courses.isEmpty) {
         await _markFailed('接口返回成功，但未解析到课程数据', source: source);
-        return AutoSyncResult.failed(
-          '接口返回成功，但未解析到课程数据',
-          await loadSnapshot(),
-        );
+        return AutoSyncResult.failed('接口返回成功，但未解析到课程数据', await loadSnapshot());
       }
 
       await _storeCookieSnapshot(cookie);
@@ -479,56 +334,23 @@ class AutoSyncService {
   }
 
   static String formatDateTime(DateTime? time) {
-    if (time == null) return '--';
-    final month = time.month.toString().padLeft(2, '0');
-    final day = time.day.toString().padLeft(2, '0');
-    final hour = time.hour.toString().padLeft(2, '0');
-    final minute = time.minute.toString().padLeft(2, '0');
-    return '$month/$day $hour:$minute';
+    return AutoSyncText.formatDateTime(time);
   }
 
   static String describeFrequency(AutoSyncFrequency frequency) {
-    switch (frequency) {
-      case AutoSyncFrequency.manual:
-        return '仅手动同步';
-      case AutoSyncFrequency.daily:
-        return '每天自动同步';
-      case AutoSyncFrequency.weekly:
-        return '每周自动同步';
-      case AutoSyncFrequency.monthly:
-        return '每月自动同步';
-      case AutoSyncFrequency.custom:
-        return '自定义自动同步';
-    }
+    return AutoSyncText.describeFrequency(frequency);
   }
 
   static String describeSettings(AutoSyncSettings settings) {
-    if (settings.frequency != AutoSyncFrequency.custom) {
-      return describeFrequency(settings.frequency);
-    }
-    return '每${formatIntervalMinutes(settings.customIntervalMinutes)}自动同步';
+    return AutoSyncText.describeSettings(settings);
   }
 
   static String formatIntervalMinutes(int minutes) {
-    final normalized = normalizeCustomIntervalMinutes(minutes);
-    if (normalized % (24 * 60) == 0) {
-      return '${normalized ~/ (24 * 60)}天';
-    }
-    if (normalized % 60 == 0) {
-      return '${normalized ~/ 60}小时';
-    }
-    return '$normalized分钟';
+    return AutoSyncText.formatIntervalMinutes(minutes);
   }
 
   static int normalizeCustomIntervalMinutes(int? minutes) {
-    final value = minutes ?? defaultCustomIntervalMinutes;
-    if (value < minCustomIntervalMinutes) {
-      return minCustomIntervalMinutes;
-    }
-    if (value > maxCustomIntervalMinutes) {
-      return maxCustomIntervalMinutes;
-    }
-    return value;
+    return AutoSyncSchedulePolicy.normalizeCustomIntervalMinutes(minutes);
   }
 
   static Future<void> _persistSuccess({
@@ -567,58 +389,15 @@ class AutoSyncService {
     );
   }
 
-  static String buildCourseDiffSummary(List<Course> previous, List<Course> current) {
-    final previousMap = {
-      for (final course in previous) _courseIdentity(course): _courseSignature(course),
-    };
-    final currentMap = {
-      for (final course in current) _courseIdentity(course): _courseSignature(course),
-    };
-
-    final added = currentMap.keys.where((key) => !previousMap.containsKey(key)).length;
-    final removed = previousMap.keys.where((key) => !currentMap.containsKey(key)).length;
-    final changed = currentMap.keys
-        .where((key) => previousMap.containsKey(key) && previousMap[key] != currentMap[key])
-        .length;
-
-    if (added == 0 && removed == 0 && changed == 0) {
-      return '课表无变化';
-    }
-
-    final parts = <String>[];
-    if (added > 0) parts.add('新增 $added 门');
-    if (removed > 0) parts.add('移除 $removed 门');
-    if (changed > 0) parts.add('调整 $changed 门');
-    return parts.join('，');
-  }
-
-  static String _courseIdentity(Course course) {
-    return '${course.code}|${course.name}|${course.teacher}|${course.className}';
-  }
-
-  static String _courseSignature(Course course) {
-    final slots = course.slots
-        .map(
-          (slot) => [
-            slot.weekday,
-            slot.startSection,
-            slot.endSection,
-            slot.location,
-            slot.weekRanges.map((range) => '${range.start}-${range.end}-${range.type.name}').join('/'),
-          ].join('|'),
-        )
-        .toList()
-      ..sort();
-
-    return '${course.college}|${course.credits}|${course.totalHours}|${course.semester}|${course.campus}|${course.teachingType}|${slots.join(';')}';
+  static String buildCourseDiffSummary(
+    List<Course> previous,
+    List<Course> current,
+  ) {
+    return AutoSyncCourseDiff.buildSummary(previous, current);
   }
 
   static String _buildSuccessMessage(int courseCount, String? diffSummary) {
-    final base = '已同步 $courseCount 门课程';
-    if (diffSummary == null || diffSummary.isEmpty) {
-      return base;
-    }
-    return '$base，$diffSummary';
+    return AutoSyncText.buildSuccessMessage(courseCount, diffSummary);
   }
 
   static Future<void> _markFailed(
@@ -674,62 +453,15 @@ class AutoSyncService {
     DateTime? lastFetchTime,
     DateTime? lastAttemptTime,
   }) {
-    if (!settings.backgroundEnabled) {
-      return null;
-    }
-
-    if (settings.frequency == AutoSyncFrequency.custom) {
-      final interval = settings.interval;
-      if (!afterSuccessfulSync && preserveExistingCustomSchedule) {
-        if (previousNextSyncTime != null && previousNextSyncTime.isAfter(now)) {
-          return previousNextSyncTime;
-        }
-
-        DateTime? anchor;
-        if (lastFetchTime != null) {
-          anchor = lastFetchTime;
-        }
-        if (lastAttemptTime != null &&
-            (anchor == null || lastAttemptTime.isAfter(anchor))) {
-          anchor = lastAttemptTime;
-        }
-        if (anchor != null) {
-          final anchoredNextTime = anchor.add(interval);
-          if (anchoredNextTime.isAfter(now)) {
-            return anchoredNextTime;
-          }
-        }
-      }
-      return now.add(interval);
-    }
-
-    switch (settings.frequency) {
-      case AutoSyncFrequency.manual:
-        return null;
-      case AutoSyncFrequency.daily:
-        final todayAtTarget = DateTime(now.year, now.month, now.day, 6, 30);
-        if (afterSuccessfulSync || !todayAtTarget.isAfter(now)) {
-          return todayAtTarget.add(const Duration(days: 1));
-        }
-        return todayAtTarget;
-      case AutoSyncFrequency.weekly:
-        var target = DateTime(now.year, now.month, now.day, 6, 30);
-        while (target.weekday != DateTime.monday) {
-          target = target.add(const Duration(days: 1));
-        }
-        if (afterSuccessfulSync || !target.isAfter(now)) {
-          target = target.add(const Duration(days: 7));
-        }
-        return target;
-      case AutoSyncFrequency.monthly:
-        var target = DateTime(now.year, now.month, 1, 6, 30);
-        if (afterSuccessfulSync || !target.isAfter(now)) {
-          target = DateTime(now.year, now.month + 1, 1, 6, 30);
-        }
-        return target;
-      case AutoSyncFrequency.custom:
-        return null;
-    }
+    return AutoSyncSchedulePolicy.computeNextSyncTime(
+      settings: settings,
+      now: now,
+      afterSuccessfulSync: afterSuccessfulSync,
+      preserveExistingCustomSchedule: preserveExistingCustomSchedule,
+      previousNextSyncTime: previousNextSyncTime,
+      lastFetchTime: lastFetchTime,
+      lastAttemptTime: lastAttemptTime,
+    );
   }
 
   static Future<void> _configureBackgroundSync({
@@ -745,9 +477,10 @@ class AutoSyncService {
         return;
       }
 
-      final normalizedCustomIntervalMinutes = frequency == AutoSyncFrequency.custom
-          ? normalizeCustomIntervalMinutes(customIntervalMinutes)
-          : defaultCustomIntervalMinutes;
+      final normalizedCustomIntervalMinutes =
+          frequency == AutoSyncFrequency.custom
+              ? normalizeCustomIntervalMinutes(customIntervalMinutes)
+              : defaultCustomIntervalMinutes;
       final settings = AutoSyncSettings(
         frequency: frequency,
         customIntervalMinutes: normalizedCustomIntervalMinutes,
@@ -772,13 +505,14 @@ class AutoSyncService {
 
     if (!Platform.isAndroid) return;
     try {
-      final next = await _channel.invokeMethod<String>('configureBackgroundSync', {
-        'enabled': enabled,
-        'frequency': frequency.value,
-        'customIntervalMinutes': customIntervalMinutes,
-        'afterSuccessfulSync': afterSuccessfulSync,
-        'preserveExistingCustomSchedule': preserveExistingCustomSchedule,
-      });
+      final next = await _channel
+          .invokeMethod<String>('configureBackgroundSync', {
+            'enabled': enabled,
+            'frequency': frequency.value,
+            'customIntervalMinutes': customIntervalMinutes,
+            'afterSuccessfulSync': afterSuccessfulSync,
+            'preserveExistingCustomSchedule': preserveExistingCustomSchedule,
+          });
       if (next == null || next.isEmpty) {
         await _syncRepository.saveStatus(clearNextSyncTime: true);
       } else {
@@ -805,9 +539,7 @@ class AutoSyncService {
 
   static Future<String?> _invokeGetCookie(String url) async {
     try {
-      return await _channel.invokeMethod<String>('getCookie', {
-        'url': url,
-      });
+      return await _channel.invokeMethod<String>('getCookie', {'url': url});
     } on PlatformException catch (e) {
       debugPrint('读取 Cookie 失败: ${e.message}');
       return null;
@@ -848,7 +580,9 @@ class AutoSyncService {
     }
 
     if (merged.isEmpty) return '';
-    return merged.entries.map((entry) => '${entry.key}=${entry.value}').join('; ');
+    return merged.entries
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join('; ');
   }
 
   static Future<String?> _readCookie() async {
@@ -866,12 +600,6 @@ class AutoSyncService {
   }
 
   static bool _looksLikeLoginFailure(String message) {
-    final lower = message.toLowerCase();
-    return lower.contains('重新登录') ||
-        lower.contains('登录态') ||
-        lower.contains('cookie') ||
-        lower.contains('code=') ||
-        lower.contains('401') ||
-        lower.contains('403');
+    return AutoSyncText.looksLikeLoginFailure(message);
   }
 }

@@ -1,4 +1,4 @@
-﻿import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hai_schedule/models/course.dart';
@@ -6,12 +6,23 @@ import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 
+import '../test_helpers/secure_storage_mock.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    SecureStorageMock.install();
+  });
+
+  tearDownAll(() {
+    SecureStorageMock.uninstall();
+  });
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     AppStorage.instance.resetForTesting();
+    SecureStorageMock.clear();
   });
 
   group('ScheduleRepository', () {
@@ -130,6 +141,159 @@ void main() {
       expect(springCache.semesterCode, '20252');
       expect(springCache.rawScheduleJson, '{"semester":"20252"}');
       expect(springCache.courses.single.name, '大学物理');
+    });
+
+    test('switching to an empty semester clears mirrored active cache', () async {
+      final repository = ScheduleRepository();
+      final course = Course(
+        id: 'c-20251',
+        code: 'ENG001',
+        name: '大学英语',
+        className: '英语一班',
+        teacher: '李老师',
+        college: '外国语学院',
+        credits: 2,
+        totalHours: 32,
+        semester: '2024-2025-1',
+        slots: [
+          ScheduleSlot(
+            courseId: 'c-20251',
+            courseName: '大学英语',
+            weekday: 2,
+            startSection: 3,
+            endSection: 4,
+            location: '教二-203',
+            weekRanges: [WeekRange(start: 1, end: 16)],
+          ),
+        ],
+      );
+
+      await repository.saveSemesterSchedule(
+        semesterCode: '20251',
+        rawScheduleJson: '{"semester":"20251"}',
+        courses: [course],
+        makeActive: true,
+      );
+      await repository.createEmptySemester(
+        semesterCode: '20252',
+        makeActive: true,
+      );
+
+      final activeCache = await repository.loadCache();
+      expect(activeCache.semesterCode, '20252');
+      expect(activeCache.courses, isEmpty);
+      expect(activeCache.rawScheduleJson, isNull);
+    });
+
+    test('deleting active semester preserves overrides from other semesters', () async {
+      final scheduleRepository = ScheduleRepository();
+      final overrideRepository = ScheduleOverrideRepository();
+
+      final fallCourse = Course(
+        id: 'c-20251',
+        code: 'ENG001',
+        name: '大学英语',
+        className: '英语一班',
+        teacher: '李老师',
+        college: '外国语学院',
+        credits: 2,
+        totalHours: 32,
+        semester: '2024-2025-1',
+        slots: [
+          ScheduleSlot(
+            courseId: 'c-20251',
+            courseName: '大学英语',
+            weekday: 2,
+            startSection: 3,
+            endSection: 4,
+            location: '教二-203',
+            weekRanges: [WeekRange(start: 1, end: 16)],
+          ),
+        ],
+      );
+      final springCourse = Course(
+        id: 'c-20252',
+        code: 'PHY001',
+        name: '大学物理',
+        className: '物理二班',
+        teacher: '王老师',
+        college: '理学院',
+        credits: 3,
+        totalHours: 48,
+        semester: '2024-2025-2',
+        slots: [
+          ScheduleSlot(
+            courseId: 'c-20252',
+            courseName: '大学物理',
+            weekday: 4,
+            startSection: 1,
+            endSection: 2,
+            location: '教三-105',
+            weekRanges: [WeekRange(start: 1, end: 16)],
+          ),
+        ],
+      );
+
+      await scheduleRepository.saveSemesterSchedule(
+        semesterCode: '20251',
+        rawScheduleJson: '{"semester":"20251"}',
+        courses: [fallCourse],
+        makeActive: true,
+      );
+      await scheduleRepository.saveSemesterSchedule(
+        semesterCode: '20252',
+        rawScheduleJson: '{"semester":"20252"}',
+        courses: [springCourse],
+        makeActive: true,
+      );
+      await overrideRepository.save(
+        semesterCode: '20251',
+        overrides: const [
+          ScheduleOverride(
+            id: 'fall-override',
+            semesterCode: '20251',
+            dateKey: '2025-10-08',
+            weekday: 3,
+            startSection: 1,
+            endSection: 2,
+            type: ScheduleOverrideType.cancel,
+            targetCourseId: 'c-20251',
+            sourceStartSection: 1,
+            sourceEndSection: 2,
+          ),
+        ],
+      );
+      await overrideRepository.save(
+        semesterCode: '20252',
+        overrides: const [
+          ScheduleOverride(
+            id: 'spring-override',
+            semesterCode: '20252',
+            dateKey: '2026-03-30',
+            weekday: 1,
+            startSection: 5,
+            endSection: 6,
+            type: ScheduleOverrideType.add,
+            courseName: '临时加课',
+            location: '教四-201',
+          ),
+        ],
+      );
+
+      await scheduleRepository.deleteSemester('20252');
+
+      final availableCodes = await scheduleRepository.loadAvailableSemesterCodes();
+      final activeCache = await scheduleRepository.loadCache();
+      final fallOverrides = await overrideRepository.load('20251');
+      final springOverrides = await overrideRepository.load('20252');
+
+      expect(availableCodes, ['20251']);
+      expect(await scheduleRepository.loadActiveSemesterCode(), '20251');
+      expect(activeCache.semesterCode, '20251');
+      expect(activeCache.courses.single.name, '大学英语');
+      expect(fallOverrides, hasLength(1));
+      expect(fallOverrides.single.id, 'fall-override');
+      expect(springOverrides, isEmpty);
     });
   });
 

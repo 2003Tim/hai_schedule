@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/schedule_override.dart';
 import '../services/schedule_provider.dart';
+import '../utils/semester_code_formatter.dart';
 
 class ScheduleOverridesScreen extends StatelessWidget {
   const ScheduleOverridesScreen({super.key});
@@ -10,26 +11,26 @@ class ScheduleOverridesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ScheduleProvider>();
-    final overrides = [...provider.overrides]
-      ..sort((a, b) {
-        final dateCompare = a.dateKey.compareTo(b.dateKey);
-        if (dateCompare != 0) return dateCompare;
-        final sectionCompare = a.startSection.compareTo(b.startSection);
-        if (sectionCompare != 0) return sectionCompare;
-        return a.type.index.compareTo(b.type.index);
-      });
+    final overrides = [...provider.overrides]..sort((a, b) {
+      final dateCompare = a.dateKey.compareTo(b.dateKey);
+      if (dateCompare != 0) return dateCompare;
+      final sectionCompare = a.startSection.compareTo(b.startSection);
+      if (sectionCompare != 0) return sectionCompare;
+      return a.type.index.compareTo(b.type.index);
+    });
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('\u4e34\u65f6\u5b89\u6392'),
         centerTitle: true,
       ),
-      body: overrides.isEmpty
-          ? _EmptyState(semesterCode: provider.currentSemesterCode)
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              children: _buildSections(context, provider, overrides),
-            ),
+      body:
+          overrides.isEmpty
+              ? _EmptyState(semesterCode: provider.currentSemesterCode)
+              : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: _buildSections(context, provider, overrides),
+              ),
     );
   }
 
@@ -43,8 +44,8 @@ class ScheduleOverridesScreen extends StatelessWidget {
       grouped.putIfAbsent(item.dateKey, () => <ScheduleOverride>[]).add(item);
     }
 
-    final entries = grouped.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
+    final entries =
+        grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
 
     return [
       for (final entry in entries) ...[
@@ -110,7 +111,10 @@ class _EmptyState extends StatelessWidget {
             if (semesterCode != null && semesterCode!.isNotEmpty) ...[
               const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.primary.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(999),
@@ -139,10 +143,7 @@ class _DateHeader extends StatelessWidget {
   final String dateKey;
   final int weekNumber;
 
-  const _DateHeader({
-    required this.dateKey,
-    required this.weekNumber,
-  });
+  const _DateHeader({required this.dateKey, required this.weekNumber});
 
   @override
   Widget build(BuildContext context) {
@@ -214,19 +215,23 @@ class _OverrideCard extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: canJump
-            ? () {
-                provider.selectWeek(week);
-                Navigator.of(context).pop();
-              }
-            : null,
+        onTap:
+            canJump
+                ? () {
+                  provider.selectWeek(week);
+                  Navigator.of(context).pop();
+                }
+                : null,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: _typeColor(context, item.type).withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(999),
@@ -257,7 +262,9 @@ class _OverrideCard extends StatelessWidget {
                       '\u7b2c ${item.startSection}-${item.endSection} \u8282',
                       style: TextStyle(
                         fontSize: 12.5,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.72),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.72,
+                        ),
                       ),
                     ),
                     if (detail.isNotEmpty) ...[
@@ -267,19 +274,28 @@ class _OverrideCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 13,
                           height: 1.35,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.78,
+                          ),
                         ),
                       ),
                     ],
                     if (needsReview) ...[
                       const SizedBox(height: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.error.withValues(alpha: 0.08),
+                          color: theme.colorScheme.error.withValues(
+                            alpha: 0.08,
+                          ),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: theme.colorScheme.error.withValues(alpha: 0.22),
+                            color: theme.colorScheme.error.withValues(
+                              alpha: 0.22,
+                            ),
                           ),
                         ),
                         child: Text(
@@ -299,7 +315,9 @@ class _OverrideCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: theme.colorScheme.primary.withValues(alpha: 0.82),
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.82,
+                          ),
                         ),
                       ),
                     ],
@@ -324,12 +342,15 @@ class _OverrideCard extends StatelessWidget {
   Future<void> _confirmDelete(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     final provider = context.read<ScheduleProvider>();
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: context,
           builder: (dialogContext) {
             return AlertDialog(
               title: const Text('\u5220\u9664\u4e34\u65f6\u5b89\u6392'),
-              content: Text('\u786e\u8ba4\u5220\u9664\u201c${_title(item)}\u201d\u5417\uff1f'),
+              content: Text(
+                '\u786e\u8ba4\u5220\u9664\u201c${_title(item)}\u201d\u5417\uff1f',
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -391,7 +412,8 @@ class _OverrideCard extends StatelessWidget {
   }
 }
 
-String _formatSemesterCode(String code) {
+String _formatSemesterCode(String code) => formatSemesterCode(code);
+/*
   if (code.length < 5) return code;
   final startYear = code.substring(0, 4);
   final endYear = (int.tryParse(startYear) ?? 0) + 1;
@@ -400,3 +422,4 @@ String _formatSemesterCode(String code) {
       : '\u7b2c\u4e8c\u5b66\u671f';
   return '$startYear-$endYear $term';
 }
+*/

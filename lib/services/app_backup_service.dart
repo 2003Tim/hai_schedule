@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_storage.dart';
+
 class AppBackupService {
   AppBackupService._();
 
@@ -164,7 +166,9 @@ class AppBackupService {
     }
 
     final prefs = await SharedPreferences.getInstance();
+    final storage = AppStorage.instance;
     final previousValues = _snapshotPrefs(prefs, _restorableKeys);
+    final previousCookieSnapshot = await storage.loadCookieSnapshot();
     final restoredValues = _normalizeRestorableData(data);
 
     try {
@@ -177,6 +181,7 @@ class AppBackupService {
       for (final key in _transientKeys) {
         await prefs.remove(key);
       }
+      await storage.clearCookieSnapshot();
     } catch (error) {
       try {
         for (final key in _restorableKeys) {
@@ -184,6 +189,12 @@ class AppBackupService {
         }
         for (final entry in previousValues.entries) {
           await _writePrefValue(prefs, entry.key, entry.value);
+        }
+        if (previousCookieSnapshot != null &&
+            previousCookieSnapshot.isNotEmpty) {
+          await storage.saveCookieSnapshot(previousCookieSnapshot);
+        } else {
+          await storage.clearCookieSnapshot();
         }
       } catch (rollbackError) {
         throw StateError('恢复失败且回滚失败: $error / $rollbackError');

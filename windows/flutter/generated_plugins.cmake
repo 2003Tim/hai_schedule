@@ -6,7 +6,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
   flutter_secure_storage_windows
   screen_retriever_windows
-  system_tray
   url_launcher_windows
   webview_windows
   window_manager
