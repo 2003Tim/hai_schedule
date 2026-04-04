@@ -3,10 +3,10 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/class_reminder_service.dart';
-import '../services/class_silence_service.dart';
-import '../services/schedule_provider.dart';
-import '../widgets/reminder_settings_sections.dart';
+import 'package:hai_schedule/services/class_reminder_service.dart';
+import 'package:hai_schedule/services/class_silence_service.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/widgets/reminder_settings_sections.dart';
 
 class ReminderSettingsScreen extends StatefulWidget {
   const ReminderSettingsScreen({super.key});

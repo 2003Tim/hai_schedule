@@ -21,6 +21,24 @@ class ThemeBackgroundStore {
     return destPath;
   }
 
+  static Future<String> importCustomBackgroundBytes(
+    List<int> bytes, {
+    String? sourceName,
+  }) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final bgDir = Directory('${appDir.path}/backgrounds');
+    if (!await bgDir.exists()) {
+      await bgDir.create(recursive: true);
+    }
+
+    final ext = normalizeImageExtension(sourceName ?? 'custom_bg.jpg');
+    final destPath =
+        '${bgDir.path}/custom_bg_${DateTime.now().microsecondsSinceEpoch}.$ext';
+
+    await File(destPath).writeAsBytes(bytes, flush: true);
+    return destPath;
+  }
+
   static String normalizeImageExtension(String imagePath) {
     final dotIndex = imagePath.lastIndexOf('.');
     if (dotIndex < 0 || dotIndex == imagePath.length - 1) return 'jpg';

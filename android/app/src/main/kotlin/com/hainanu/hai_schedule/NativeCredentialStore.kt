@@ -8,6 +8,7 @@ object NativeCredentialStore {
     private const val PREFS_NAME = "hai_schedule_secure_credentials"
     private const val KEY_USERNAME = "portal_username"
     private const val KEY_PASSWORD = "portal_password"
+    private const val KEY_COOKIE_SNAPSHOT = "last_auto_sync_cookie"
 
     private fun prefs(context: Context) = EncryptedSharedPreferences.create(
         context,
@@ -41,5 +42,22 @@ object NativeCredentialStore {
             return null
         }
         return username to password
+    }
+
+    fun saveCookieSnapshot(context: Context, cookie: String) {
+        prefs(context).edit()
+            .putString(KEY_COOKIE_SNAPSHOT, cookie)
+            .apply()
+    }
+
+    fun loadCookieSnapshot(context: Context): String? {
+        return prefs(context).getString(KEY_COOKIE_SNAPSHOT, null)
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    fun clearCookieSnapshot(context: Context) {
+        prefs(context).edit()
+            .remove(KEY_COOKIE_SNAPSHOT)
+            .apply()
     }
 }

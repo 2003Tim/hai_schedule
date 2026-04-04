@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/schedule_provider.dart';
-import '../widgets/semester_management_sections.dart';
-import 'import_screen.dart';
-import 'login_router.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/widgets/semester_management_sections.dart';
+import 'package:hai_schedule/screens/import_screen.dart';
+import 'package:hai_schedule/screens/login_router.dart';
 
 class SemesterManagementScreen extends StatelessWidget {
   const SemesterManagementScreen({super.key});

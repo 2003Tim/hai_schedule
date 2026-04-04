@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/schedule_parser.dart';
-import '../services/schedule_provider.dart';
-import '../utils/semester_code_formatter.dart';
+import 'package:hai_schedule/models/schedule_parser.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/utils/semester_code_formatter.dart';
 
 class ImportScreen extends StatefulWidget {
   const ImportScreen({super.key, this.initialSemesterCode});

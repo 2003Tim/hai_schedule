@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../models/schedule_override.dart';
-import '../services/schedule_provider.dart';
-import 'daily_schedule_cards.dart';
-import 'schedule_slot_dialogs.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/widgets/daily_schedule_cards.dart';
+import 'package:hai_schedule/widgets/schedule_slot_dialogs.dart';
 
 class DailyScheduleView extends StatelessWidget {
   const DailyScheduleView({
@@ -79,7 +79,7 @@ class DailyScheduleView extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 18),
       itemCount: entries.length + 1,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      separatorBuilder: (context, index) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         if (index == 0) {
           return DailyHeaderCard(

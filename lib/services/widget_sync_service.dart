@@ -4,11 +4,11 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 
-import '../models/course.dart';
-import '../models/schedule_override.dart';
-import '../models/school_time.dart';
-import '../utils/constants.dart';
-import '../utils/week_calculator.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/utils/schedule_projection_payload.dart';
+import 'package:hai_schedule/utils/week_calculator.dart';
 
 /// Flutter -> Android 桌面小组件数据同步
 ///
@@ -62,73 +62,11 @@ class WidgetSyncService {
     required WeekCalculator weekCalc,
     required SchoolTimeConfig timeConfig,
   }) {
-    final flattenedSlots = <Map<String, dynamic>>[];
-
-    for (final course in courses) {
-      for (final slot in course.slots) {
-        flattenedSlots.add({
-          'courseId': slot.courseId,
-          'courseName': slot.courseName,
-          'teacher': slot.teacher.isNotEmpty ? slot.teacher : course.teacher,
-          'location': slot.location,
-          'weekday': slot.weekday,
-          'startSection': slot.startSection,
-          'endSection': slot.endSection,
-          'activeWeeks': slot.getAllActiveWeeks(),
-          'color': CourseColors.getColor(slot.courseName).toARGB32(),
-        });
-      }
-    }
-
-    return {
-      'schemaVersion': 1,
-      'generatedAt': DateTime.now().toIso8601String(),
-      'semesterStart': _dateOnly(weekCalc.semesterStart),
-      'totalWeeks': weekCalc.totalWeeks,
-      'classTimes':
-          timeConfig.classTimes
-              .map(
-                (t) => {
-                  'section': t.section,
-                  'startTime': t.startTime,
-                  'endTime': t.endTime,
-                },
-              )
-              .toList(),
-      'slots': flattenedSlots,
-      'overrides':
-          overrides
-              .map(
-                (item) => {
-                  'id': item.id,
-                  'semesterCode': item.semesterCode,
-                  'dateKey': item.dateKey,
-                  'weekday': item.weekday,
-                  'startSection': item.startSection,
-                  'endSection': item.endSection,
-                  'type': item.type.name,
-                  'targetCourseId': item.targetCourseId,
-                  'courseName': item.courseName,
-                  'teacher': item.teacher,
-                  'location': item.location,
-                  'note': item.note,
-                  'status': item.status.name,
-                  'sourceCourseName': item.sourceCourseName,
-                  'sourceTeacher': item.sourceTeacher,
-                  'sourceLocation': item.sourceLocation,
-                  'sourceStartSection': item.sourceStartSection,
-                  'sourceEndSection': item.sourceEndSection,
-                  'color': CourseColors.getColor(item.courseName).toARGB32(),
-                },
-              )
-              .toList(),
-    };
-  }
-
-  static String _dateOnly(DateTime date) {
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
+    return ScheduleProjectionPayload.build(
+      courses: courses,
+      overrides: overrides,
+      weekCalc: weekCalc,
+      timeConfig: timeConfig,
+    );
   }
 }

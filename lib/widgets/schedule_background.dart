@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../services/theme_provider.dart';
+import 'package:hai_schedule/services/theme_provider.dart';
 
 class ScheduleBackground extends StatelessWidget {
   final Widget child;
@@ -74,7 +74,7 @@ class ScheduleBackground extends StatelessWidget {
               fit: BoxFit.cover,
               width: double.infinity,
               height: double.infinity,
-              errorBuilder: (_, __, ___) {
+              errorBuilder: (context, error, stackTrace) {
                 return Container(color: preset.backgroundColor);
               },
             ),

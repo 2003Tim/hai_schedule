@@ -46,57 +46,78 @@ class ScheduleOverride {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'semesterCode': semesterCode,
-        'dateKey': dateKey,
-        'weekday': weekday,
-        'startSection': startSection,
-        'endSection': endSection,
-        'type': type.name,
-        'targetCourseId': targetCourseId,
-        'courseName': courseName,
-        'teacher': teacher,
-        'location': location,
-        'note': note,
-        'status': status.name,
-        'sourceCourseName': sourceCourseName,
-        'sourceTeacher': sourceTeacher,
-        'sourceLocation': sourceLocation,
-        'sourceStartSection': sourceStartSection,
-        'sourceEndSection': sourceEndSection,
-      };
+    'id': id,
+    'semesterCode': semesterCode,
+    'dateKey': dateKey,
+    'weekday': weekday,
+    'startSection': startSection,
+    'endSection': endSection,
+    'type': type.name,
+    'targetCourseId': targetCourseId,
+    'courseName': courseName,
+    'teacher': teacher,
+    'location': location,
+    'note': note,
+    'status': status.name,
+    'sourceCourseName': sourceCourseName,
+    'sourceTeacher': sourceTeacher,
+    'sourceLocation': sourceLocation,
+    'sourceStartSection': sourceStartSection,
+    'sourceEndSection': sourceEndSection,
+  };
 
-  factory ScheduleOverride.fromJson(Map<String, dynamic> json) => ScheduleOverride(
-        id: json['id'] as String? ?? '',
-        semesterCode: json['semesterCode'] as String? ?? '',
-        dateKey: json['dateKey'] as String? ?? '',
-        weekday: json['weekday'] as int? ?? 1,
-        startSection: json['startSection'] as int? ?? 1,
-        endSection: json['endSection'] as int? ?? 1,
-        type: ScheduleOverrideType.values.byName(json['type'] as String? ?? 'add'),
-        targetCourseId: json['targetCourseId'] as String?,
-        courseName: json['courseName'] as String? ?? '',
-        teacher: json['teacher'] as String? ?? '',
-        location: json['location'] as String? ?? '',
-        note: json['note'] as String? ?? '',
-        status: ScheduleOverrideStatus.values.byName(
-          json['status'] as String? ?? 'normal',
-        ),
-        sourceCourseName: json['sourceCourseName'] as String? ?? '',
-        sourceTeacher: json['sourceTeacher'] as String? ?? '',
-        sourceLocation: json['sourceLocation'] as String? ?? '',
-        sourceStartSection: json['sourceStartSection'] as int?,
-        sourceEndSection: json['sourceEndSection'] as int?,
+  factory ScheduleOverride.fromJson(Map<String, dynamic> json) =>
+      ScheduleOverride(
+        id: _stringValue(json['id']),
+        semesterCode: _stringValue(json['semesterCode']),
+        dateKey: _stringValue(json['dateKey']),
+        weekday: _intValue(json['weekday'], fallback: 1),
+        startSection: _intValue(json['startSection'], fallback: 1),
+        endSection: _intValue(json['endSection'], fallback: 1),
+        type: _overrideTypeValue(json['type']),
+        targetCourseId: json['targetCourseId']?.toString(),
+        courseName: _stringValue(json['courseName']),
+        teacher: _stringValue(json['teacher']),
+        location: _stringValue(json['location']),
+        note: _stringValue(json['note']),
+        status: _overrideStatusValue(json['status']),
+        sourceCourseName: _stringValue(json['sourceCourseName']),
+        sourceTeacher: _stringValue(json['sourceTeacher']),
+        sourceLocation: _stringValue(json['sourceLocation']),
+        sourceStartSection: _nullableInt(json['sourceStartSection']),
+        sourceEndSection: _nullableInt(json['sourceEndSection']),
       );
 }
 
-enum ScheduleOverrideType {
-  add,
-  cancel,
-  modify,
+enum ScheduleOverrideType { add, cancel, modify }
+
+enum ScheduleOverrideStatus { normal, orphaned }
+
+String _stringValue(Object? value) => value?.toString() ?? '';
+
+int _intValue(Object? value, {int fallback = 0}) {
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? fallback;
 }
 
-enum ScheduleOverrideStatus {
-  normal,
-  orphaned,
+int? _nullableInt(Object? value) {
+  if (value == null) return null;
+  if (value is num) return value.toInt();
+  return int.tryParse(value.toString());
+}
+
+ScheduleOverrideType _overrideTypeValue(Object? value) {
+  final raw = value?.toString() ?? '';
+  return ScheduleOverrideType.values.firstWhere(
+    (item) => item.name == raw,
+    orElse: () => ScheduleOverrideType.add,
+  );
+}
+
+ScheduleOverrideStatus _overrideStatusValue(Object? value) {
+  final raw = value?.toString() ?? '';
+  return ScheduleOverrideStatus.values.firstWhere(
+    (item) => item.name == raw,
+    orElse: () => ScheduleOverrideStatus.normal,
+  );
 }

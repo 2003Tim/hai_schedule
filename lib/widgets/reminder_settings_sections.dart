@@ -3,9 +3,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/class_reminder_service.dart';
-import '../services/class_silence_service.dart';
-import '../services/theme_provider.dart';
+import 'package:hai_schedule/services/class_reminder_service.dart';
+import 'package:hai_schedule/services/class_silence_service.dart';
+import 'package:hai_schedule/services/theme_provider.dart';
 
 typedef ReminderAsyncVoidCallback = Future<void> Function();
 typedef ReminderAsyncBoolCallback = Future<void> Function(bool value);

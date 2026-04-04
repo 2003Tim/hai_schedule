@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../services/app_backup_service.dart';
-import '../services/schedule_provider.dart';
-import '../services/theme_provider.dart';
-import '../widgets/backup_restore_sections.dart';
+import 'package:hai_schedule/services/app_backup_service.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/services/theme_provider.dart';
+import 'package:hai_schedule/widgets/backup_restore_sections.dart';
 
 class BackupRestoreScreen extends StatefulWidget {
   const BackupRestoreScreen({super.key});
@@ -47,7 +47,7 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen> {
   }
 
   Future<void> _pickExportDirectory() async {
-    final path = await FilePicker.platform.getDirectoryPath(
+    final path = await FilePicker.getDirectoryPath(
       dialogTitle: '选择备份导出目录',
     );
     if (path == null || path.isEmpty || !mounted) return;
@@ -98,7 +98,7 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen> {
   }
 
   Future<void> _pickBackupFile() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       dialogTitle: '选择备份文件',
       type: FileType.custom,
       allowedExtensions: ['json'],

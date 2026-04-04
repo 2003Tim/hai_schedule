@@ -1,4 +1,4 @@
-import 'course.dart';
+import 'package:hai_schedule/models/course.dart';
 
 class LoginFetchProcessResult {
   const LoginFetchProcessResult({
@@ -11,27 +11,56 @@ class LoginFetchProcessResult {
 }
 
 class LoginFetchChunkState {
-  final StringBuffer _buffer = StringBuffer();
+  final Map<int, String> _chunks = <int, String>{};
+  String? activeRequestId;
   int expectedChunks = 0;
-  int receivedChunks = 0;
+
+  int get receivedChunks => _chunks.length;
+  bool get isComplete =>
+      expectedChunks > 0 &&
+      _chunks.length == expectedChunks &&
+      List<int>.generate(
+        expectedChunks,
+        (index) => index,
+      ).every(_chunks.containsKey);
+
+  void arm(String requestId) {
+    _chunks.clear();
+    expectedChunks = 0;
+    activeRequestId = requestId;
+  }
 
   void reset() {
-    _buffer.clear();
+    _chunks.clear();
     expectedChunks = 0;
-    receivedChunks = 0;
+    activeRequestId = null;
   }
 
-  void begin(int totalChunks) {
-    reset();
+  void begin({required String requestId, required int totalChunks}) {
+    _chunks.clear();
     expectedChunks = totalChunks;
+    activeRequestId = requestId;
   }
 
-  void appendChunk(String chunk) {
-    _buffer.write(chunk);
-    receivedChunks++;
+  bool appendChunk({required int index, required String chunk}) {
+    if (index < 0 || expectedChunks <= 0 || index >= expectedChunks) {
+      return false;
+    }
+    _chunks.putIfAbsent(index, () => chunk);
+    return true;
   }
 
-  String takePayload() => _buffer.toString();
+  String takePayload() {
+    final buffer = StringBuffer();
+    for (var index = 0; index < expectedChunks; index++) {
+      final chunk = _chunks[index];
+      if (chunk == null) {
+        throw StateError('Missing chunk $index for request $activeRequestId');
+      }
+      buffer.write(chunk);
+    }
+    return buffer.toString();
+  }
 }
 
 class LoginAutofillResult {

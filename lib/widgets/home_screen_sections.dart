@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 
-import '../services/auto_sync_service.dart';
-import '../services/schedule_provider.dart';
-import 'daily_schedule_view.dart';
-import 'home_day_selector.dart';
-import 'home_empty_state.dart';
-import 'home_next_lesson_card.dart';
-import 'schedule_background.dart';
-import 'schedule_grid.dart';
-import 'swipeable_daily_schedule_view.dart';
-import 'swipeable_schedule_view.dart';
-import 'week_selector.dart';
+import 'package:hai_schedule/services/auto_sync_service.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/widgets/daily_schedule_view.dart';
+import 'package:hai_schedule/widgets/home_day_selector.dart';
+import 'package:hai_schedule/widgets/home_empty_state.dart';
+import 'package:hai_schedule/widgets/home_next_lesson_card.dart';
+import 'package:hai_schedule/widgets/schedule_background.dart';
+import 'package:hai_schedule/widgets/schedule_grid.dart';
+import 'package:hai_schedule/widgets/swipeable_daily_schedule_view.dart';
+import 'package:hai_schedule/widgets/swipeable_schedule_view.dart';
+import 'package:hai_schedule/widgets/week_selector.dart';
 
 enum HomeMenuAction {
   syncCenter,

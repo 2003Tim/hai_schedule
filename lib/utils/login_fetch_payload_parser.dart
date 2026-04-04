@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import '../models/course.dart';
-import '../models/login_fetch_models.dart';
-import '../models/schedule_parser.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/login_fetch_models.dart';
+import 'package:hai_schedule/models/schedule_parser.dart';
 
 class LoginFetchPayloadParser {
   static List<Course> parseCourses(String jsonStr) {

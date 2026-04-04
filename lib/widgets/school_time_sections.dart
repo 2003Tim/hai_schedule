@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/school_time.dart';
+import 'package:hai_schedule/models/school_time.dart';
 
 typedef SchoolTimeAsyncSectionEdit = Future<void> Function(int index);
 

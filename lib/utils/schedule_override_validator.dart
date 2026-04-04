@@ -1,7 +1,7 @@
-import '../models/course.dart';
-import '../models/schedule_override.dart';
-import 'schedule_override_matcher.dart';
-import 'week_calculator.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/utils/schedule_override_matcher.dart';
+import 'package:hai_schedule/utils/week_calculator.dart';
 
 class ScheduleOverrideValidationResult {
   const ScheduleOverrideValidationResult({

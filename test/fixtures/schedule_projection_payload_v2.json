@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-03-01T00:00:00.000Z",
+  "semesterStart": "2026-03-02",
+  "totalWeeks": 20,
+  "classTimes": [
+    {
+      "section": 1,
+      "startTime": "08:00",
+      "endTime": "08:45"
+    },
+    {
+      "section": 2,
+      "startTime": "08:55",
+      "endTime": "09:40"
+    },
+    {
+      "section": 3,
+      "startTime": "10:10",
+      "endTime": "10:55"
+    },
+    {
+      "section": 4,
+      "startTime": "11:05",
+      "endTime": "11:50"
+    },
+    {
+      "section": 5,
+      "startTime": "14:00",
+      "endTime": "14:45"
+    },
+    {
+      "section": 6,
+      "startTime": "14:55",
+      "endTime": "15:40"
+    }
+  ],
+  "slots": [
+    {
+      "courseId": "math",
+      "courseName": "Linear Algebra",
+      "teacher": "Prof A",
+      "location": "A101",
+      "weekday": 1,
+      "startSection": 1,
+      "endSection": 2,
+      "activeWeeks": [
+        1,
+        2,
+        3
+      ],
+      "color": 4294736733
+    },
+    {
+      "courseId": "chem",
+      "courseName": "Chemistry",
+      "teacher": "Prof B",
+      "location": "B201",
+      "weekday": 1,
+      "startSection": 3,
+      "endSection": 4,
+      "activeWeeks": [
+        1,
+        2,
+        3
+      ],
+      "color": 4282631582
+    }
+  ],
+  "overrides": [
+    {
+      "id": "modify-math",
+      "semesterCode": "20251",
+      "dateKey": "2026-03-02",
+      "weekday": 1,
+      "startSection": 2,
+      "endSection": 3,
+      "type": "modify",
+      "targetCourseId": "math",
+      "courseName": "Advanced Algebra",
+      "teacher": "",
+      "location": "A301",
+      "note": "",
+      "status": "normal",
+      "sourceCourseName": "",
+      "sourceTeacher": "",
+      "sourceLocation": "",
+      "sourceStartSection": 1,
+      "sourceEndSection": 2,
+      "color": 4288380902
+    },
+    {
+      "id": "cancel-chem",
+      "semesterCode": "20251",
+      "dateKey": "2026-03-02",
+      "weekday": 1,
+      "startSection": 3,
+      "endSection": 4,
+      "type": "cancel",
+      "targetCourseId": "chem",
+      "courseName": "",
+      "teacher": "",
+      "location": "",
+      "note": "",
+      "status": "normal",
+      "sourceCourseName": "",
+      "sourceTeacher": "",
+      "sourceLocation": "",
+      "sourceStartSection": null,
+      "sourceEndSection": null,
+      "color": 4282631582
+    },
+    {
+      "id": "add-temp",
+      "semesterCode": "20251",
+      "dateKey": "2026-03-02",
+      "weekday": 1,
+      "startSection": 4,
+      "endSection": 4,
+      "type": "add",
+      "targetCourseId": null,
+      "courseName": "Temporary",
+      "teacher": "Prof C",
+      "location": "Lab 1",
+      "note": "",
+      "status": "normal",
+      "sourceCourseName": "",
+      "sourceTeacher": "",
+      "sourceLocation": "",
+      "sourceStartSection": null,
+      "sourceEndSection": null,
+      "color": 4294937180
+    }
+  ]
+}

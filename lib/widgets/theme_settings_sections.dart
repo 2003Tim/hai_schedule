@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../services/theme_provider.dart';
+import 'package:hai_schedule/services/theme_provider.dart';
 
 class ThemeSectionTitle extends StatelessWidget {
   const ThemeSectionTitle(this.title, {super.key});

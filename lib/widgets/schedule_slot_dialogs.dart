@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../services/schedule_provider.dart';
-import 'schedule_slot_dialog_sections.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/widgets/schedule_slot_dialog_sections.dart';
 
 export 'schedule_override_form_sheet.dart' show openScheduleOverrideForm;
 

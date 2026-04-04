@@ -1,5 +1,5 @@
-import 'course.dart';
-import 'schedule_override.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
 
 class DisplayScheduleSlot {
   const DisplayScheduleSlot({

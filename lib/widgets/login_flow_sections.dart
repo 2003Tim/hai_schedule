@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../services/auth_credentials_service.dart';
+import 'package:hai_schedule/services/auth_credentials_service.dart';
 
 typedef AsyncBoolCallback = Future<void> Function(bool value);
 typedef AsyncVoidCallback = Future<void> Function();

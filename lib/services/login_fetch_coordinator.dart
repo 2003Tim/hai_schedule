@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../models/login_fetch_coordinator_models.dart';
-import '../utils/login_fetch_coordinator_text.dart';
-import '../utils/semester_code_formatter.dart' as semester_formatter;
-import 'schedule_login_fetch_service.dart';
+import 'package:hai_schedule/models/login_fetch_coordinator_models.dart';
+import 'package:hai_schedule/utils/login_fetch_coordinator_text.dart';
+import 'package:hai_schedule/utils/semester_code_formatter.dart' as semester_formatter;
+import 'package:hai_schedule/services/schedule_login_fetch_service.dart';
 
 export '../models/login_fetch_coordinator_models.dart';
 
@@ -16,6 +16,8 @@ class LoginFetchCoordinator {
   static const fetchTimeout = Duration(seconds: 25);
 
   final ScheduleLoginFetchService _loginFetchService;
+  Timer? _requestTimer;
+  int _requestCounter = 0;
 
   String? messageForAutofillStatus(String status) {
     return LoginFetchCoordinatorText.messageForAutofillStatus(status);
@@ -64,6 +66,10 @@ class LoginFetchCoordinator {
 
     try {
       if (selectedSemesterCode != null) {
+        final requestId = _beginRequest(
+          chunkState: chunkState,
+          applyState: applyState,
+        );
         applyState(
           LoginFetchUiStateUpdate(
             statusText: LoginFetchCoordinatorText.switchingSemesterStatus(
@@ -75,27 +81,24 @@ class LoginFetchCoordinator {
           _loginFetchService.buildSwitchSemesterScript(
             bridgeCall: bridgeCall,
             semester: selectedSemesterCode,
+            requestId: requestId,
           ),
         );
         return;
       }
 
-      await executeScript(
-        _loginFetchService.buildDetectSemesterScript(bridgeCall),
+      final requestId = _beginRequest(
+        chunkState: chunkState,
+        applyState: applyState,
       );
-
-      unawaited(
-        Future<void>.delayed(fetchTimeout, () {
-          if (!isStillFetching()) return;
-          applyState(
-            const LoginFetchUiStateUpdate(
-              isFetching: false,
-              statusText: LoginFetchCoordinatorText.timeoutStatus,
-            ),
-          );
-        }),
+      await executeScript(
+        _loginFetchService.buildDetectSemesterScript(
+          bridgeCall: bridgeCall,
+          requestId: requestId,
+        ),
       );
     } catch (e) {
+      _finishRequest(chunkState);
       applyState(
         LoginFetchUiStateUpdate(
           isFetching: false,
@@ -107,11 +110,11 @@ class LoginFetchCoordinator {
 
   Future<void> fetchWithSemester({
     required String semester,
+    required LoginFetchChunkState chunkState,
     required String bridgeCall,
     required Future<void> Function(String script) executeScript,
     required ValueChanged<String> onSemesterResolved,
     required ValueChanged<LoginFetchUiStateUpdate> applyState,
-    Future<void> Function(String semester)? persistSemesterCode,
   }) async {
     onSemesterResolved(semester);
     applyState(
@@ -121,16 +124,19 @@ class LoginFetchCoordinator {
     );
 
     try {
-      if (persistSemesterCode != null) {
-        await persistSemesterCode(semester);
-      }
+      final requestId = _beginRequest(
+        chunkState: chunkState,
+        applyState: applyState,
+      );
       await executeScript(
         _loginFetchService.buildFetchScheduleScript(
           bridgeCall: bridgeCall,
           semester: semester,
+          requestId: requestId,
         ),
       );
     } catch (e) {
+      _finishRequest(chunkState);
       applyState(
         LoginFetchUiStateUpdate(
           isFetching: false,
@@ -157,6 +163,7 @@ class LoginFetchCoordinator {
       onStatus:
           (status) => applyState(LoginFetchUiStateUpdate(statusText: status)),
       onSemesterDetected: (semester) {
+        _finishRequest(chunkState);
         if (semester.isEmpty) {
           applyState(
             LoginFetchUiStateUpdate(
@@ -169,12 +176,15 @@ class LoginFetchCoordinator {
         unawaited(onSemesterReady(semester));
       },
       onSemesterSwitched: (semester) {
+        _finishRequest(chunkState);
         unawaited(onSemesterReady(semester));
       },
       onPayloadReady: (jsonStr) {
+        _finishRequest(chunkState);
         unawaited(onPayloadReady(jsonStr));
       },
       onError: (error) {
+        _finishRequest(chunkState);
         applyState(
           LoginFetchUiStateUpdate(
             isFetching: false,
@@ -229,7 +239,7 @@ class LoginFetchCoordinator {
       unawaited(
         Future<void>.delayed(const Duration(milliseconds: 800), () {
           if (context.mounted) {
-            navigator.pop();
+            navigator.pop(true);
           }
         }),
       );
@@ -245,5 +255,32 @@ class LoginFetchCoordinator {
         ),
       );
     }
+  }
+
+  String _beginRequest({
+    required LoginFetchChunkState chunkState,
+    required ValueChanged<LoginFetchUiStateUpdate> applyState,
+  }) {
+    final requestId =
+        '${DateTime.now().microsecondsSinceEpoch}-${_requestCounter++}';
+    chunkState.arm(requestId);
+    _requestTimer?.cancel();
+    _requestTimer = Timer(fetchTimeout, () {
+      if (chunkState.activeRequestId != requestId) return;
+      _finishRequest(chunkState);
+      applyState(
+        const LoginFetchUiStateUpdate(
+          isFetching: false,
+          statusText: LoginFetchCoordinatorText.timeoutStatus,
+        ),
+      );
+    });
+    return requestId;
+  }
+
+  void _finishRequest(LoginFetchChunkState chunkState) {
+    _requestTimer?.cancel();
+    _requestTimer = null;
+    chunkState.reset();
   }
 }

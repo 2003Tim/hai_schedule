@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../services/app_backup_service.dart';
+import 'package:hai_schedule/services/app_backup_service.dart';
 
 Future<bool> showRestoreBackupConfirmDialog(
   BuildContext context, {

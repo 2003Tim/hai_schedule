@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../models/app_theme_preset.dart';
-import '../models/theme_preferences_record.dart';
-import '../utils/app_logger.dart';
-import '../utils/theme_appearance.dart';
-import '../utils/theme_background_store.dart';
-import '../utils/theme_preferences_store.dart';
-import 'widget_sync_service.dart';
+import 'package:hai_schedule/models/app_theme_preset.dart';
+import 'package:hai_schedule/models/theme_preferences_record.dart';
+import 'package:hai_schedule/utils/app_logger.dart';
+import 'package:hai_schedule/utils/theme_appearance.dart';
+import 'package:hai_schedule/utils/theme_background_store.dart';
+import 'package:hai_schedule/utils/theme_preferences_store.dart';
+import 'package:hai_schedule/services/widget_sync_service.dart';
 
 export '../models/app_theme_preset.dart';
 
@@ -21,10 +21,9 @@ class ThemeProvider extends ChangeNotifier {
       ThemePreferencesRecord.recommendedCardOpacity;
 
   ThemePreferencesRecord _record = const ThemePreferencesRecord();
+  late final Future<void> ready = _loadPrefs();
 
-  ThemeProvider() {
-    _loadPrefs();
-  }
+  ThemeProvider();
 
   String get themeId => _record.themeId;
   String get systemLightThemeId => _record.systemLightThemeId;

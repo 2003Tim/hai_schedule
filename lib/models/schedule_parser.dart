@@ -1,5 +1,5 @@
-import '../utils/app_logger.dart';
-import 'course.dart';
+import 'package:hai_schedule/utils/app_logger.dart';
+import 'package:hai_schedule/models/course.dart';
 
 /// 海南大学课表解析器
 class ScheduleParser {
@@ -7,6 +7,9 @@ class ScheduleParser {
     '一': 1, '二': 2, '三': 3, '四': 4,
     '五': 5, '六': 6, '日': 7, '天': 7,
   };
+
+  static const int _maxRawScheduleLength = 5000;
+  static const int _maxSectionCount = 20;
 
   /// 从 API JSON 响应解析课程列表
   static List<Course> parseApiResponse(Map<String, dynamic> jsonData) {
@@ -63,6 +66,7 @@ class ScheduleParser {
     String pksjdd, String courseId, String courseName,
   ) {
     if (pksjdd.isEmpty) return [];
+    if (pksjdd.length > _maxRawScheduleLength) return [];
     final slots = <ScheduleSlot>[];
 
     for (final segment in pksjdd.split(';')) {
@@ -94,6 +98,13 @@ class ScheduleParser {
     final startSection = int.parse(sectionMatch.group(1)!);
     final endSection = int.parse(sectionMatch.group(2)!);
 
+    // 节次范围校验：合法值为 1-20 节，且起始不得大于结束
+    if (startSection < 1 || startSection > _maxSectionCount ||
+        endSection < 1 || endSection > _maxSectionCount ||
+        startSection > endSection) {
+      return null;
+    }
+
     final locationStart = sectionMatch.end;
     final location =
         locationStart < text.length ? text.substring(locationStart).trim() : '';
@@ -121,7 +132,7 @@ class ScheduleParser {
       weekType = WeekType.even;
     }
 
-    String cleaned = weekStr
+    final cleaned = weekStr
         .replaceAll('单周', '')
         .replaceAll('双周', '')
         .replaceAll('周', '')
@@ -136,13 +147,16 @@ class ScheduleParser {
         if (nums.length == 2) {
           final start = int.tryParse(nums[0].trim());
           final end = int.tryParse(nums[1].trim());
-          if (start != null && end != null) {
+          // 周次范围校验：合法值为 1-53 周，且起始不得大于结束
+          if (start != null && end != null &&
+              start >= 1 && end <= 53 && start <= end) {
             ranges.add(WeekRange(start: start, end: end, type: weekType));
           }
         }
       } else {
         final week = int.tryParse(trimmed);
-        if (week != null) {
+        // 周次范围校验：合法值为 1-53 周
+        if (week != null && week >= 1 && week <= 53) {
           ranges.add(WeekRange(start: week, end: week, type: weekType));
         }
       }

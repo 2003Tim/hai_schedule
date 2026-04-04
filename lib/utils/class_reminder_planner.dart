@@ -1,11 +1,11 @@
 import 'package:timezone/timezone.dart' as tz;
 
-import '../models/course.dart';
-import '../models/reminder_models.dart';
-import '../models/schedule_override.dart';
-import '../models/school_time.dart';
-import 'schedule_override_matcher.dart';
-import 'week_calculator.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/reminder_models.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/utils/schedule_override_matcher.dart';
+import 'package:hai_schedule/utils/week_calculator.dart';
 
 class ReminderOccurrence {
   final int notificationId;

@@ -88,7 +88,8 @@ class ClassTime {
 
   static int _timeToMinutes(String time) {
     final parts = time.split(':');
-    return int.parse(parts[0]) * 60 + int.parse(parts[1]);
+    if (parts.length < 2) return 0;
+    return (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
   }
 
   Map<String, dynamic> toJson() => {
@@ -98,9 +99,9 @@ class ClassTime {
   };
 
   factory ClassTime.fromJson(Map<String, dynamic> json) => ClassTime(
-    section: json['section'] as int,
-    startTime: json['startTime'] as String,
-    endTime: json['endTime'] as String,
+    section: (json['section'] as num?)?.toInt() ?? 0,
+    startTime: json['startTime'] as String? ?? '00:00',
+    endTime: json['endTime'] as String? ?? '00:00',
   );
 
   @override

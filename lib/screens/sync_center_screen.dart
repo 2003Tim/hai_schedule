@@ -3,13 +3,13 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/auth_credentials_service.dart';
-import '../services/auto_sync_service.dart';
-import '../services/portal_relogin_service.dart';
-import '../services/schedule_provider.dart';
-import '../widgets/sync_center_sections.dart';
-import 'import_screen.dart';
-import 'login_router.dart';
+import 'package:hai_schedule/services/auth_credentials_service.dart';
+import 'package:hai_schedule/services/auto_sync_service.dart';
+import 'package:hai_schedule/services/portal_relogin_service.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/widgets/sync_center_sections.dart';
+import 'package:hai_schedule/screens/import_screen.dart';
+import 'package:hai_schedule/screens/login_router.dart';
 
 class SyncCenterScreen extends StatefulWidget {
   const SyncCenterScreen({super.key});
@@ -19,17 +19,13 @@ class SyncCenterScreen extends StatefulWidget {
 }
 
 class _SyncCenterScreenState extends State<SyncCenterScreen> {
-  static const List<int> _customIntervalPresetHours = <int>[
-    6,
-    12,
-    24,
-    72,
-    168,
-  ];
+  static const List<int> _customIntervalPresetHours = <int>[6, 12, 24, 72, 168];
 
   AutoSyncSnapshot? _snapshot;
   SavedPortalCredential? _savedCredential;
   bool _isSyncing = false;
+  DateTime? _lastManualSyncTime;
+  static const _manualSyncCooldown = Duration(seconds: 30);
 
   @override
   void initState() {
@@ -50,6 +46,19 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
   Future<void> _syncNow() async {
     if (_isSyncing) return;
 
+    final last = _lastManualSyncTime;
+    if (last != null &&
+        DateTime.now().difference(last) < _manualSyncCooldown) {
+      final remaining =
+          _manualSyncCooldown - DateTime.now().difference(last);
+      _showSnack(
+        '操作太频繁，请 ${remaining.inSeconds + 1} 秒后再试',
+        error: true,
+      );
+      return;
+    }
+    _lastManualSyncTime = DateTime.now();
+
     if (!Platform.isAndroid) {
       await _runDesktopForegroundSync(
         source: 'desktop_manual',
@@ -68,15 +77,16 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
 
     if (result.requiresLogin) {
       if (!mounted) return;
-      final didStartRelogin = await PortalReloginService.tryRelogin(
+      final didRelogin = await PortalReloginService.tryRelogin(
         context,
         semesterCode: provider.currentSemesterCode,
       );
-      if (didStartRelogin && mounted) {
-        result = await AutoSyncService.tryAutoSync(
-          provider,
-          force: true,
-          source: 'manual_relogin',
+      if (didRelogin && mounted) {
+        final snapshot = await AutoSyncService.loadSnapshot();
+        result = AutoSyncResult.success(
+          provider.courses.length,
+          snapshot.message,
+          snapshot,
         );
       }
     }
@@ -102,9 +112,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
       await AutoSyncService.recordDesktopForegroundSyncStart(
         source: source,
         message:
-            source == 'desktop_manual'
-                ? '正在启动桌面同步流程...'
-                : '正在启动桌面前台自动同步...',
+            source == 'desktop_manual' ? '正在启动桌面同步流程...' : '正在启动桌面前台自动同步...',
       );
       await _refresh();
       if (!mounted) return;
@@ -113,8 +121,9 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
         context,
         MaterialPageRoute(
           builder:
-              (_) =>
-                  LoginRouter(initialSemesterCode: provider.currentSemesterCode),
+              (_) => LoginRouter(
+                initialSemesterCode: provider.currentSemesterCode,
+              ),
         ),
       );
 
@@ -199,6 +208,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
 
   Future<void> _clearSavedCredential() async {
     await AuthCredentialsService.instance.clear();
+    await AutoSyncService.handleCredentialCleared();
     if (!mounted) return;
     await _refresh();
     _showSnack('已清除保存的账号密码');
@@ -225,14 +235,13 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
       );
       await _refresh();
       if (!mounted) return;
-      final successText = frequency == AutoSyncFrequency.manual
-          ? '已切换为仅手动同步'
-          : frequency == AutoSyncFrequency.custom
-          ? '已切换为每${AutoSyncService.formatIntervalMinutes(customIntervalMinutes!)}自动同步'
-          : '已切换为${frequency.label}自动同步';
-      _showSnack(
-        successText,
-      );
+      final successText =
+          frequency == AutoSyncFrequency.manual
+              ? '已切换为仅手动同步'
+              : frequency == AutoSyncFrequency.custom
+              ? '已切换为每${AutoSyncService.formatIntervalMinutes(customIntervalMinutes!)}自动同步'
+              : '已切换为${frequency.label}自动同步';
+      _showSnack(successText);
     } catch (e) {
       if (!mounted) return;
       _showSnack(e.toString().replaceFirst('Bad state: ', ''), error: true);
@@ -269,9 +278,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
     }
   }
 
-  Future<int?> _pickCustomIntervalMinutes({
-    required int initialMinutes,
-  }) async {
+  Future<int?> _pickCustomIntervalMinutes({required int initialMinutes}) async {
     final initialHours = (initialMinutes / 60).round().clamp(1, 720);
     final controller = TextEditingController(text: '$initialHours');
     String? errorText;
@@ -441,18 +448,20 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: SyncCenterSectionColumn(sections: [
-                        credentialCard,
-                        descriptionCard,
-                      ]),
+                      child: SyncCenterSectionColumn(
+                        sections: [credentialCard, descriptionCard],
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: SyncCenterSectionColumn(sections: [
-                        settingsCard,
-                        if (desktopCapabilityCard != null) desktopCapabilityCard,
-                        const SyncCenterDesktopFlowCard(),
-                      ]),
+                      child: SyncCenterSectionColumn(
+                        sections: [
+                          settingsCard,
+                          if (desktopCapabilityCard != null)
+                            desktopCapabilityCard,
+                          const SyncCenterDesktopFlowCard(),
+                        ],
+                      ),
                     ),
                   ],
                 )

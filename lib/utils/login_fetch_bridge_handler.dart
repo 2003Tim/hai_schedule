@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-import '../models/login_fetch_models.dart';
+import 'package:hai_schedule/models/login_fetch_models.dart';
 
 class LoginFetchBridgeHandler {
   static const _autofillStatusPrefix = 'AUTOFILL_STATUS:';
@@ -10,7 +10,24 @@ class LoginFetchBridgeHandler {
   static const _semesterSwitchErrorPrefix = 'SEMESTER_SWITCH_ERR:';
   static const _chunkStartPrefix = 'CHUNK_START:';
   static const _chunkDataPrefix = 'CHUNK_DATA:';
+  static const _chunkEndPrefix = 'CHUNK_END:';
   static const _scheduleErrorPrefix = 'SCHEDULE_ERR:';
+
+  /// 允许的消息前缀集合，用于快速过滤非预期消息
+  static const _knownPrefixes = [
+    _autofillStatusPrefix,
+    _autofillResultPrefix,
+    _semesterPrefix,
+    _semesterSwitchedPrefix,
+    _semesterSwitchErrorPrefix,
+    _chunkStartPrefix,
+    _chunkDataPrefix,
+    _chunkEndPrefix,
+    _scheduleErrorPrefix,
+  ];
+
+  /// 单条消息最大长度（4 MB），防止异常大数据注入
+  static const _maxMessageLength = 4 * 1024 * 1024;
 
   static void handle({
     required String message,
@@ -23,6 +40,11 @@ class LoginFetchBridgeHandler {
     ValueChanged<String>? onAutofillStatus,
     ValueChanged<LoginAutofillResult>? onAutofillResult,
   }) {
+    // 丢弃超长消息，防止异常大数据注入
+    if (message.length > _maxMessageLength) return;
+    // 丢弃不匹配任何已知前缀的消息，过滤页面其他脚本产生的噪声
+    if (!_knownPrefixes.any(message.startsWith)) return;
+
     if (message.startsWith(_autofillStatusPrefix)) {
       onAutofillStatus?.call(
         message.substring(_autofillStatusPrefix.length).trim(),
@@ -40,56 +62,88 @@ class LoginFetchBridgeHandler {
       return;
     }
 
-    if (message.startsWith(_semesterPrefix)) {
-      onSemesterDetected(message.substring(_semesterPrefix.length).trim());
+    final semester = _parseRequestMessage(message, _semesterPrefix);
+    if (semester != null) {
+      if (!_matchesActiveRequest(chunkState, semester.$1)) return;
+      onSemesterDetected(semester.$2.trim());
       return;
     }
 
-    if (message.startsWith(_semesterSwitchedPrefix)) {
-      onSemesterSwitched(
-        message.substring(_semesterSwitchedPrefix.length).trim(),
-      );
+    final switched = _parseRequestMessage(message, _semesterSwitchedPrefix);
+    if (switched != null) {
+      if (!_matchesActiveRequest(chunkState, switched.$1)) return;
+      onSemesterSwitched(switched.$2.trim());
       return;
     }
 
-    if (message.startsWith(_semesterSwitchErrorPrefix)) {
-      onError(
-        '\u5207\u6362\u5b66\u671f\u5931\u8d25: '
-        '${message.substring(_semesterSwitchErrorPrefix.length).trim()}',
-      );
+    final switchError = _parseRequestMessage(
+      message,
+      _semesterSwitchErrorPrefix,
+    );
+    if (switchError != null) {
+      if (!_matchesActiveRequest(chunkState, switchError.$1)) return;
+      onError('切换学期失败: ${switchError.$2.trim()}');
       return;
     }
 
     if (message.startsWith(_chunkStartPrefix)) {
-      final parts = message.substring(_chunkStartPrefix.length).split(':');
-      final totalChunks = parts.isNotEmpty ? int.tryParse(parts.first) ?? 0 : 0;
-      chunkState.begin(totalChunks);
-      onStatus('\u63a5\u6536\u6570\u636e 0/${chunkState.expectedChunks} ...');
+      final payload = message.substring(_chunkStartPrefix.length);
+      final parts = payload.split(':');
+      if (parts.length < 3) return;
+      final requestId = parts[0];
+      if (!_matchesActiveRequest(chunkState, requestId)) return;
+      final totalChunks = int.tryParse(parts[1]) ?? 0;
+      if (totalChunks <= 0) {
+        onError('课表数据分片无效，请重试');
+        return;
+      }
+      chunkState.begin(requestId: requestId, totalChunks: totalChunks);
+      onStatus('接收数据 0/${chunkState.expectedChunks} ...');
       return;
     }
 
     if (message.startsWith(_chunkDataPrefix)) {
-      final firstColon = message.indexOf(':', _chunkDataPrefix.length);
-      if (firstColon < 0) return;
+      final payload = message.substring(_chunkDataPrefix.length);
+      final firstColon = payload.indexOf(':');
+      final secondColon = payload.indexOf(':', firstColon + 1);
+      if (firstColon <= 0 || secondColon <= firstColon) return;
 
-      chunkState.appendChunk(message.substring(firstColon + 1));
+      final requestId = payload.substring(0, firstColon);
+      if (!_matchesActiveRequest(chunkState, requestId)) return;
+
+      final chunkIndex = int.tryParse(
+        payload.substring(firstColon + 1, secondColon),
+      );
+      final chunk = payload.substring(secondColon + 1);
+      if (chunkIndex == null ||
+          !chunkState.appendChunk(index: chunkIndex, chunk: chunk)) {
+        onError('课表数据分片索引异常，请重试');
+        return;
+      }
       if (chunkState.receivedChunks % 3 == 0 ||
           chunkState.receivedChunks == chunkState.expectedChunks) {
         onStatus(
-          '\u63a5\u6536\u6570\u636e '
-          '${chunkState.receivedChunks}/${chunkState.expectedChunks} ...',
+          '接收数据 ${chunkState.receivedChunks}/${chunkState.expectedChunks} ...',
         );
       }
       return;
     }
 
-    if (message == 'CHUNK_END') {
+    if (message.startsWith(_chunkEndPrefix)) {
+      final requestId = message.substring(_chunkEndPrefix.length).trim();
+      if (!_matchesActiveRequest(chunkState, requestId)) return;
+      if (!chunkState.isComplete) {
+        onError('课表数据分片不完整，请重试');
+        return;
+      }
       onPayloadReady(chunkState.takePayload());
       return;
     }
 
-    if (message.startsWith(_scheduleErrorPrefix)) {
-      onError(message.substring(_scheduleErrorPrefix.length));
+    final scheduleError = _parseRequestMessage(message, _scheduleErrorPrefix);
+    if (scheduleError != null) {
+      if (!_matchesActiveRequest(chunkState, scheduleError.$1)) return;
+      onError(scheduleError.$2);
     }
   }
 
@@ -102,5 +156,21 @@ class LoginFetchBridgeHandler {
       submitted: parts[2] == '1',
       verificationRequired: parts[3] == '1',
     );
+  }
+
+  static (String, String)? _parseRequestMessage(String message, String prefix) {
+    if (!message.startsWith(prefix)) return null;
+    final payload = message.substring(prefix.length);
+    final separator = payload.indexOf(':');
+    if (separator <= 0) return null;
+    return (payload.substring(0, separator), payload.substring(separator + 1));
+  }
+
+  static bool _matchesActiveRequest(
+    LoginFetchChunkState chunkState,
+    String requestId,
+  ) {
+    final active = chunkState.activeRequestId;
+    return active != null && active == requestId;
   }
 }

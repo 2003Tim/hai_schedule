@@ -3,20 +3,20 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/auto_sync_service.dart';
-import '../services/schedule_provider.dart';
-import '../utils/semester_code_formatter.dart';
-import '../widgets/windows_desktop_shell_sections.dart';
-import 'backup_restore_screen.dart';
-import 'home_screen.dart';
-import 'import_screen.dart';
-import 'login_router.dart';
-import 'reminder_settings_screen.dart';
-import 'schedule_overrides_screen.dart';
-import 'school_time_settings_screen.dart';
-import 'semester_management_screen.dart';
-import 'sync_center_screen.dart';
-import 'theme_settings_screen.dart';
+import 'package:hai_schedule/services/auto_sync_service.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/utils/semester_code_formatter.dart';
+import 'package:hai_schedule/widgets/windows_desktop_shell_sections.dart';
+import 'package:hai_schedule/screens/backup_restore_screen.dart';
+import 'package:hai_schedule/screens/home_screen.dart';
+import 'package:hai_schedule/screens/import_screen.dart';
+import 'package:hai_schedule/screens/login_router.dart';
+import 'package:hai_schedule/screens/reminder_settings_screen.dart';
+import 'package:hai_schedule/screens/schedule_overrides_screen.dart';
+import 'package:hai_schedule/screens/school_time_settings_screen.dart';
+import 'package:hai_schedule/screens/semester_management_screen.dart';
+import 'package:hai_schedule/screens/sync_center_screen.dart';
+import 'package:hai_schedule/screens/theme_settings_screen.dart';
 
 class WindowsDesktopShellScreen extends StatefulWidget {
   const WindowsDesktopShellScreen({super.key, required this.onEnterMiniMode});

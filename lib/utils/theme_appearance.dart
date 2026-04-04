@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/app_theme_preset.dart';
+import 'package:hai_schedule/models/app_theme_preset.dart';
 
 class ThemeAppearance {
   const ThemeAppearance._();

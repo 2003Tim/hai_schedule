@@ -130,14 +130,15 @@ class AndroidLoginWebviewAdapter implements LoginWebviewAdapter {
     required LoginWebviewMessageHandler onMessage,
     required LoginWebviewUrlHandler onUrlChanged,
   }) async {
-    _controller
-      ..setNavigationDelegate(NavigationDelegate(onPageFinished: onUrlChanged))
-      ..addJavaScriptChannel(
-        'FlutterBridge',
-        onMessageReceived: (message) {
-          onMessage(message.message);
-        },
-      );
+    await _controller.setNavigationDelegate(
+      NavigationDelegate(onPageFinished: onUrlChanged),
+    );
+    await _controller.addJavaScriptChannel(
+      'FlutterBridge',
+      onMessageReceived: (message) {
+        onMessage(message.message);
+      },
+    );
 
     if (clearSessionOnStart) {
       try {

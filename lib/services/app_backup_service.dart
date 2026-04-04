@@ -1,104 +1,65 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'app_storage.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/utils/app_storage_schema.dart';
+import 'package:hai_schedule/utils/theme_background_store.dart';
+import 'package:hai_schedule/services/app_storage.dart';
 
 class AppBackupService {
   AppBackupService._();
 
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
+  static const Set<int> _supportedSchemaVersions = {1, 2};
+  static const String _customBackgroundAssetKey = 'customBackground';
 
-  static const List<String> _backupKeys = [
-    'display_days',
-    'show_non_current_week',
-    'auto_sync_frequency',
-    'auto_sync_custom_interval_minutes',
-    'last_semester_code',
-    'current_semester',
-    'active_semester_code',
-    'schedule_archive_by_semester',
-    'schedule_overrides',
-    'school_time_config',
-    'school_time_generator_settings',
-    'class_reminder_lead_minutes',
-    'class_silence_enabled',
-    'theme_id',
-    'custom_bg_path',
-    'bg_opacity',
-    'bg_blur',
-    'card_opacity',
-    'follow_system_theme',
-    'system_light_theme_id',
-    'system_dark_theme_id',
-    'mini_opacity',
-    'mini_always_on_top',
-  ];
+  static const List<String> _backupKeys = AppStorageSchema.backupKeys;
 
   static const List<String> _restorableKeys = _backupKeys;
 
-  static const List<String> _transientKeys = [
-    'courses',
-    'last_fetch_time',
-    'last_auto_sync_attempt_time',
-    'last_auto_sync_error',
-    'last_auto_sync_message',
-    'last_auto_sync_state',
-    'last_auto_sync_source',
-    'last_auto_sync_diff_summary',
-    'next_background_sync_time',
-    'last_schedule_json',
-    'last_auto_sync_cookie',
-    'last_student_id',
-    'class_reminder_last_build_time',
-    'class_reminder_horizon_end',
-    'class_reminder_scheduled_count',
-    'class_reminder_exact_alarm_enabled',
-    'class_silence_last_build_time',
-    'class_silence_horizon_end',
-    'class_silence_scheduled_count',
-  ];
+  static const List<String> _transientKeys = AppStorageSchema.transientKeys;
 
-  static const List<String> _semesterRelatedKeys = [
-    'schedule_archive_by_semester',
-    'active_semester_code',
-  ];
+  static const List<String> _semesterRelatedKeys =
+      AppStorageSchema.semesterRelatedKeys;
 
-  static const List<String> _overrideRelatedKeys = ['schedule_overrides'];
+  static const List<String> _overrideRelatedKeys =
+      AppStorageSchema.overrideRelatedKeys;
 
-  static const List<String> _automationRelatedKeys = [
-    'class_reminder_lead_minutes',
-    'class_silence_enabled',
-  ];
+  static const List<String> _automationRelatedKeys =
+      AppStorageSchema.automationRelatedKeys;
 
-  static const List<String> _appearanceRelatedKeys = [
-    'theme_id',
-    'custom_bg_path',
-    'bg_opacity',
-    'bg_blur',
-    'card_opacity',
-    'follow_system_theme',
-    'system_light_theme_id',
-    'system_dark_theme_id',
-    'mini_opacity',
-    'mini_always_on_top',
-  ];
+  static const List<String> _appearanceRelatedKeys =
+      AppStorageSchema.appearanceRelatedKeys;
 
   static Future<Map<String, dynamic>> buildBackupPayload() async {
     final prefs = await SharedPreferences.getInstance();
     final data = <String, dynamic>{};
 
     for (final key in _backupKeys) {
+      if (key == AppStorageSchema.customBgPathKey) continue;
       if (!prefs.containsKey(key)) continue;
       data[key] = prefs.get(key);
+    }
+
+    final assets = <String, dynamic>{};
+    final customBackgroundAsset = await _buildCustomBackgroundAsset(
+      prefs.getString(AppStorageSchema.customBgPathKey),
+    );
+    if (customBackgroundAsset != null) {
+      assets[_customBackgroundAssetKey] = customBackgroundAsset;
     }
 
     return <String, dynamic>{
       'schemaVersion': schemaVersion,
       'exportedAt': DateTime.now().toIso8601String(),
       'data': data,
+      if (assets.isNotEmpty) 'assets': assets,
     };
   }
 
@@ -155,10 +116,7 @@ class AppBackupService {
       throw const FormatException('备份格式无效');
     }
 
-    final version = decoded['schemaVersion'];
-    if (version != schemaVersion) {
-      throw FormatException('不支持的备份版本: $version');
-    }
+    _parseSchemaVersion(decoded['schemaVersion']);
 
     final data = decoded['data'];
     if (data is! Map) {
@@ -169,9 +127,25 @@ class AppBackupService {
     final storage = AppStorage.instance;
     final previousValues = _snapshotPrefs(prefs, _restorableKeys);
     final previousCookieSnapshot = await storage.loadCookieSnapshot();
-    final restoredValues = _normalizeRestorableData(data);
+    final previousBackgroundPath =
+        previousValues[AppStorageSchema.customBgPathKey] as String?;
+    final restoredValues = _normalizeRestorableData(data)
+      ..remove(AppStorageSchema.customBgPathKey);
+    final customBackgroundAsset = _decodeCustomBackgroundAsset(
+      decoded['assets'],
+    );
+    String? restoredBackgroundPath;
 
     try {
+      if (customBackgroundAsset != null) {
+        restoredBackgroundPath =
+            await ThemeBackgroundStore.importCustomBackgroundBytes(
+              customBackgroundAsset.bytes,
+              sourceName: customBackgroundAsset.fileName,
+            );
+        restoredValues[AppStorageSchema.customBgPathKey] = restoredBackgroundPath;
+      }
+
       for (final key in _restorableKeys) {
         await prefs.remove(key);
       }
@@ -182,7 +156,16 @@ class AppBackupService {
         await prefs.remove(key);
       }
       await storage.clearCookieSnapshot();
+
+      if (previousBackgroundPath != null &&
+          previousBackgroundPath != restoredBackgroundPath) {
+        await ThemeBackgroundStore.cleanupBackground(previousBackgroundPath);
+      }
     } catch (error) {
+      if (restoredBackgroundPath != null &&
+          restoredBackgroundPath != previousBackgroundPath) {
+        await ThemeBackgroundStore.cleanupBackground(restoredBackgroundPath);
+      }
       try {
         for (final key in _restorableKeys) {
           await prefs.remove(key);
@@ -212,10 +195,7 @@ class AppBackupService {
   }
 
   static BackupSummary parseSummaryFromPayload(Map<String, dynamic> payload) {
-    final version = payload['schemaVersion'];
-    if (version != schemaVersion) {
-      throw FormatException('不支持的备份版本: $version');
-    }
+    _parseSchemaVersion(payload['schemaVersion']);
 
     final data = payload['data'];
     if (data is! Map) {
@@ -223,14 +203,15 @@ class AppBackupService {
     }
 
     final rawData = Map<String, dynamic>.from(data);
-    final archiveRaw = rawData['schedule_archive_by_semester'];
-    final overrideRaw = rawData['schedule_overrides'];
+    final archiveRaw = rawData[AppStorageSchema.scheduleArchiveKey];
+    final overrideRaw = rawData[AppStorageSchema.scheduleOverridesKey];
 
     final semesterCount = _countSemesters(archiveRaw);
     final overrideCount = _countOverrides(overrideRaw);
     final reminderEnabled =
-        (rawData['class_reminder_lead_minutes'] as int? ?? 0) > 0;
-    final silenceEnabled = rawData['class_silence_enabled'] == true;
+        (rawData[AppStorageSchema.reminderLeadTimeKey] as int? ?? 0) > 0;
+    final silenceEnabled =
+        rawData[AppStorageSchema.classSilenceEnabledKey] == true;
 
     return BackupSummary(
       exportedAt: DateTime.tryParse(payload['exportedAt']?.toString() ?? ''),
@@ -241,12 +222,78 @@ class AppBackupService {
       hasSemesterData: _containsAny(rawData, _semesterRelatedKeys),
       hasOverrideData: _containsAny(rawData, _overrideRelatedKeys),
       hasAutomationSettings: _containsAny(rawData, _automationRelatedKeys),
-      hasAppearanceSettings: _containsAny(rawData, _appearanceRelatedKeys),
+      hasAppearanceSettings:
+          _containsAny(rawData, _appearanceRelatedKeys) ||
+          _hasCustomBackgroundAsset(payload['assets']),
     );
   }
 
   static bool _containsAny(Map<String, dynamic> data, List<String> keys) {
     return keys.any(data.containsKey);
+  }
+
+  static bool _hasCustomBackgroundAsset(dynamic rawAssets) {
+    return _decodeCustomBackgroundAsset(rawAssets) != null;
+  }
+
+  static int _parseSchemaVersion(dynamic value) {
+    final version =
+        value is int ? value : int.tryParse(value?.toString() ?? '');
+    if (version == null || !_supportedSchemaVersions.contains(version)) {
+      throw FormatException('不支持的备份版本: $value');
+    }
+    return version;
+  }
+
+  static Future<Map<String, dynamic>?> _buildCustomBackgroundAsset(
+    String? backgroundPath,
+  ) async {
+    if (backgroundPath == null || backgroundPath.trim().isEmpty) {
+      return null;
+    }
+    final file = File(backgroundPath.trim());
+    if (!await file.exists()) {
+      return null;
+    }
+    return <String, dynamic>{
+      'fileName':
+          file.uri.pathSegments.isNotEmpty
+              ? file.uri.pathSegments.last
+              : 'custom_bg.jpg',
+      'bytesBase64': base64Encode(await file.readAsBytes()),
+    };
+  }
+
+  static _DecodedCustomBackgroundAsset? _decodeCustomBackgroundAsset(
+    dynamic rawAssets,
+  ) {
+    if (rawAssets == null) return null;
+    if (rawAssets is! Map) {
+      throw const FormatException('备份资源格式无效');
+    }
+    final rawAsset = rawAssets[_customBackgroundAssetKey];
+    if (rawAsset == null) return null;
+    if (rawAsset is! Map) {
+      throw const FormatException('背景资源格式无效');
+    }
+
+    final fileName = rawAsset['fileName']?.toString();
+    final bytesBase64 = rawAsset['bytesBase64'];
+    if (bytesBase64 is! String || bytesBase64.isEmpty) {
+      throw const FormatException('背景资源内容缺失');
+    }
+
+    try {
+      final bytes = base64Decode(bytesBase64);
+      if (bytes.isEmpty) {
+        throw const FormatException('背景资源内容为空');
+      }
+      return _DecodedCustomBackgroundAsset(fileName: fileName, bytes: bytes);
+    } on FormatException {
+      rethrow;
+    } catch (_) {
+      throw const FormatException('背景资源内容无效');
+    }
   }
 
   static int _countSemesters(dynamic rawValue) {
@@ -326,12 +373,16 @@ class AppBackupService {
       if (key == null || !_restorableKeys.contains(key)) continue;
 
       final value = entry.value;
-      if (value == null ||
-          value is bool ||
-          value is int ||
-          value is double ||
-          value is String) {
+      if (value == null) {
+        restored[key] = null;
+        continue;
+      }
+      if (value is bool || value is int || value is double) {
         restored[key] = value;
+        continue;
+      }
+      if (value is String) {
+        restored[key] = _validateStructuredStringValue(key, value);
         continue;
       }
 
@@ -347,6 +398,126 @@ class AppBackupService {
     }
     return restored;
   }
+
+  static String _validateStructuredStringValue(String key, String value) {
+    switch (key) {
+      case AppStorageSchema.scheduleArchiveKey:
+        return _canonicalizeScheduleArchive(value);
+      case AppStorageSchema.scheduleOverridesKey:
+        return _canonicalizeScheduleOverrides(value);
+      case AppStorageSchema.schoolTimeConfigKey:
+        return _canonicalizeSchoolTimeConfig(value);
+      case AppStorageSchema.schoolTimeGeneratorSettingsKey:
+        return _canonicalizeSchoolTimeGeneratorSettings(value);
+      default:
+        return value;
+    }
+  }
+
+  static String _canonicalizeScheduleArchive(String raw) {
+    if (raw.trim().isEmpty) return json.encode(<String, dynamic>{});
+    final decoded = json.decode(raw);
+    if (decoded is! Map) {
+      throw const FormatException('学期归档数据格式无效');
+    }
+
+    final normalized = <String, dynamic>{};
+    for (final entry in decoded.entries) {
+      final semesterCode = entry.key.toString();
+      if (semesterCode.isEmpty) {
+        throw const FormatException('学期归档缺少有效学期代码');
+      }
+      if (entry.value is! Map) {
+        throw FormatException('学期 $semesterCode 的归档格式无效');
+      }
+      final rawEntry = Map<String, dynamic>.from(entry.value as Map);
+      final normalizedEntry = <String, dynamic>{};
+
+      final rawScheduleJson = rawEntry['rawScheduleJson'];
+      if (rawScheduleJson != null && rawScheduleJson is! String) {
+        throw FormatException('学期 $semesterCode 的原始课表格式无效');
+      }
+      if (rawScheduleJson is String) {
+        normalizedEntry['rawScheduleJson'] = rawScheduleJson;
+      }
+
+      final coursesRaw = rawEntry['courses'];
+      if (coursesRaw != null) {
+        if (coursesRaw is! List) {
+          throw FormatException('学期 $semesterCode 的课程列表格式无效');
+        }
+        final normalizedCourses = <Map<String, dynamic>>[];
+        for (final item in coursesRaw) {
+          if (item is! Map) {
+            throw FormatException('学期 $semesterCode 的课程条目格式无效');
+          }
+          final course = Course.fromJson(Map<String, dynamic>.from(item));
+          normalizedCourses.add(course.toJson());
+        }
+        normalizedEntry['courses'] = normalizedCourses;
+      }
+
+      normalized[semesterCode] = normalizedEntry;
+    }
+    return json.encode(normalized);
+  }
+
+  static String _canonicalizeScheduleOverrides(String raw) {
+    if (raw.trim().isEmpty) return json.encode(<Map<String, dynamic>>[]);
+    final decoded = json.decode(raw);
+    if (decoded is! List) {
+      throw const FormatException('临时安排数据格式无效');
+    }
+
+    final normalized = <Map<String, dynamic>>[];
+    for (final item in decoded) {
+      if (item is! Map) {
+        throw const FormatException('临时安排条目格式无效');
+      }
+      final override = ScheduleOverride.fromJson(
+        Map<String, dynamic>.from(item),
+      );
+      normalized.add(override.toJson());
+    }
+    return json.encode(normalized);
+  }
+
+  static String _canonicalizeSchoolTimeConfig(String raw) {
+    if (raw.trim().isEmpty) {
+      throw const FormatException('作息时间配置不能为空');
+    }
+    final decoded = json.decode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('作息时间配置格式无效');
+    }
+    final config = SchoolTimeConfig.fromJson(decoded);
+    if (config.classTimes.isEmpty) {
+      throw const FormatException('作息时间配置缺少课程时间');
+    }
+    return json.encode(config.toJson());
+  }
+
+  static String _canonicalizeSchoolTimeGeneratorSettings(String raw) {
+    if (raw.trim().isEmpty) {
+      return json.encode(SchoolTimeGeneratorSettings.defaults().toJson());
+    }
+    final decoded = json.decode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('作息生成器配置格式无效');
+    }
+    final settings = SchoolTimeGeneratorSettings.fromJson(decoded);
+    return json.encode(settings.toJson());
+  }
+}
+
+class _DecodedCustomBackgroundAsset {
+  final String? fileName;
+  final Uint8List bytes;
+
+  const _DecodedCustomBackgroundAsset({
+    required this.fileName,
+    required this.bytes,
+  });
 }
 
 class BackupSummary {

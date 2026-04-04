@@ -28,11 +28,13 @@ void main() {
 
     test('builds detect semester script with platform bridge call', () {
       final script = service.buildDetectSemesterScript(
-        'FlutterBridge.postMessage',
+        bridgeCall: 'FlutterBridge.postMessage',
+        requestId: 'req-1',
       );
 
       expect(script, contains('FlutterBridge.postMessage'));
-      expect(script, contains("SEMESTER:"));
+      expect(script, contains('SEMESTER:'));
+      expect(script, contains('req-1'));
       expect(script, contains("querySelectorAll('select')"));
     });
 
@@ -40,40 +42,45 @@ void main() {
       final script = service.buildFetchScheduleScript(
         bridgeCall: 'window.chrome.webview.postMessage',
         semester: '20252',
+        requestId: 'req-2',
       );
 
       expect(script, contains('window.chrome.webview.postMessage'));
+      expect(script, contains('req-2'));
       expect(script, contains("querySelectorAll('select')"));
       expect(script, contains("select.value = normalized"));
       expect(
         script,
         contains(
-          "https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/modules/xskcb/xsjxrwcx.do?_=",
+          'https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/modules/xskcb/xsjxrwcx.do?_=',
         ),
       );
-      expect(script, contains("XNXQDM="));
-      expect(script, contains("&XH="));
-      expect(script, contains("&pageNumber="));
-      expect(script, contains("&pageSize="));
+      expect(script, contains('XNXQDM='));
+      expect(script, contains('&XH='));
+      expect(script, contains('&pageNumber='));
+      expect(script, contains('&pageSize='));
       expect(script, contains('fetchPage(1, null)'));
       expect(script, contains('CHUNK_START:'));
-      expect(script, contains('SCHEDULE_ERR:HTTP'));
+      expect(script, contains('CHUNK_END:'));
+      expect(script, contains('SCHEDULE_ERR:'));
     });
 
     test('builds switch semester script with bridge call', () {
       final script = service.buildSwitchSemesterScript(
         bridgeCall: 'FlutterBridge.postMessage',
         semester: '20251',
+        requestId: 'req-3',
       );
 
       expect(script, contains('FlutterBridge.postMessage'));
+      expect(script, contains('req-3'));
       expect(script, contains('SEMESTER_SWITCHED:'));
       expect(script, contains('SEMESTER_SWITCH_ERR:'));
       expect(script, contains("querySelectorAll('select')"));
     });
 
     test('assembles chunk messages into final payload', () {
-      final chunkState = LoginFetchChunkState();
+      final chunkState = LoginFetchChunkState()..arm('req-4');
       final statuses = <String>[];
       final detectedSemesters = <String>[];
       final payloads = <String>[];
@@ -91,11 +98,11 @@ void main() {
         );
       }
 
-      handle('SEMESTER:20252');
-      handle('CHUNK_START:2:8');
-      handle('CHUNK_DATA:0:abcd');
-      handle('CHUNK_DATA:1:1234');
-      handle('CHUNK_END');
+      handle('SEMESTER:req-4:20252');
+      handle('CHUNK_START:req-4:2:8');
+      handle('CHUNK_DATA:req-4:0:abcd');
+      handle('CHUNK_DATA:req-4:1:1234');
+      handle('CHUNK_END:req-4');
 
       expect(detectedSemesters, ['20252']);
       expect(chunkState.expectedChunks, 2);
@@ -106,11 +113,11 @@ void main() {
     });
 
     test('forwards schedule error messages', () {
-      final chunkState = LoginFetchChunkState();
+      final chunkState = LoginFetchChunkState()..arm('req-5');
       final errors = <String>[];
 
       service.handleBridgeMessage(
-        message: 'SCHEDULE_ERR:HTTP 500',
+        message: 'SCHEDULE_ERR:req-5:HTTP 500',
         chunkState: chunkState,
         onStatus: (_) {},
         onSemesterDetected: (_) {},

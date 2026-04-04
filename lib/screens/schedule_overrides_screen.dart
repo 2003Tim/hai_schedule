@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/schedule_override.dart';
-import '../services/schedule_provider.dart';
-import '../utils/semester_code_formatter.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/utils/semester_code_formatter.dart';
 
 class ScheduleOverridesScreen extends StatelessWidget {
   const ScheduleOverridesScreen({super.key});

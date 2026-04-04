@@ -1,13 +1,16 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/course.dart';
-import '../models/schedule_override.dart';
-import '../models/school_time.dart';
-import '../models/storage_records.dart';
-import '../utils/app_storage_codec.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/models/storage_records.dart';
+import 'package:hai_schedule/utils/app_storage_codec.dart';
+import 'package:hai_schedule/utils/app_storage_schema.dart';
 
 export '../models/storage_records.dart';
 
@@ -17,41 +20,49 @@ class AppStorage {
   static final AppStorage instance = AppStorage._();
 
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+  static const MethodChannel _nativeSecureChannel = MethodChannel(
+    'hai_schedule/native_credentials',
+  );
 
-  static const String _coursesKey = 'courses';
-  static const String _displayDaysKey = 'display_days';
-  static const String _showNonCurrentWeekKey = 'show_non_current_week';
+  static const String _coursesKey = AppStorageSchema.coursesKey;
+  static const String _displayDaysKey = AppStorageSchema.displayDaysKey;
+  static const String _showNonCurrentWeekKey =
+      AppStorageSchema.showNonCurrentWeekKey;
 
-  static const String _lastFetchTimeKey = 'last_fetch_time';
-  static const String _lastAttemptTimeKey = 'last_auto_sync_attempt_time';
-  static const String _lastErrorKey = 'last_auto_sync_error';
-  static const String _lastMessageKey = 'last_auto_sync_message';
-  static const String _lastStateKey = 'last_auto_sync_state';
-  static const String _lastSourceKey = 'last_auto_sync_source';
-  static const String _lastDiffSummaryKey = 'last_auto_sync_diff_summary';
-  static const String _nextSyncTimeKey = 'next_background_sync_time';
-  static const String _frequencyKey = 'auto_sync_frequency';
+  static const String _lastFetchTimeKey = AppStorageSchema.lastFetchTimeKey;
+  static const String _lastAttemptTimeKey =
+      AppStorageSchema.lastAttemptTimeKey;
+  static const String _lastErrorKey = AppStorageSchema.lastErrorKey;
+  static const String _lastMessageKey = AppStorageSchema.lastMessageKey;
+  static const String _lastStateKey = AppStorageSchema.lastStateKey;
+  static const String _lastSourceKey = AppStorageSchema.lastSourceKey;
+  static const String _lastDiffSummaryKey = AppStorageSchema.lastDiffSummaryKey;
+  static const String _nextSyncTimeKey = AppStorageSchema.nextSyncTimeKey;
+  static const String _frequencyKey = AppStorageSchema.frequencyKey;
   static const String _customIntervalMinutesKey =
-      'auto_sync_custom_interval_minutes';
-  static const String _semesterKey = 'last_semester_code';
-  static const String _legacySemesterKey = 'current_semester';
-  static const String _activeSemesterKey = 'active_semester_code';
-  static const String _scheduleArchiveKey = 'schedule_archive_by_semester';
-  static const String _scheduleOverridesKey = 'schedule_overrides';
-  static const String _schoolTimeConfigKey = 'school_time_config';
+      AppStorageSchema.customIntervalMinutesKey;
+  static const String _semesterKey = AppStorageSchema.semesterKey;
+  static const String _legacySemesterKey = AppStorageSchema.legacySemesterKey;
+  static const String _activeSemesterKey = AppStorageSchema.activeSemesterKey;
+  static const String _scheduleArchiveKey = AppStorageSchema.scheduleArchiveKey;
+  static const String _scheduleOverridesKey =
+      AppStorageSchema.scheduleOverridesKey;
+  static const String _schoolTimeConfigKey =
+      AppStorageSchema.schoolTimeConfigKey;
   static const String _schoolTimeGeneratorSettingsKey =
-      'school_time_generator_settings';
-  static const String _lastScheduleJsonKey = 'last_schedule_json';
-  static const String _cookieSnapshotKey = 'last_auto_sync_cookie';
-  static const String _studentIdKey = 'last_student_id';
-  static const String _reminderLeadTimeKey = 'class_reminder_lead_minutes';
+      AppStorageSchema.schoolTimeGeneratorSettingsKey;
+  static const String _lastScheduleJsonKey = AppStorageSchema.lastScheduleJsonKey;
+  static const String _cookieSnapshotKey = AppStorageSchema.cookieSnapshotKey;
+  static const String _studentIdKey = AppStorageSchema.studentIdKey;
+  static const String _reminderLeadTimeKey = AppStorageSchema.reminderLeadTimeKey;
   static const String _reminderLastBuildTimeKey =
-      'class_reminder_last_build_time';
-  static const String _reminderHorizonEndKey = 'class_reminder_horizon_end';
+      AppStorageSchema.reminderLastBuildTimeKey;
+  static const String _reminderHorizonEndKey =
+      AppStorageSchema.reminderHorizonEndKey;
   static const String _reminderScheduledCountKey =
-      'class_reminder_scheduled_count';
+      AppStorageSchema.reminderScheduledCountKey;
   static const String _reminderExactAlarmEnabledKey =
-      'class_reminder_exact_alarm_enabled';
+      AppStorageSchema.reminderExactAlarmEnabledKey;
 
   Future<SharedPreferences>? _prefsFuture;
 
@@ -435,10 +446,7 @@ class AppStorage {
       await prefs.remove(_nextSyncTimeKey);
     }
     if (cookieSnapshot != null) {
-      await _secureStorage.write(
-        key: _cookieSnapshotKey,
-        value: cookieSnapshot,
-      );
+      await _persistCookieSnapshot(cookieSnapshot);
       await prefs.remove(_cookieSnapshotKey);
     }
   }
@@ -449,21 +457,32 @@ class AppStorage {
   }
 
   Future<void> saveCookieSnapshot(String cookie) async {
-    await _secureStorage.write(key: _cookieSnapshotKey, value: cookie);
-    // 清理旧版本保存在 SharedPreferences 里的明文副本。
+    await _persistCookieSnapshot(cookie);
     final prefs = await _prefs;
     await prefs.remove(_cookieSnapshotKey);
   }
 
   Future<String?> loadCookieSnapshot() async {
-    final secure = await _secureStorage.read(key: _cookieSnapshotKey);
-    if (secure != null && secure.isNotEmpty) return secure;
+    final native = await _loadCookieSnapshotFromNative();
+    if (native != null && native.isNotEmpty) {
+      await _secureStorage.write(key: _cookieSnapshotKey, value: native);
+      final prefs = await _prefs;
+      await prefs.remove(_cookieSnapshotKey);
+      return native;
+    }
 
-    // 从旧版 SharedPreferences 明文存储迁移。
+    final secure = await _secureStorage.read(key: _cookieSnapshotKey);
+    if (secure != null && secure.isNotEmpty) {
+      await _saveCookieSnapshotToNative(secure);
+      final prefs = await _prefs;
+      await prefs.remove(_cookieSnapshotKey);
+      return secure;
+    }
+
     final prefs = await _prefs;
     final legacy = prefs.getString(_cookieSnapshotKey);
     if (legacy != null && legacy.isNotEmpty) {
-      await _secureStorage.write(key: _cookieSnapshotKey, value: legacy);
+      await _persistCookieSnapshot(legacy);
       await prefs.remove(_cookieSnapshotKey);
       return legacy;
     }
@@ -471,19 +490,27 @@ class AppStorage {
   }
 
   Future<void> clearCookieSnapshot() async {
+    await _clearCookieSnapshotFromNative();
     await _secureStorage.delete(key: _cookieSnapshotKey);
     final prefs = await _prefs;
     await prefs.remove(_cookieSnapshotKey);
   }
 
   Future<void> saveStudentId(String studentId) async {
-    final prefs = await _prefs;
-    await prefs.setString(_studentIdKey, studentId);
+    await _secureStorage.write(key: _studentIdKey, value: studentId);
   }
 
   Future<String?> loadStudentId() async {
+    final secure = await _secureStorage.read(key: _studentIdKey);
+    if (secure != null) return secure;
+    // 迁移旧版明文存储
     final prefs = await _prefs;
-    return prefs.getString(_studentIdKey);
+    final plain = prefs.getString(_studentIdKey);
+    if (plain != null) {
+      await _secureStorage.write(key: _studentIdKey, value: plain);
+      await prefs.remove(_studentIdKey);
+    }
+    return plain;
   }
 
   Future<StoredReminderRecord> loadReminderRecord() async {
@@ -541,7 +568,7 @@ class AppStorage {
 
   Future<SharedPreferences> _reloadedPrefs() async {
     final prefs = await _prefs;
-    await prefs.reload();
+    if (Platform.isAndroid) await prefs.reload();
     return prefs;
   }
 
@@ -592,5 +619,50 @@ class AppStorage {
     return AppStorageCodec.decodeScheduleArchiveMap(
       prefs.getString(_scheduleArchiveKey),
     );
+  }
+
+  Future<void> _persistCookieSnapshot(String cookie) async {
+    await _saveCookieSnapshotToNative(cookie);
+    await _secureStorage.write(key: _cookieSnapshotKey, value: cookie);
+  }
+
+  Future<bool> _saveCookieSnapshotToNative(String cookie) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      await _nativeSecureChannel.invokeMethod<void>('saveCookieSnapshot', {
+        'cookie': cookie,
+      });
+      return true;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  Future<String?> _loadCookieSnapshotFromNative() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      final value = await _nativeSecureChannel.invokeMethod<String>(
+        'loadCookieSnapshot',
+      );
+      if (value == null || value.isEmpty) return null;
+      return value;
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  Future<void> _clearCookieSnapshotFromNative() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _nativeSecureChannel.invokeMethod<void>('clearCookieSnapshot');
+    } on MissingPluginException {
+      // Ignore in environments without the Android bridge.
+    } on PlatformException {
+      // Ignore here and still clear the Flutter-side mirror.
+    }
   }
 }

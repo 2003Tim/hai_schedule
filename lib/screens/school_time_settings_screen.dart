@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/school_time.dart';
-import '../services/app_repositories.dart';
-import '../services/schedule_provider.dart';
-import '../widgets/school_time_sections.dart';
+import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/services/app_repositories.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/widgets/school_time_sections.dart';
 
 class SchoolTimeSettingsScreen extends StatefulWidget {
   const SchoolTimeSettingsScreen({super.key});

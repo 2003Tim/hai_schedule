@@ -1,10 +1,10 @@
 import 'dart:convert';
 
-import '../models/course.dart';
-import '../models/schedule_override.dart';
-import '../models/school_time.dart';
-import '../models/storage_records.dart';
-import 'app_logger.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/models/storage_records.dart';
+import 'package:hai_schedule/utils/app_logger.dart';
 
 class AppStorageCodec {
   const AppStorageCodec._();
@@ -19,10 +19,17 @@ class AppStorageCodec {
       return const <Course>[];
     }
 
-    return jsonList.map((raw) {
-      final data = json.decode(raw) as Map<String, dynamic>;
-      return Course.fromJson(data);
-    }).toList();
+    final courses = <Course>[];
+    for (final raw in jsonList) {
+      try {
+        final decoded = json.decode(raw);
+        if (decoded is! Map) continue;
+        courses.add(Course.fromJson(Map<String, dynamic>.from(decoded)));
+      } catch (error) {
+        AppLogger.warn('AppStorage', '忽略损坏的课程镜像记录', error);
+      }
+    }
+    return courses;
   }
 
   static Map<String, dynamic> decodeScheduleArchiveMap(String? raw) {
@@ -30,11 +37,16 @@ class AppStorageCodec {
       return <String, dynamic>{};
     }
 
-    final decoded = json.decode(raw);
-    if (decoded is! Map<String, dynamic>) {
+    try {
+      final decoded = json.decode(raw);
+      if (decoded is! Map) {
+        return <String, dynamic>{};
+      }
+      return Map<String, dynamic>.from(decoded);
+    } catch (error) {
+      AppLogger.warn('AppStorage', '课表归档 JSON 解析失败，已回退为空归档', error);
       return <String, dynamic>{};
     }
-    return Map<String, dynamic>.from(decoded);
   }
 
   static String encodeScheduleArchiveMap(Map<String, dynamic> archive) {
@@ -61,10 +73,16 @@ class AppStorageCodec {
     if (coursesJson is! List) {
       return const <Course>[];
     }
-    return coursesJson
-        .whereType<Map>()
-        .map((item) => Course.fromJson(Map<String, dynamic>.from(item)))
-        .toList();
+    final courses = <Course>[];
+    for (final item in coursesJson) {
+      if (item is! Map) continue;
+      try {
+        courses.add(Course.fromJson(Map<String, dynamic>.from(item)));
+      } catch (error) {
+        AppLogger.warn('AppStorage', '忽略损坏的归档课程记录', error);
+      }
+    }
+    return courses;
   }
 
   static List<String>? encodeMirroredCourses(Map<String, dynamic>? entry) {
@@ -84,17 +102,28 @@ class AppStorageCodec {
       return const <ScheduleOverride>[];
     }
 
-    final decoded = json.decode(raw);
-    if (decoded is! List) {
+    try {
+      final decoded = json.decode(raw);
+      if (decoded is! List) {
+        return const <ScheduleOverride>[];
+      }
+
+      final overrides = <ScheduleOverride>[];
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        try {
+          overrides.add(
+            ScheduleOverride.fromJson(Map<String, dynamic>.from(item)),
+          );
+        } catch (error) {
+          AppLogger.warn('AppStorage', '忽略损坏的临时调课记录', error);
+        }
+      }
+      return overrides;
+    } catch (error) {
+      AppLogger.warn('AppStorage', '临时调课 JSON 解析失败，已回退为空列表', error);
       return const <ScheduleOverride>[];
     }
-
-    return decoded
-        .whereType<Map>()
-        .map(
-          (item) => ScheduleOverride.fromJson(Map<String, dynamic>.from(item)),
-        )
-        .toList();
   }
 
   static String encodeScheduleOverrides(Iterable<ScheduleOverride> overrides) {

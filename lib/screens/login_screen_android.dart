@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../widgets/login_webview_adapters.dart';
-import 'login_flow_state_mixin.dart';
+import 'package:hai_schedule/widgets/login_webview_adapters.dart';
+import 'package:hai_schedule/screens/login_flow_state_mixin.dart';
 
 class LoginScreenAndroid extends StatefulWidget {
   const LoginScreenAndroid({

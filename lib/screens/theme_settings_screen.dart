@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
-import '../services/theme_provider.dart';
-import '../widgets/theme_settings_sections.dart';
+import 'package:hai_schedule/services/theme_provider.dart';
+import 'package:hai_schedule/widgets/theme_settings_sections.dart';
 
 class ThemeSettingsScreen extends StatelessWidget {
   const ThemeSettingsScreen({super.key});

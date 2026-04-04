@@ -5,16 +5,18 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import '../models/auto_sync_models.dart';
-import '../models/course.dart';
-import '../models/schedule_parser.dart';
-import '../utils/auto_sync_course_diff.dart';
-import '../utils/auto_sync_schedule_policy.dart';
-import '../utils/auto_sync_text.dart';
-import 'api_service.dart';
-import 'app_repositories.dart';
-import 'auth_credentials_service.dart';
-import 'schedule_provider.dart';
+import 'package:hai_schedule/models/auto_sync_models.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_parser.dart';
+import 'package:hai_schedule/utils/auto_sync_course_diff.dart';
+import 'package:hai_schedule/utils/auto_sync_schedule_policy.dart';
+import 'package:hai_schedule/utils/auto_sync_text.dart';
+import 'package:hai_schedule/services/api_service.dart';
+import 'package:hai_schedule/services/app_storage.dart';
+import 'package:hai_schedule/services/app_repositories.dart';
+import 'package:hai_schedule/services/auth_credentials_service.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/services/schedule_sync_result_service.dart';
 
 export '../models/auto_sync_models.dart';
 
@@ -36,6 +38,8 @@ class AutoSyncService {
 
   static final ScheduleRepository _scheduleRepository = ScheduleRepository();
   static final SyncRepository _syncRepository = SyncRepository();
+  static final ScheduleSyncResultService _syncResultService =
+      ScheduleSyncResultService();
   static bool _isRunning = false;
 
   static bool get _supportsTimedAutoSync =>
@@ -102,6 +106,19 @@ class AutoSyncService {
       afterSuccessfulSync: false,
       preserveExistingCustomSchedule: true,
     );
+  }
+
+  static Future<void> handleCredentialCleared() async {
+    await AppStorage.instance.clearCookieSnapshot();
+    await _syncRepository.saveStatus(
+      state: AutoSyncState.idle.value,
+      source: 'credential_clear',
+      message: '已清除保存的账号信息，后台自动同步已停用',
+      clearError: true,
+      clearDiffSummary: true,
+      clearNextSyncTime: true,
+    );
+    await ensureBackgroundSchedule();
   }
 
   static Future<void> recordExternalSyncSuccess({
@@ -289,7 +306,12 @@ class AutoSyncService {
       }
 
       final api = ApiService(cookie: cookie);
-      final rawData = await api.fetchGraduateScheduleRaw(semester: semester);
+      final rawData = await api
+          .fetchGraduateScheduleRaw(semester: semester)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw TimeoutException('课表同步超时，请稍后重试'),
+          );
       final courses = ScheduleParser.parseApiResponse(rawData);
       if (courses.isEmpty) {
         await _markFailed('接口返回成功，但未解析到课程数据', source: source);
@@ -360,22 +382,12 @@ class AutoSyncService {
     required ScheduleProvider provider,
     required String source,
   }) async {
-    final now = DateTime.now();
-    final diffSummary = buildCourseDiffSummary(provider.courses, courses);
-    final successMessage = _buildSuccessMessage(courses.length, diffSummary);
-    await _syncRepository.saveStatus(
-      lastFetchTime: now,
-      lastAttemptTime: now,
-      state: AutoSyncState.success.value,
-      source: source,
-      message: successMessage,
-      diffSummary: diffSummary,
-      clearError: true,
-    );
-    await provider.setCourses(
-      courses,
+    await _syncResultService.applySuccessfulSync(
+      provider: provider,
+      courses: courses,
       semesterCode: semester,
       rawScheduleJson: jsonEncode(rawData),
+      source: source,
     );
 
     final settings = await loadSettings();

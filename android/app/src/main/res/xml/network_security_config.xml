@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 禁止向任何域发送明文 HTTP 流量 -->
+    <base-config cleartextTrafficPermitted="false" />
+
+    <!-- 明确声明校园门户的合法域名 -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">hainanu.edu.cn</domain>
+    </domain-config>
+</network-security-config>

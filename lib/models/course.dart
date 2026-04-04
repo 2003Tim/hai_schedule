@@ -1,4 +1,3 @@
-
 /// 课程数据模型
 class Course {
   final String id;
@@ -32,43 +31,45 @@ class Course {
   /// 获取当前周某天的课程时段
   List<ScheduleSlot> getTodaySlots(int currentWeek, int weekday) {
     return slots.where((slot) {
-      return slot.weekday == weekday && slot.isActiveInWeek(currentWeek);
-    }).toList()
+        return slot.weekday == weekday && slot.isActiveInWeek(currentWeek);
+      }).toList()
       ..sort((a, b) => a.startSection.compareTo(b.startSection));
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'code': code,
-        'name': name,
-        'className': className,
-        'teacher': teacher,
-        'college': college,
-        'credits': credits,
-        'totalHours': totalHours,
-        'semester': semester,
-        'campus': campus,
-        'teachingType': teachingType,
-        'slots': slots.map((s) => s.toJson()).toList(),
-      };
+    'id': id,
+    'code': code,
+    'name': name,
+    'className': className,
+    'teacher': teacher,
+    'college': college,
+    'credits': credits,
+    'totalHours': totalHours,
+    'semester': semester,
+    'campus': campus,
+    'teachingType': teachingType,
+    'slots': slots.map((s) => s.toJson()).toList(),
+  };
 
   factory Course.fromJson(Map<String, dynamic> json) => Course(
-        id: json['id'] ?? '',
-        code: json['code'] ?? '',
-        name: json['name'] ?? '',
-        className: json['className'] ?? '',
-        teacher: json['teacher'] ?? '',
-        college: json['college'] ?? '',
-        credits: (json['credits'] as num?)?.toDouble() ?? 0,
-        totalHours: (json['totalHours'] as num?)?.toInt() ?? 0,
-        semester: json['semester'] ?? '',
-        campus: json['campus'] ?? '',
-        teachingType: json['teachingType'] ?? '',
-        slots: (json['slots'] as List?)
-                ?.map((s) => ScheduleSlot.fromJson(s as Map<String, dynamic>))
-                .toList() ??
-            [],
-      );
+    id: _stringValue(json['id']),
+    code: _stringValue(json['code']),
+    name: _stringValue(json['name']),
+    className: _stringValue(json['className']),
+    teacher: _stringValue(json['teacher']),
+    college: _stringValue(json['college']),
+    credits: _doubleValue(json['credits']),
+    totalHours: _intValue(json['totalHours']),
+    semester: _stringValue(json['semester']),
+    campus: _stringValue(json['campus']),
+    teachingType: _stringValue(json['teachingType']),
+    slots:
+        (json['slots'] as List?)
+            ?.whereType<Map>()
+            .map((s) => ScheduleSlot.fromJson(Map<String, dynamic>.from(s)))
+            .toList() ??
+        [],
+  );
 
   @override
   String toString() => 'Course($name, $teacher, ${slots.length} slots)';
@@ -114,29 +115,31 @@ class ScheduleSlot {
   }
 
   Map<String, dynamic> toJson() => {
-        'courseId': courseId,
-        'courseName': courseName,
-        'teacher': teacher,
-        'weekday': weekday,
-        'startSection': startSection,
-        'endSection': endSection,
-        'location': location,
-        'weekRanges': weekRanges.map((w) => w.toJson()).toList(),
-      };
+    'courseId': courseId,
+    'courseName': courseName,
+    'teacher': teacher,
+    'weekday': weekday,
+    'startSection': startSection,
+    'endSection': endSection,
+    'location': location,
+    'weekRanges': weekRanges.map((w) => w.toJson()).toList(),
+  };
 
   factory ScheduleSlot.fromJson(Map<String, dynamic> json) => ScheduleSlot(
-        courseId: json['courseId'] ?? '',
-        courseName: json['courseName'] ?? '',
-        teacher: json['teacher'] ?? '',
-        weekday: json['weekday'] ?? 1,
-        startSection: json['startSection'] ?? 1,
-        endSection: json['endSection'] ?? 1,
-        location: json['location'] ?? '',
-        weekRanges: (json['weekRanges'] as List?)
-                ?.map((w) => WeekRange.fromJson(w as Map<String, dynamic>))
-                .toList() ??
-            [],
-      );
+    courseId: _stringValue(json['courseId']),
+    courseName: _stringValue(json['courseName']),
+    teacher: _stringValue(json['teacher']),
+    weekday: _intValue(json['weekday'], fallback: 1),
+    startSection: _intValue(json['startSection'], fallback: 1),
+    endSection: _intValue(json['endSection'], fallback: 1),
+    location: _stringValue(json['location']),
+    weekRanges:
+        (json['weekRanges'] as List?)
+            ?.whereType<Map>()
+            .map((w) => WeekRange.fromJson(Map<String, dynamic>.from(w)))
+            .toList() ??
+        [],
+  );
 
   @override
   String toString() =>
@@ -149,11 +152,7 @@ class WeekRange {
   final int end;
   final WeekType type;
 
-  WeekRange({
-    required this.start,
-    required this.end,
-    this.type = WeekType.all,
-  });
+  WeekRange({required this.start, required this.end, this.type = WeekType.all});
 
   bool containsWeek(int week) {
     if (week < start || week > end) return false;
@@ -176,22 +175,23 @@ class WeekRange {
   }
 
   Map<String, dynamic> toJson() => {
-        'start': start,
-        'end': end,
-        'type': type.name,
-      };
+    'start': start,
+    'end': end,
+    'type': type.name,
+  };
 
   factory WeekRange.fromJson(Map<String, dynamic> json) => WeekRange(
-        start: json['start'] ?? 1,
-        end: json['end'] ?? 1,
-        type: WeekType.values.byName(json['type'] ?? 'all'),
-      );
+    start: _intValue(json['start'], fallback: 1),
+    end: _intValue(json['end'], fallback: 1),
+    type: _weekTypeValue(json['type']),
+  );
 
   @override
   String toString() {
-    final suffix = type == WeekType.odd
-        ? '单'
-        : type == WeekType.even
+    final suffix =
+        type == WeekType.odd
+            ? '单'
+            : type == WeekType.even
             ? '双'
             : '';
     return '$start-$end$suffix周';
@@ -199,3 +199,23 @@ class WeekRange {
 }
 
 enum WeekType { all, odd, even }
+
+String _stringValue(Object? value) => value?.toString() ?? '';
+
+int _intValue(Object? value, {int fallback = 0}) {
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? fallback;
+}
+
+double _doubleValue(Object? value, {double fallback = 0}) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? fallback;
+}
+
+WeekType _weekTypeValue(Object? value) {
+  final raw = value?.toString() ?? '';
+  return WeekType.values.firstWhere(
+    (item) => item.name == raw,
+    orElse: () => WeekType.all,
+  );
+}

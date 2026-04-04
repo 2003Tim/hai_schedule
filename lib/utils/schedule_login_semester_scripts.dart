@@ -1,14 +1,21 @@
+import 'dart:convert';
+
 class ScheduleLoginSemesterScripts {
   static const apiUrl =
       'https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/modules/xskcb/xsjxrwcx.do';
 
-  static String buildDetectSemesterScript(String bridgeCall) {
+  static String buildDetectSemesterScript({
+    required String bridgeCall,
+    required String requestId,
+  }) {
+    final requestIdLiteral = jsonEncode(requestId);
     return '''
       (function() {
         var semester = '';
+        var requestId = $requestIdLiteral;
 
         function postSemester(value) {
-          $bridgeCall('SEMESTER:' + (value || ''));
+          $bridgeCall('SEMESTER:' + requestId + ':' + (value || ''));
         }
 
         var selects = document.querySelectorAll('select');
@@ -55,11 +62,20 @@ class ScheduleLoginSemesterScripts {
   static String buildFetchScheduleScript({
     required String bridgeCall,
     required String semester,
+    required String requestId,
   }) {
+    final semesterLiteral = jsonEncode(semester);
+    final requestIdLiteral = jsonEncode(requestId);
     return '''
       (function() {
+        var requestId = $requestIdLiteral;
+
         function normalize(value) {
           return (value || '').toString().trim();
+        }
+
+        function post(prefix, payload) {
+          $bridgeCall(prefix + requestId + ':' + payload);
         }
 
         function trySwitchSemester(value) {
@@ -103,12 +119,12 @@ class ScheduleLoginSemesterScripts {
           function postPayload(text) {
             var chunkSize = 400;
             var total = Math.ceil(text.length / chunkSize);
-            $bridgeCall('CHUNK_START:' + total + ':' + text.length);
+            post('CHUNK_START:', total + ':' + text.length);
             for (var i = 0; i < total; i++) {
               var chunk = text.substring(i * chunkSize, Math.min((i + 1) * chunkSize, text.length));
-              $bridgeCall('CHUNK_DATA:' + i + ':' + chunk);
+              post('CHUNK_DATA:', i + ':' + chunk);
             }
-            $bridgeCall('CHUNK_END');
+            $bridgeCall('CHUNK_END:' + requestId);
           }
 
           function extractRows(root) {
@@ -146,7 +162,7 @@ class ScheduleLoginSemesterScripts {
             xhr.onreadystatechange = function() {
               if (xhr.readyState !== 4) return;
               if (xhr.status !== 200) {
-                $bridgeCall('SCHEDULE_ERR:HTTP ' + xhr.status);
+                post('SCHEDULE_ERR:', 'HTTP ' + xhr.status);
                 return;
               }
 
@@ -156,7 +172,7 @@ class ScheduleLoginSemesterScripts {
                   if (pageNumber === 1) {
                     postPayload(xhr.responseText);
                   } else {
-                    $bridgeCall('SCHEDULE_ERR:\\u5206\\u9875\\u63a5\\u53e3\\u5f02\\u5e38 code=' + pageRoot.code);
+                    post('SCHEDULE_ERR:', '\\u5206\\u9875\\u63a5\\u53e3\\u5f02\\u5e38 code=' + pageRoot.code);
                   }
                   return;
                 }
@@ -168,7 +184,7 @@ class ScheduleLoginSemesterScripts {
 
                 var pageRows = extractRows(pageRoot) || [];
                 if (pageRows.length >= pageSize && pageNumber >= maxPages) {
-                  $bridgeCall('SCHEDULE_ERR:\\u5206\\u9875\\u8d85\\u51fa\\u5b89\\u5168\\u4e0a\\u9650');
+                  post('SCHEDULE_ERR:', '\\u5206\\u9875\\u8d85\\u51fa\\u5b89\\u5168\\u4e0a\\u9650');
                   return;
                 }
                 if (pageRows.length >= pageSize && pageNumber < maxPages) {
@@ -178,18 +194,18 @@ class ScheduleLoginSemesterScripts {
 
                 postPayload(JSON.stringify(nextAggregate));
               } catch (err) {
-                $bridgeCall(
-                  'SCHEDULE_ERR:\\u89e3\\u6790\\u5931\\u8d25 ' +
-                      (err && err.message ? err.message : err)
+                post(
+                  'SCHEDULE_ERR:',
+                  '\\u89e3\\u6790\\u5931\\u8d25 ' + (err && err.message ? err.message : err)
                 );
               }
             };
             xhr.onerror = function() {
-              $bridgeCall('SCHEDULE_ERR:\\u7f51\\u7edc\\u9519\\u8bef');
+              post('SCHEDULE_ERR:', '\\u7f51\\u7edc\\u9519\\u8bef');
             };
             xhr.send(
               'XNXQDM=' +
-                  encodeURIComponent('$semester') +
+                  encodeURIComponent($semesterLiteral) +
                   '&XH=' +
                   encodeURIComponent('') +
                   '&pageNumber=' +
@@ -202,7 +218,7 @@ class ScheduleLoginSemesterScripts {
           fetchPage(1, null);
         }
 
-        trySwitchSemester('$semester');
+        trySwitchSemester($semesterLiteral);
         setTimeout(fetchSchedule, 350);
       })();
     ''';
@@ -211,14 +227,18 @@ class ScheduleLoginSemesterScripts {
   static String buildSwitchSemesterScript({
     required String bridgeCall,
     required String semester,
+    required String requestId,
   }) {
+    final semesterLiteral = jsonEncode(semester);
+    final requestIdLiteral = jsonEncode(requestId);
     return '''
       (function() {
         function normalize(value) {
           return (value || '').toString().trim();
         }
 
-        var target = normalize('$semester');
+        var target = normalize($semesterLiteral);
+        var requestId = $requestIdLiteral;
         var switched = false;
 
         var selects = Array.prototype.slice.call(document.querySelectorAll('select'));
@@ -246,12 +266,12 @@ class ScheduleLoginSemesterScripts {
         });
 
         if (!switched) {
-          $bridgeCall('SEMESTER_SWITCH_ERR:' + target);
+          $bridgeCall('SEMESTER_SWITCH_ERR:' + requestId + ':' + target);
           return;
         }
 
         setTimeout(function() {
-          $bridgeCall('SEMESTER_SWITCHED:' + target);
+          $bridgeCall('SEMESTER_SWITCHED:' + requestId + ':' + target);
         }, 600);
       })();
     ''';

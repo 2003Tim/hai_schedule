@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/schedule_override.dart';
-import '../models/school_time.dart';
-import '../services/schedule_provider.dart';
-import '../services/theme_provider.dart';
-import '../utils/constants.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/services/theme_provider.dart';
+import 'package:hai_schedule/utils/constants.dart';
 
 class DailyHeaderCard extends StatelessWidget {
   const DailyHeaderCard({

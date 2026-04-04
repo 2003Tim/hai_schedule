@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/course.dart';
-import '../models/schedule_override.dart';
-import '../services/class_reminder_service.dart';
-import '../services/class_silence_service.dart';
-import '../services/schedule_provider.dart';
-import '../utils/constants.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/services/class_reminder_service.dart';
+import 'package:hai_schedule/services/class_silence_service.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/utils/constants.dart';
 
 class HomeNextLessonCard extends StatefulWidget {
   const HomeNextLessonCard({super.key});

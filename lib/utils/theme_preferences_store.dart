@@ -2,64 +2,69 @@ import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/theme_preferences_record.dart';
+import 'package:hai_schedule/models/theme_preferences_record.dart';
+import 'package:hai_schedule/utils/app_storage_schema.dart';
 
 class ThemePreferencesStore {
   const ThemePreferencesStore._();
 
-  static const String _prefsThemeId = 'theme_id';
-  static const String _prefsBgPath = 'custom_bg_path';
-  static const String _prefsBgOpacity = 'bg_opacity';
-  static const String _prefsBgBlur = 'bg_blur';
-  static const String _prefsCardOpacity = 'card_opacity';
-  static const String _prefsFollowSystem = 'follow_system_theme';
-  static const String _prefsSystemLightThemeId = 'system_light_theme_id';
-  static const String _prefsSystemDarkThemeId = 'system_dark_theme_id';
-
   static Future<ThemePreferencesRecord> load() async {
     final prefs = await SharedPreferences.getInstance();
-    var customBgPath = prefs.getString(_prefsBgPath);
+    var customBgPath = prefs.getString(AppStorageSchema.customBgPathKey);
     if (customBgPath != null && !File(customBgPath).existsSync()) {
       customBgPath = null;
     }
 
     return ThemePreferencesRecord(
       themeId:
-          prefs.getString(_prefsThemeId) ??
+          prefs.getString(AppStorageSchema.themeIdKey) ??
           ThemePreferencesRecord.defaultThemeId,
       systemLightThemeId:
-          prefs.getString(_prefsSystemLightThemeId) ??
+          prefs.getString(AppStorageSchema.systemLightThemeIdKey) ??
           ThemePreferencesRecord.defaultSystemLightThemeId,
       systemDarkThemeId:
-          prefs.getString(_prefsSystemDarkThemeId) ??
+          prefs.getString(AppStorageSchema.systemDarkThemeIdKey) ??
           ThemePreferencesRecord.defaultSystemDarkThemeId,
-      followSystemTheme: prefs.getBool(_prefsFollowSystem) ?? false,
+      followSystemTheme:
+          prefs.getBool(AppStorageSchema.followSystemThemeKey) ?? false,
       customBgPath: customBgPath,
       bgOpacity:
-          prefs.getDouble(_prefsBgOpacity) ??
+          prefs.getDouble(AppStorageSchema.bgOpacityKey) ??
           ThemePreferencesRecord.recommendedBgOpacity,
       bgBlur:
-          prefs.getDouble(_prefsBgBlur) ??
+          prefs.getDouble(AppStorageSchema.bgBlurKey) ??
           ThemePreferencesRecord.recommendedBgBlur,
       cardOpacity:
-          prefs.getDouble(_prefsCardOpacity) ??
+          prefs.getDouble(AppStorageSchema.cardOpacityKey) ??
           ThemePreferencesRecord.recommendedCardOpacity,
     );
   }
 
   static Future<void> save(ThemePreferencesRecord record) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsThemeId, record.themeId);
-    await prefs.setString(_prefsSystemLightThemeId, record.systemLightThemeId);
-    await prefs.setString(_prefsSystemDarkThemeId, record.systemDarkThemeId);
-    await prefs.setBool(_prefsFollowSystem, record.followSystemTheme);
+    await prefs.setString(AppStorageSchema.themeIdKey, record.themeId);
+    await prefs.setString(
+      AppStorageSchema.systemLightThemeIdKey,
+      record.systemLightThemeId,
+    );
+    await prefs.setString(
+      AppStorageSchema.systemDarkThemeIdKey,
+      record.systemDarkThemeId,
+    );
+    await prefs.setBool(
+      AppStorageSchema.followSystemThemeKey,
+      record.followSystemTheme,
+    );
     if (record.customBgPath != null) {
-      await prefs.setString(_prefsBgPath, record.customBgPath!);
+      await prefs.setString(
+        AppStorageSchema.customBgPathKey,
+        record.customBgPath!,
+      );
     } else {
-      await prefs.remove(_prefsBgPath);
+      await prefs.remove(AppStorageSchema.customBgPathKey);
     }
-    await prefs.setDouble(_prefsBgOpacity, record.bgOpacity);
-    await prefs.setDouble(_prefsBgBlur, record.bgBlur);
-    await prefs.setDouble(_prefsCardOpacity, record.cardOpacity);
+    await prefs.setDouble(AppStorageSchema.bgOpacityKey, record.bgOpacity);
+    await prefs.setDouble(AppStorageSchema.bgBlurKey, record.bgBlur);
+    await prefs.setDouble(AppStorageSchema.cardOpacityKey, record.cardOpacity);
   }
 }

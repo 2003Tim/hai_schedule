@@ -1,71 +1,66 @@
 import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'screens/app_launch_splash_screen.dart';
-import 'screens/windows_desktop_shell_screen.dart';
-import 'services/class_reminder_service.dart';
-import 'services/schedule_provider.dart';
-import 'services/theme_provider.dart';
-import 'screens/home_screen.dart';
-import 'widgets/mini_overlay.dart';
 import 'package:window_manager/window_manager.dart';
+
+import 'package:hai_schedule/models/window_shell_preferences.dart';
+import 'package:hai_schedule/screens/app_launch_splash_screen.dart';
+import 'package:hai_schedule/screens/home_screen.dart';
+import 'package:hai_schedule/screens/windows_desktop_shell_screen.dart';
+import 'package:hai_schedule/services/app_bootstrap.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/services/theme_provider.dart';
+import 'package:hai_schedule/utils/app_titles.dart';
+import 'package:hai_schedule/utils/window_shell_preferences_store.dart';
+import 'package:hai_schedule/widgets/mini_overlay.dart';
 
 final globalScaffoldKey = GlobalKey<ScaffoldMessengerState>();
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  if (Platform.isAndroid) {
-    try {
-      await ClassReminderService.initialize();
-    } catch (e, st) {
-      debugPrint('课前提醒初始化失败，继续启动: $e\n$st');
-    }
-  }
-
-  if (Platform.isWindows) {
-    await windowManager.ensureInitialized();
-    const windowOptions = WindowOptions(
-      size: Size(1100, 700),
-      minimumSize: Size(860, 560),
-      center: true,
-      title: '海大课表',
-      titleBarStyle: TitleBarStyle.normal,
-    );
-    windowManager.waitUntilReadyToShow(windowOptions, () async {
-      await windowManager.show();
-      await windowManager.focus();
-    });
-  }
-
-  runApp(const HaiScheduleApp());
+  final bootstrap = await AppBootstrap.initialize();
+  runApp(
+    HaiScheduleApp(
+      scheduleProvider: bootstrap.scheduleProvider,
+      themeProvider: bootstrap.themeProvider,
+    ),
+  );
 }
 
 class HaiScheduleApp extends StatelessWidget {
-  const HaiScheduleApp({super.key});
+  const HaiScheduleApp({
+    super.key,
+    required this.scheduleProvider,
+    required this.themeProvider,
+    this.homeOverride,
+  });
+
+  final ScheduleProvider scheduleProvider;
+  final ThemeProvider themeProvider;
+  final Widget? homeOverride;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ScheduleProvider()),
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider<ScheduleProvider>.value(value: scheduleProvider),
+        ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
       ],
       child: Builder(
         builder: (context) {
           final theme = context.watch<ThemeProvider>();
           return MaterialApp(
-            title: '海大课表',
+            title: AppTitles.appName,
             debugShowCheckedModeBanner: false,
             scaffoldMessengerKey: globalScaffoldKey,
             theme: theme.themeData,
             darkTheme: theme.darkThemeData,
             themeMode: theme.themeMode,
             home:
-                Platform.isWindows
+                homeOverride ??
+                (Platform.isWindows
                     ? const WindowsShell()
-                    : const AndroidShell(),
+                    : const AndroidShell()),
           );
         },
       ),
@@ -144,7 +139,7 @@ class _WindowsShellState extends State<WindowsShell> with WindowListener {
   void initState() {
     super.initState();
     windowManager.addListener(this);
-    _loadMiniPrefs();
+    _loadWindowPreferences();
   }
 
   @override
@@ -153,18 +148,21 @@ class _WindowsShellState extends State<WindowsShell> with WindowListener {
     super.dispose();
   }
 
-  Future<void> _loadMiniPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> _loadWindowPreferences() async {
+    final prefs = await WindowShellPreferencesStore.load();
     setState(() {
-      _opacity = prefs.getDouble('mini_opacity') ?? 0.95;
-      _alwaysOnTop = prefs.getBool('mini_always_on_top') ?? true;
+      _opacity = prefs.opacity;
+      _alwaysOnTop = prefs.alwaysOnTop;
     });
   }
 
-  Future<void> _saveMiniPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('mini_opacity', _opacity);
-    await prefs.setBool('mini_always_on_top', _alwaysOnTop);
+  Future<void> _saveWindowPreferences() {
+    return WindowShellPreferencesStore.save(
+      WindowShellPreferences(
+        opacity: _opacity,
+        alwaysOnTop: _alwaysOnTop,
+      ),
+    );
   }
 
   Future<void> _enterMiniMode() async {
@@ -179,7 +177,7 @@ class _WindowsShellState extends State<WindowsShell> with WindowListener {
       await windowManager.setMinimumSize(const Size(280, 400));
       await windowManager.setAlwaysOnTop(_alwaysOnTop);
       await windowManager.setOpacity(_opacity);
-      await windowManager.setTitle('海大课表 - 迷你模式');
+      await windowManager.setTitle(AppTitles.miniModeTitle);
       await windowManager.setAlignment(Alignment.bottomRight);
 
       setState(() => _isMiniMode = true);
@@ -198,7 +196,7 @@ class _WindowsShellState extends State<WindowsShell> with WindowListener {
       await windowManager.setMinimumSize(const Size(800, 500));
       await windowManager.setSize(_savedSize);
       await windowManager.setPosition(_savedPosition);
-      await windowManager.setTitle('海大课表');
+      await windowManager.setTitle(AppTitles.appName);
 
       setState(() => _isMiniMode = false);
     } finally {
@@ -209,13 +207,13 @@ class _WindowsShellState extends State<WindowsShell> with WindowListener {
   void _onOpacityChanged(double value) async {
     setState(() => _opacity = value);
     await windowManager.setOpacity(value);
-    _saveMiniPrefs();
+    await _saveWindowPreferences();
   }
 
   void _onAlwaysOnTopChanged(bool value) async {
     setState(() => _alwaysOnTop = value);
     await windowManager.setAlwaysOnTop(value);
-    _saveMiniPrefs();
+    await _saveWindowPreferences();
   }
 
   @override

@@ -3,14 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/auth_credentials_service.dart';
-import '../services/login_fetch_coordinator.dart';
-import '../services/schedule_login_fetch_service.dart';
-import '../services/schedule_provider.dart';
-import '../utils/login_flow_autofill_controller.dart';
-import '../utils/login_flow_text.dart';
-import '../widgets/login_flow_sections.dart';
-import '../widgets/login_webview_adapters.dart';
+import 'package:hai_schedule/services/auth_credentials_service.dart';
+import 'package:hai_schedule/services/auto_sync_service.dart';
+import 'package:hai_schedule/services/login_fetch_coordinator.dart';
+import 'package:hai_schedule/services/schedule_login_fetch_service.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/utils/login_flow_autofill_controller.dart';
+import 'package:hai_schedule/utils/login_flow_text.dart';
+import 'package:hai_schedule/widgets/login_flow_sections.dart';
+import 'package:hai_schedule/widgets/login_webview_adapters.dart';
 
 mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   final ScheduleLoginFetchService loginFetchService =
@@ -45,8 +46,6 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   String? get initialSemesterCode;
 
   bool get shouldOpenCredentialEditor;
-
-  Future<void> persistSemesterCode(String semester) async {}
 
   void initLoginFlow() {
     _statusText = initialStatusText;
@@ -251,6 +250,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
 
   Future<void> _clearSavedCredential({bool showToast = true}) async {
     await AuthCredentialsService.instance.clear();
+    await AutoSyncService.handleCredentialCleared();
     if (!mounted) return;
     setState(() {
       _savedCredential = null;
@@ -332,11 +332,11 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   Future<void> _fetchWithSemester(String semester) async {
     await _loginFlowCoordinator.fetchWithSemester(
       semester: semester,
+      chunkState: _chunkState,
       bridgeCall: bridgeCall,
       executeScript: _webviewAdapter.executeScript,
       onSemesterResolved: (value) => _lastDetectedSemester = value,
       applyState: _applyState,
-      persistSemesterCode: persistSemesterCode,
     );
   }
 

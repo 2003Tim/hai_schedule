@@ -8,15 +8,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
-import android.os.Build
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Calendar
 
 class ClassSilenceScheduler : BroadcastReceiver() {
-
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             ACTION_CLASS_START -> {
@@ -28,17 +28,13 @@ class ClassSilenceScheduler : BroadcastReceiver() {
                 val endAtMillis = intent.getLongExtra(EXTRA_END_AT_MILLIS, 0L)
                 restoreIfNeeded(context, endAtMillis)
             }
-
-            Intent.ACTION_BOOT_COMPLETED,
-            Intent.ACTION_MY_PACKAGE_REPLACED -> {
-                restoreSavedSchedule(context)
-            }
         }
     }
 
     companion object {
         private const val tag = "ClassSilence"
         private const val prefsName = "hai_schedule_class_silence"
+        private const val flutterPrefsName = "FlutterSharedPreferences"
 
         private const val actionClassStart = "com.hainanu.hai_schedule.CLASS_SILENCE_START"
         private const val actionClassEnd = "com.hainanu.hai_schedule.CLASS_SILENCE_END"
@@ -49,6 +45,11 @@ class ClassSilenceScheduler : BroadcastReceiver() {
         private const val keyPreviousRingerMode = "previous_ringer_mode"
         private const val keyActiveUntilMillis = "active_until_millis"
         private const val keyHasSnapshot = "has_snapshot"
+
+        private const val flutterEnabledKey = "flutter.class_silence_enabled"
+        private const val flutterLastBuildTimeKey = "flutter.class_silence_last_build_time"
+        private const val flutterHorizonEndKey = "flutter.class_silence_horizon_end"
+        private const val flutterScheduledCountKey = "flutter.class_silence_scheduled_count"
 
         const val ACTION_CLASS_START = actionClassStart
         const val ACTION_CLASS_END = actionClassEnd
@@ -64,8 +65,6 @@ class ClassSilenceScheduler : BroadcastReceiver() {
         fun openPolicyAccessSettings(context: Context) {
             val packageManager = context.packageManager
             val intents = buildList {
-                // Android 13+ supports navigating directly to this app's DND permission toggle
-                // via a package URI, so the user doesn't need to scroll through the full list.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     add(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
                         data = Uri.fromParts("package", context.packageName, null)
@@ -94,12 +93,14 @@ class ClassSilenceScheduler : BroadcastReceiver() {
         }
 
         fun configure(context: Context, events: List<Map<String, Any?>>) {
-            cancel(context)
+            cancel(context, clearBuildState = false)
             val prefs = prefs(context)
             val jsonEvents = JSONArray()
             val now = System.currentTimeMillis()
 
             var activeSessionFound = false
+            var scheduledCount = 0
+            var horizonEndMillis = 0L
 
             for (event in events) {
                 val id = event["id"]?.toString()?.takeIf { it.isNotBlank() } ?: continue
@@ -117,6 +118,8 @@ class ClassSilenceScheduler : BroadcastReceiver() {
                     put("endSection", (event["endSection"] as? Number)?.toInt() ?: 0)
                 }
                 jsonEvents.put(json)
+                scheduledCount++
+                horizonEndMillis = maxOf(horizonEndMillis, endAtMillis)
 
                 if (startAtMillis <= now) {
                     activeSessionFound = true
@@ -132,9 +135,66 @@ class ClassSilenceScheduler : BroadcastReceiver() {
             if (!activeSessionFound) {
                 restoreIfNeeded(context, Long.MAX_VALUE)
             }
+            writeBuildState(
+                context = context,
+                scheduledCount = scheduledCount,
+                horizonEndMillis = horizonEndMillis.takeIf { it > 0L },
+            )
         }
 
-        fun cancel(context: Context) {
+        fun rebuildFromStoredProjection(
+            context: Context,
+            payloadText: String? = null,
+        ) {
+            val flutterPrefs = flutterPrefs(context)
+            if (!flutterPrefs.getBoolean(flutterEnabledKey, false)) {
+                cancel(context)
+                return
+            }
+            if (!hasPolicyAccess(context)) {
+                cancel(context)
+                return
+            }
+
+            val payload =
+                ScheduleProjectionSupport.parsePayload(payloadText)
+                    ?: ScheduleProjectionSupport.loadStoredPayload(context)
+            if (payload == null) {
+                cancel(context, clearBuildState = false)
+                writeBuildState(
+                    context = context,
+                    scheduledCount = 0,
+                    horizonEndMillis = Calendar.getInstance().apply {
+                        add(Calendar.DAY_OF_YEAR, 7)
+                    }.timeInMillis,
+                )
+                return
+            }
+
+            val events = payload.buildOccurrences(Calendar.getInstance(), 7).map { occurrence ->
+                mapOf<String, Any?>(
+                    "id" to "${occurrence.dateKey}-${occurrence.courseId}-${occurrence.startSection}-${occurrence.endSection}",
+                    "courseName" to occurrence.courseName,
+                    "date" to occurrence.dateKey,
+                    "startSection" to occurrence.startSection,
+                    "endSection" to occurrence.endSection,
+                    "startAtMillis" to occurrence.startAtMillis,
+                    "endAtMillis" to occurrence.endAtMillis,
+                )
+            }
+            configure(context, events)
+            if (events.isEmpty()) {
+                writeBuildState(
+                    context = context,
+                    scheduledCount = 0,
+                    horizonEndMillis = Calendar.getInstance().apply {
+                        add(Calendar.DAY_OF_YEAR, 7)
+                    }.timeInMillis,
+                )
+            }
+        }
+
+        fun cancel(context: Context, clearBuildState: Boolean = true) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val stored = loadStoredEvents(context)
             stored.forEach { event ->
@@ -150,11 +210,15 @@ class ClassSilenceScheduler : BroadcastReceiver() {
                 .remove(keyActiveUntilMillis)
                 .remove(keyHasSnapshot)
                 .apply()
+
+            if (clearBuildState) {
+                clearBuildState(context)
+            }
         }
 
         fun startManualTest(context: Context, durationMinutes: Int) {
             if (!hasPolicyAccess(context)) {
-                throw IllegalStateException("缺少免打扰权限")
+                throw IllegalStateException("Missing notification policy access")
             }
 
             val safeDurationMinutes = durationMinutes.coerceIn(1, 10)
@@ -173,25 +237,6 @@ class ClassSilenceScheduler : BroadcastReceiver() {
                 .remove(keyActiveUntilMillis)
                 .remove(keyHasSnapshot)
                 .apply()
-        }
-
-        private fun restoreSavedSchedule(context: Context) {
-            val stored = loadStoredEvents(context)
-            if (stored.isEmpty()) return
-            configure(
-                context,
-                stored.map { event ->
-                    mapOf<String, Any?>(
-                        "id" to event.id,
-                        "startAtMillis" to event.startAtMillis,
-                        "endAtMillis" to event.endAtMillis,
-                        "courseName" to event.courseName,
-                        "date" to event.date,
-                        "startSection" to event.startSection,
-                        "endSection" to event.endSection,
-                    )
-                },
-            )
         }
 
         private fun enterClassSilence(context: Context, endAtMillis: Long) {
@@ -286,19 +331,14 @@ class ClassSilenceScheduler : BroadcastReceiver() {
         ) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             alarmManager.cancel(pendingIntent)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent,
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent,
-                )
-            }
+            AlarmSchedulerCompat.schedule(
+                context = context,
+                alarmManager = alarmManager,
+                type = AlarmManager.RTC_WAKEUP,
+                triggerAtMillis = triggerAtMillis,
+                pendingIntent = pendingIntent,
+                logTag = tag,
+            )
         }
 
         private fun createStartIntent(
@@ -371,8 +411,47 @@ class ClassSilenceScheduler : BroadcastReceiver() {
             }
         }
 
+        private fun writeBuildState(
+            context: Context,
+            scheduledCount: Int,
+            horizonEndMillis: Long?,
+        ) {
+            flutterPrefs(context).edit()
+                .putString(flutterLastBuildTimeKey, isoNow())
+                .putInt(flutterScheduledCountKey, scheduledCount)
+                .apply()
+
+            val editor = flutterPrefs(context).edit()
+            if (horizonEndMillis != null) {
+                editor.putString(flutterHorizonEndKey, toIsoString(horizonEndMillis))
+            } else {
+                editor.remove(flutterHorizonEndKey)
+            }
+            editor.apply()
+        }
+
+        private fun clearBuildState(context: Context) {
+            flutterPrefs(context).edit()
+                .remove(flutterLastBuildTimeKey)
+                .remove(flutterHorizonEndKey)
+                .putInt(flutterScheduledCountKey, 0)
+                .apply()
+        }
+
         private fun prefs(context: Context) =
             context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+
+        private fun flutterPrefs(context: Context) =
+            context.getSharedPreferences(flutterPrefsName, Context.MODE_PRIVATE)
+
+        private fun isoNow(): String = toIsoString(System.currentTimeMillis())
+
+        private fun toIsoString(timeMillis: Long): String {
+            return java.text.SimpleDateFormat(
+                "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+                java.util.Locale.US,
+            ).format(java.util.Date(timeMillis))
+        }
 
         private data class StoredEvent(
             val id: String,

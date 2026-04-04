@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/course.dart';
-import '../models/login_fetch_models.dart';
-import '../utils/login_fetch_bridge_handler.dart';
-import '../utils/login_fetch_payload_parser.dart';
-import '../utils/login_fetch_url_policy.dart';
-import 'app_repositories.dart';
-import 'auto_sync_service.dart';
-import 'schedule_login_script_builder.dart';
-import 'schedule_provider.dart';
+import 'package:hai_schedule/models/login_fetch_models.dart';
+import 'package:hai_schedule/utils/login_fetch_bridge_handler.dart';
+import 'package:hai_schedule/utils/login_fetch_payload_parser.dart';
+import 'package:hai_schedule/utils/login_fetch_url_policy.dart';
+import 'package:hai_schedule/services/app_repositories.dart';
+import 'package:hai_schedule/services/auto_sync_service.dart';
+import 'package:hai_schedule/services/schedule_login_script_builder.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/services/schedule_sync_result_service.dart';
 
 export '../models/login_fetch_models.dart';
 
 class ScheduleLoginFetchService {
   ScheduleLoginFetchService({
     ScheduleRepository? scheduleRepository,
-    SyncRepository? syncRepository,
+    ScheduleSyncResultService? syncResultService,
   }) : _scheduleRepository = scheduleRepository ?? ScheduleRepository(),
-       _syncRepository = syncRepository ?? SyncRepository();
+       _syncResultService = syncResultService ?? ScheduleSyncResultService();
 
   final ScheduleRepository _scheduleRepository;
-  final SyncRepository _syncRepository;
+  final ScheduleSyncResultService _syncResultService;
 
   static const targetUrl = LoginFetchUrlPolicy.targetUrl;
 
@@ -29,23 +29,32 @@ class ScheduleLoginFetchService {
 
   bool shouldAutoFetch(String url) => LoginFetchUrlPolicy.shouldAutoFetch(url);
 
-  String buildDetectSemesterScript(String bridgeCall) =>
-      ScheduleLoginScriptBuilder.buildDetectSemesterScript(bridgeCall);
+  String buildDetectSemesterScript({
+    required String bridgeCall,
+    required String requestId,
+  }) => ScheduleLoginScriptBuilder.buildDetectSemesterScript(
+    bridgeCall: bridgeCall,
+    requestId: requestId,
+  );
 
   String buildFetchScheduleScript({
     required String bridgeCall,
     required String semester,
+    required String requestId,
   }) => ScheduleLoginScriptBuilder.buildFetchScheduleScript(
     bridgeCall: bridgeCall,
     semester: semester,
+    requestId: requestId,
   );
 
   String buildSwitchSemesterScript({
     required String bridgeCall,
     required String semester,
+    required String requestId,
   }) => ScheduleLoginScriptBuilder.buildSwitchSemesterScript(
     bridgeCall: bridgeCall,
     semester: semester,
+    requestId: requestId,
   );
 
   String buildFillCredentialScript({
@@ -93,29 +102,21 @@ class ScheduleLoginFetchService {
     bool captureCookieSnapshot = false,
   }) async {
     final provider = context.read<ScheduleProvider>();
-    final previousCourses = List<Course>.from(provider.courses);
     final courses = LoginFetchPayloadParser.parseCourses(jsonStr);
 
-    await _syncRepository.saveLastFetchTime(DateTime.now());
-    await provider.setCourses(
-      courses,
+    await _syncResultService.applySuccessfulSync(
+      provider: provider,
+      courses: courses,
       semesterCode: semester,
       rawScheduleJson: jsonStr,
+      source: 'login_fetch',
     );
 
     final cookieReady =
         captureCookieSnapshot
             ? await AutoSyncService.captureCookieSnapshot()
             : false;
-    final diffSummary = AutoSyncService.buildCourseDiffSummary(
-      previousCourses,
-      courses,
-    );
-    await AutoSyncService.recordExternalSyncSuccess(
-      courseCount: courses.length,
-      source: 'login_fetch',
-      diffSummary: diffSummary,
-    );
+    await AutoSyncService.ensureBackgroundSchedule();
 
     return LoginFetchProcessResult(
       courses: courses,

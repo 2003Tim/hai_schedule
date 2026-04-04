@@ -14,10 +14,9 @@ import android.widget.RemoteViews
 import es.antonborri.home_widget.HomeWidgetProvider
 import org.json.JSONArray
 import org.json.JSONObject
-import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-import java.util.concurrent.TimeUnit
+import java.text.SimpleDateFormat
 
 /**
  * 浠婃棩璇捐〃 4x2 妗岄潰灏忕粍浠讹紙绗簩闃舵淇鐗堬級
@@ -56,29 +55,6 @@ class TodayScheduleWidgetProvider : HomeWidgetProvider() {
             refreshAll(context)
             return
         }
-        if (action != ACTION_PREV && action != ACTION_TODAY && action != ACTION_NEXT) {
-            return
-        }
-
-        val widgetId = intent.getIntExtra(
-            AppWidgetManager.EXTRA_APPWIDGET_ID,
-            AppWidgetManager.INVALID_APPWIDGET_ID,
-        )
-        if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return
-
-        val statePrefs = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
-        val currentOffset = statePrefs.getInt(offsetKey(widgetId), 0)
-        val nextOffset = when (action) {
-            ACTION_PREV -> (currentOffset - 1).coerceAtLeast(-13)
-            ACTION_NEXT -> (currentOffset + 1).coerceAtMost(13)
-            else -> 0
-        }
-        statePrefs.edit().putInt(offsetKey(widgetId), nextOffset).apply()
-
-        val widgetData = context.getSharedPreferences(HOME_WIDGET_PREFS, Context.MODE_PRIVATE)
-        val manager = AppWidgetManager.getInstance(context)
-        updateSingleWidget(context, manager, widgetId, widgetData)
-        WidgetRefreshScheduler.start(context)
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
@@ -129,24 +105,15 @@ class TodayScheduleWidgetProvider : HomeWidgetProvider() {
         }
 
         return try {
-            val payload = JSONObject(payloadText)
-            val semesterStart = payload.optString("semesterStart")
-            val totalWeeks = payload.optInt("totalWeeks", 20)
-            val classTimes = payload.optJSONArray("classTimes") ?: JSONArray()
-            val slots = payload.optJSONArray("slots") ?: JSONArray()
-            val overrides = payload.optJSONArray("overrides") ?: JSONArray()
+            val payload = ScheduleProjectionSupport.parsePayload(payloadText)
+                ?: throw IllegalStateException("Payload parse failed")
 
             val now = Calendar.getInstance()
-            val currentWeek = calculateWeek(semesterStart, totalWeeks, target)
-            val weekday = todayWeekday(target)
+            val currentWeek = payload.calculateWeek(target)
             val dayRelation = compareDay(target, now)
             val dayLabel = dayOffsetText(dayOffset)
             val daySlots = buildDayItems(
-                slots = slots,
-                overrides = overrides,
-                classTimes = classTimes,
-                currentWeek = currentWeek,
-                weekday = weekday,
+                payload = payload,
                 now = now,
                 target = target,
                 dayRelation = dayRelation,
@@ -336,80 +303,16 @@ class TodayScheduleWidgetProvider : HomeWidgetProvider() {
     }
 
     private fun buildDayItems(
-        slots: JSONArray,
-        overrides: JSONArray,
-        classTimes: JSONArray,
-        currentWeek: Int,
-        weekday: Int,
+        payload: ScheduleProjectionSupport.ProjectionPayload,
         now: Calendar,
         target: Calendar,
         dayRelation: Int,
     ): JSONArray {
         val list = mutableListOf<JSONObject>()
         val nowMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-        val dateKey = formatDateKey(target)
-        val dayOverrides = mutableListOf<JSONObject>()
-
-        for (i in 0 until overrides.length()) {
-            val item = overrides.optJSONObject(i) ?: continue
-            if (item.optString("dateKey") == dateKey && item.optInt("weekday") == weekday) {
-                dayOverrides.add(item)
-            }
-        }
-
-        for (i in 0 until slots.length()) {
-            val slot = slots.optJSONObject(i) ?: continue
-            if (slot.optInt("weekday") != weekday) continue
-            if (!containsWeek(slot.optJSONArray("activeWeeks"), currentWeek)) continue
-
-            val courseId = slot.optString("courseId")
-            val cancelOverride = dayOverrides.firstOrNull { item ->
-                item.optString("type") == "cancel" &&
-                    item.optString("status") != "orphaned" &&
-                    (
-                        item.optString("targetCourseId") == courseId ||
-                            (
-                                item.optInt("sourceStartSection", item.optInt("startSection")) == slot.optInt("startSection") &&
-                                    item.optInt("sourceEndSection", item.optInt("endSection")) == slot.optInt("endSection")
-                                )
-                        )
-            }
-            if (cancelOverride != null) continue
-
-            val modifyOverride = dayOverrides.firstOrNull { item ->
-                item.optString("type") == "modify" &&
-                    item.optString("status") != "orphaned" &&
-                    (
-                        item.optString("targetCourseId") == courseId ||
-                            (
-                                item.optInt("sourceStartSection", item.optInt("startSection")) == slot.optInt("startSection") &&
-                                    item.optInt("sourceEndSection", item.optInt("endSection")) == slot.optInt("endSection")
-                                )
-                        )
-            }
-
-            val effectiveSlot = if (modifyOverride != null) {
-                JSONObject(slot.toString()).apply {
-                    if (modifyOverride.optString("courseName").isNotBlank()) {
-                        put("courseName", modifyOverride.optString("courseName"))
-                    }
-                    if (modifyOverride.optString("teacher").isNotBlank()) {
-                        put("teacher", modifyOverride.optString("teacher"))
-                    }
-                    if (modifyOverride.optString("location").isNotBlank()) {
-                        put("location", modifyOverride.optString("location"))
-                    }
-                    put("startSection", modifyOverride.optInt("startSection", optInt("startSection")))
-                    put("endSection", modifyOverride.optInt("endSection", optInt("endSection")))
-                }
-            } else {
-                slot
-            }
-
-            val startSection = effectiveSlot.optInt("startSection")
-            val endSection = effectiveSlot.optInt("endSection")
-            val startTime = findTime(classTimes, startSection, true)
-            val endTime = findTime(classTimes, endSection, false)
+        for (effectiveSlot in payload.resolveDaySlots(target)) {
+            val startTime = payload.findTime(effectiveSlot.startSection, true) ?: "--:--"
+            val endTime = payload.findTime(effectiveSlot.endSection, false) ?: "--:--"
             val startMinutes = toMinutes(startTime)
             val endMinutes = toMinutes(endTime)
 
@@ -439,134 +342,24 @@ class TodayScheduleWidgetProvider : HomeWidgetProvider() {
                 else -> "已结束"
             }
 
-            val location = shortLocation(effectiveSlot.optString("location"))
-            val teacher = shortTeacher(effectiveSlot.optString("teacher"))
+            val location = shortLocation(effectiveSlot.location)
+            val teacher = shortTeacher(effectiveSlot.teacher)
             val meta = buildMetaText(startTime, endTime, location, teacher)
 
             list.add(
                 JSONObject().apply {
-                    put("courseName", effectiveSlot.optString("courseName"))
+                    put("courseName", effectiveSlot.courseName)
                     put("meta", meta)
                     put("status", status)
                     put("statusText", statusText)
-                    put("sortKey", startSection)
-                    put("color", effectiveSlot.optInt("color", Color.parseColor("#5B8FF9")))
-                }
-            )
-        }
-
-        for (item in dayOverrides) {
-            if (item.optString("type") != "add") continue
-            if (item.optString("status") == "orphaned") continue
-
-            val startSection = item.optInt("startSection")
-            val endSection = item.optInt("endSection")
-            val startTime = findTime(classTimes, startSection, true)
-            val endTime = findTime(classTimes, endSection, false)
-            val startMinutes = toMinutes(startTime)
-            val endMinutes = toMinutes(endTime)
-
-            val status = when {
-                dayRelation > 0 -> "upcoming"
-                dayRelation < 0 -> "finished"
-                nowMinutes < startMinutes -> "upcoming"
-                nowMinutes <= endMinutes -> "ongoing"
-                else -> "finished"
-            }
-
-            val statusText = when {
-                dayRelation > 0 -> "待上课"
-                dayRelation < 0 -> "已上过"
-                status == "upcoming" -> {
-                    val diff = startMinutes - nowMinutes
-                    when {
-                        diff < 60 -> "${diff}分钟后"
-                        diff % 60 == 0 -> "${diff / 60}小时后"
-                        else -> "${diff / 60}h${diff % 60}m后"
-                    }
-                }
-                status == "ongoing" -> {
-                    val diff = endMinutes - nowMinutes
-                    if (diff <= 0) "即将下课" else "剩${diff}分钟"
-                }
-                else -> "已结束"
-            }
-
-            val location = shortLocation(item.optString("location"))
-            val teacher = shortTeacher(item.optString("teacher"))
-            val meta = buildMetaText(startTime, endTime, location, teacher)
-
-            list.add(
-                JSONObject().apply {
-                    put("courseName", item.optString("courseName"))
-                    put("meta", meta)
-                    put("status", status)
-                    put("statusText", statusText)
-                    put("sortKey", startSection)
-                    put("color", item.optInt("color", Color.parseColor("#5B8FF9")))
+                    put("sortKey", effectiveSlot.startSection)
+                    put("color", effectiveSlot.color.takeIf { it != 0 } ?: Color.parseColor("#5B8FF9"))
                 }
             )
         }
 
         list.sortBy { it.optInt("sortKey") }
         return JSONArray(list)
-    }
-
-    private fun formatDateKey(calendar: Calendar): String {
-        return String.format(
-            Locale.US,
-            "%04d-%02d-%02d",
-            calendar.get(Calendar.YEAR),
-            calendar.get(Calendar.MONTH) + 1,
-            calendar.get(Calendar.DAY_OF_MONTH),
-        )
-    }
-
-    private fun findTime(classTimes: JSONArray, section: Int, isStart: Boolean): String {
-        for (i in 0 until classTimes.length()) {
-            val item = classTimes.optJSONObject(i) ?: continue
-            if (item.optInt("section") == section) {
-                return if (isStart) item.optString("startTime") else item.optString("endTime")
-            }
-        }
-        return if (isStart) "--:--" else "--:--"
-    }
-
-    private fun containsWeek(weeks: JSONArray?, targetWeek: Int): Boolean {
-        if (weeks == null || targetWeek <= 0) return false
-        for (i in 0 until weeks.length()) {
-            if (weeks.optInt(i) == targetWeek) return true
-        }
-        return false
-    }
-
-    private fun calculateWeek(
-        semesterStartText: String,
-        totalWeeks: Int,
-        target: Calendar,
-    ): Int {
-        val format = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-        val startDate = format.parse(semesterStartText) ?: return 1
-
-        val start = Calendar.getInstance().apply {
-            time = startDate
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        val day = (target.clone() as Calendar).apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-
-        val diffMillis = day.timeInMillis - start.timeInMillis
-        val diffDays = TimeUnit.MILLISECONDS.toDays(diffMillis).toInt()
-        if (diffDays < 0) return 0
-        val week = diffDays / 7 + 1
-        return week.coerceIn(1, totalWeeks)
     }
 
     private fun todayWeekday(calendar: Calendar): Int {
@@ -676,7 +469,7 @@ class TodayScheduleWidgetProvider : HomeWidgetProvider() {
         appWidgetId: Int,
         requestCode: Int,
     ): PendingIntent {
-        val intent = Intent(context, TodayScheduleWidgetProvider::class.java).apply {
+        val intent = Intent(context, WidgetActionReceiver::class.java).apply {
             this.action = action
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         }
@@ -778,9 +571,9 @@ class TodayScheduleWidgetProvider : HomeWidgetProvider() {
         private const val KEY_THEME_ID = "theme_id"
         private const val DEFAULT_THEME_ID = "blue"
 
-        private const val ACTION_PREV = "com.hainanu.hai_schedule.widget.PREV"
-        private const val ACTION_TODAY = "com.hainanu.hai_schedule.widget.TODAY"
-        private const val ACTION_NEXT = "com.hainanu.hai_schedule.widget.NEXT"
+        const val ACTION_PREV = "com.hainanu.hai_schedule.widget.PREV"
+        const val ACTION_TODAY = "com.hainanu.hai_schedule.widget.TODAY"
+        const val ACTION_NEXT = "com.hainanu.hai_schedule.widget.NEXT"
 
         private fun flutterKey(key: String): String = "flutter.$key"
 
@@ -796,4 +589,3 @@ class TodayScheduleWidgetProvider : HomeWidgetProvider() {
         }
     }
 }
-

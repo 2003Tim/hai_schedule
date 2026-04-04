@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../models/course.dart';
-import '../models/schedule_override.dart';
-import '../services/schedule_provider.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
 
 String scheduleDialogDateKey(DateTime date) {
   final month = date.month.toString().padLeft(2, '0');

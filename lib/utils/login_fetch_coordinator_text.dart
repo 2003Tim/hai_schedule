@@ -1,5 +1,5 @@
-import '../models/login_fetch_coordinator_models.dart';
-import '../models/login_fetch_models.dart';
+import 'package:hai_schedule/models/login_fetch_coordinator_models.dart';
+import 'package:hai_schedule/models/login_fetch_models.dart';
 
 class LoginFetchCoordinatorText {
   static const emptySemesterMessage =

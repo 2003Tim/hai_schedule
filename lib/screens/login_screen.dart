@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'login_flow_state_mixin.dart';
-import '../widgets/login_webview_adapters.dart';
+import 'package:hai_schedule/screens/login_flow_state_mixin.dart';
+import 'package:hai_schedule/widgets/login_webview_adapters.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
@@ -39,11 +39,6 @@ class _LoginScreenState extends State<LoginScreen>
 
   @override
   LoginWebviewAdapter createWebviewAdapter() => WindowsLoginWebviewAdapter();
-
-  @override
-  Future<void> persistSemesterCode(String semester) {
-    return loginFetchService.saveSemesterCode(semester);
-  }
 
   @override
   void initState() {

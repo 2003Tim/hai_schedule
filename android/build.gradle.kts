@@ -5,15 +5,23 @@ allprojects {
     }
 }
 
-val newBuildDir: Directory =
-    rootProject.layout.buildDirectory
-        .dir("../../build")
-        .get()
-rootProject.layout.buildDirectory.value(newBuildDir)
+val sharedBuildDir: Directory = rootProject.layout.projectDirectory.dir("../build")
+rootProject.layout.buildDirectory.value(sharedBuildDir)
 
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
+    val rootDrive = rootProject.projectDir.toPath().root?.toString()
+    val projectDrive = project.projectDir.toPath().root?.toString()
+    val buildDir =
+        if (
+            rootDrive != null &&
+            projectDrive != null &&
+            rootDrive.equals(projectDrive, ignoreCase = true)
+        ) {
+            sharedBuildDir.dir(project.name)
+        } else {
+            project.layout.projectDirectory.dir("build")
+        }
+    project.layout.buildDirectory.value(buildDir)
 }
 subprojects {
     project.evaluationDependsOn(":app")

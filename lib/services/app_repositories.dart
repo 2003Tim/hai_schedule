@@ -1,7 +1,8 @@
-import '../models/course.dart';
-import '../models/schedule_override.dart';
-import '../models/school_time.dart';
-import 'app_storage.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/utils/class_silence_store.dart';
+import 'package:hai_schedule/services/app_storage.dart';
 
 class ScheduleCache {
   final List<Course> courses;
@@ -218,6 +219,28 @@ class ReminderRepository {
       clearLastBuildTime: clearLastBuildTime,
       horizonEnd: horizonEnd,
       exactAlarmEnabled: exactAlarmEnabled,
+      clearHorizonEnd: clearHorizonEnd,
+    );
+  }
+}
+
+class ClassSilenceRepository {
+  Future<ClassSilenceStoredState> loadState() => ClassSilenceStore.load();
+
+  Future<void> saveEnabled(bool enabled) => ClassSilenceStore.saveEnabled(enabled);
+
+  Future<void> saveState({
+    int? scheduledCount,
+    DateTime? lastBuildTime,
+    bool clearLastBuildTime = false,
+    DateTime? horizonEnd,
+    bool clearHorizonEnd = false,
+  }) {
+    return ClassSilenceStore.saveScheduleState(
+      scheduledCount: scheduledCount,
+      lastBuildTime: lastBuildTime,
+      clearLastBuildTime: clearLastBuildTime,
+      horizonEnd: horizonEnd,
       clearHorizonEnd: clearHorizonEnd,
     );
   }

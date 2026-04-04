@@ -1,5 +1,5 @@
-import '../models/auto_sync_models.dart';
-import 'auto_sync_schedule_policy.dart';
+import 'package:hai_schedule/models/auto_sync_models.dart';
+import 'package:hai_schedule/utils/auto_sync_schedule_policy.dart';
 
 class AutoSyncText {
   const AutoSyncText._();

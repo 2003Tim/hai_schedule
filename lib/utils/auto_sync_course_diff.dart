@@ -1,4 +1,4 @@
-import '../models/course.dart';
+import 'package:hai_schedule/models/course.dart';
 
 class AutoSyncCourseDiff {
   const AutoSyncCourseDiff._();

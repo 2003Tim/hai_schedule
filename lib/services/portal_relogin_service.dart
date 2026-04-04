@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../screens/login_router.dart';
-import 'auth_credentials_service.dart';
+import 'package:hai_schedule/screens/login_router.dart';
+import 'package:hai_schedule/services/auth_credentials_service.dart';
 
 class PortalReloginService {
   PortalReloginService._();
@@ -18,13 +18,11 @@ class PortalReloginService {
     if (credential == null) return false;
 
     if (!context.mounted) return false;
-    await Navigator.of(context).push(
+    final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => LoginRouter(
-          initialSemesterCode: semesterCode,
-        ),
+        builder: (_) => LoginRouter(initialSemesterCode: semesterCode),
       ),
     );
-    return context.mounted;
+    return result == true;
   }
 }

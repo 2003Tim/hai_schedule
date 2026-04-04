@@ -1,4 +1,4 @@
-import '../models/auto_sync_models.dart';
+import 'package:hai_schedule/models/auto_sync_models.dart';
 
 class AutoSyncSchedulePolicy {
   const AutoSyncSchedulePolicy._();

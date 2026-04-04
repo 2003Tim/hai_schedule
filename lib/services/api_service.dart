@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 
-import '../models/course.dart';
-import '../models/schedule_parser.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_parser.dart';
 
 /// 教务系统 API 服务
 class ApiService {

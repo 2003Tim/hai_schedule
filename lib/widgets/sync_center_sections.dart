@@ -3,9 +3,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/auth_credentials_service.dart';
-import '../services/auto_sync_service.dart';
-import '../services/theme_provider.dart';
+import 'package:hai_schedule/services/auth_credentials_service.dart';
+import 'package:hai_schedule/services/auto_sync_service.dart';
+import 'package:hai_schedule/services/theme_provider.dart';
 
 class SyncCenterStatusCard extends StatelessWidget {
   const SyncCenterStatusCard({

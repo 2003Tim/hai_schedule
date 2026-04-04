@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../services/app_repositories.dart';
-import '../utils/semester_code_formatter.dart' as semester_formatter;
+import 'package:hai_schedule/services/app_repositories.dart';
+import 'package:hai_schedule/utils/semester_code_formatter.dart' as semester_formatter;
 
 Future<String?> showCreateSemesterDialog(BuildContext context) async {
   final controller = TextEditingController();

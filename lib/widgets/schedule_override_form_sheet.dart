@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../models/course.dart';
-import '../models/schedule_override.dart';
-import '../services/schedule_provider.dart';
-import '../utils/constants.dart';
-import '../utils/schedule_slot_dialog_utils.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/utils/constants.dart';
+import 'package:hai_schedule/utils/schedule_slot_dialog_utils.dart';
 
 Future<void> openScheduleOverrideForm(
   BuildContext context, {

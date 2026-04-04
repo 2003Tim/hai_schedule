@@ -2,17 +2,19 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
-import '../models/course.dart';
-import '../models/reminder_models.dart';
-import '../models/schedule_override.dart';
-import '../models/school_time.dart';
-import '../utils/class_reminder_planner.dart';
-import '../utils/week_calculator.dart';
-import 'app_repositories.dart';
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/reminder_models.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
+import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/utils/class_reminder_planner.dart';
+import 'package:hai_schedule/utils/schedule_projection_payload.dart';
+import 'package:hai_schedule/utils/week_calculator.dart';
+import 'package:hai_schedule/services/app_repositories.dart';
 
 export '../models/reminder_models.dart';
 
@@ -35,6 +37,9 @@ class ClassReminderService {
   static const String _channelDescription = '上课前的本地提醒通知';
   static const Duration _scheduleHorizon = Duration(days: 7);
   static const Duration _rebuildThreshold = Duration(days: 2);
+  static const MethodChannel _nativeChannel = MethodChannel(
+    'hai_schedule/class_reminder',
+  );
 
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -54,7 +59,7 @@ class ClassReminderService {
     );
 
     await _plugin.initialize(
-      settings,
+      settings: settings,
       onDidReceiveNotificationResponse: (_) {},
     );
 
@@ -172,7 +177,7 @@ class ClassReminderService {
       snapshot: rebuilt.snapshot,
       message:
           rebuilt.exactAlarmEnabled
-              ? '${option.label}已开启（精准提醒）'
+              ? '${option.label}已开启（精确提醒）'
               : '${option.label}已开启（省电模式）',
       scheduledCount: rebuilt.scheduledCount,
       notificationsGranted: permissions.notificationsGranted,
@@ -231,20 +236,6 @@ class ClassReminderService {
     );
 
     if (!isSupported) {
-      if (occurrences.isEmpty) {
-        await _writeBuildState(
-          scheduledCount: 0,
-          horizonEnd: horizonEnd,
-          exactAlarmEnabled: false,
-        );
-        final snapshot = await loadSnapshot();
-        return ReminderApplyResult(
-          snapshot: snapshot,
-          message: '已保存提醒设置；未来 7 天暂无可提醒课程',
-          exactAlarmEnabled: false,
-        );
-      }
-
       await _writeBuildState(
         scheduledCount: occurrences.length,
         horizonEnd: horizonEnd,
@@ -253,67 +244,53 @@ class ClassReminderService {
       final snapshot = await loadSnapshot();
       return ReminderApplyResult(
         snapshot: snapshot,
-        message: '已生成 ${occurrences.length} 条提醒预览；当前平台暂不发送系统通知',
+        message:
+            occurrences.isEmpty
+                ? '已保存提醒设置；未来 7 天暂无可提醒课程'
+                : '已生成 ${occurrences.length} 条提醒预览；当前平台暂不发送系统通知',
         scheduledCount: occurrences.length,
         exactAlarmEnabled: false,
       );
     }
 
-    if (occurrences.isEmpty) {
-      await _writeBuildState(
-        scheduledCount: 0,
-        horizonEnd: horizonEnd,
-        exactAlarmEnabled: exactAlarmEnabled,
-      );
+    final payload = ScheduleProjectionPayload.build(
+      courses: courses,
+      overrides: overrides,
+      weekCalc: weekCalc,
+      timeConfig: timeConfig,
+    );
+    await _cancelLegacyPluginReminders();
+
+    try {
+      await _nativeChannel.invokeMethod<void>('rebuildFromProjection', {
+        'payload': jsonEncode(payload),
+        'leadMinutes': settings.leadTime.minutes,
+      });
+    } on MissingPluginException {
       final snapshot = await loadSnapshot();
       return ReminderApplyResult(
         snapshot: snapshot,
-        message: '未来 7 天内没有可提醒的课程',
-        exactAlarmEnabled: exactAlarmEnabled,
+        message: '当前设备暂不支持课前提醒',
+        exactAlarmEnabled: false,
+      );
+    } on PlatformException catch (error) {
+      final snapshot = await loadSnapshot();
+      return ReminderApplyResult(
+        snapshot: snapshot,
+        message: error.message ?? '课前提醒调度失败',
+        exactAlarmEnabled: snapshot.exactAlarmEnabled,
       );
     }
-
-    final scheduleMode =
-        exactAlarmEnabled
-            ? AndroidScheduleMode.exactAllowWhileIdle
-            : AndroidScheduleMode.inexactAllowWhileIdle;
-
-    const details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        _channelId,
-        _channelName,
-        channelDescription: _channelDescription,
-        importance: Importance.max,
-        priority: Priority.high,
-      ),
-    );
-
-    for (final occurrence in occurrences) {
-      await _plugin.zonedSchedule(
-        occurrence.notificationId,
-        occurrence.title,
-        occurrence.body,
-        occurrence.remindAt,
-        details,
-        androidScheduleMode: scheduleMode,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        payload: jsonEncode(occurrence.payload),
-      );
-    }
-
-    await _writeBuildState(
-      scheduledCount: occurrences.length,
-      horizonEnd: horizonEnd,
-      exactAlarmEnabled: exactAlarmEnabled,
-    );
 
     final snapshot = await loadSnapshot();
     return ReminderApplyResult(
       snapshot: snapshot,
-      message: '已生成 ${occurrences.length} 条课前提醒',
-      scheduledCount: occurrences.length,
-      exactAlarmEnabled: exactAlarmEnabled,
+      message:
+          snapshot.scheduledCount == 0
+              ? '未来 7 天内没有可提醒的课程'
+              : '已生成 ${snapshot.scheduledCount} 条课前提醒',
+      scheduledCount: snapshot.scheduledCount,
+      exactAlarmEnabled: snapshot.exactAlarmEnabled,
     );
   }
 
@@ -341,18 +318,12 @@ class ClassReminderService {
   }
 
   static Future<void> cancelAllCourseReminders() async {
-    if (isSupported) {
-      await initialize();
-      final pending = await _plugin.pendingNotificationRequests();
-      for (final request in pending) {
-        if (_isClassReminderPayload(request.payload)) {
-          await _plugin.cancel(request.id);
-        }
-      }
-    }
+    await _cancelLegacyPluginReminders();
+    await _invokeNativeCancel();
 
     await _repository.saveState(
       scheduledCount: 0,
+      exactAlarmEnabled: false,
       clearLastBuildTime: true,
       clearHorizonEnd: true,
     );
@@ -386,7 +357,7 @@ class ClassReminderService {
       exactAlarmEnabled =
           await androidPlugin?.requestExactAlarmsPermission() ?? false;
     } catch (error) {
-      debugPrint('请求精准闹钟权限失败: $error');
+      debugPrint('请求精确闹钟权限失败: $error');
     }
 
     return _PermissionResult(
@@ -407,6 +378,28 @@ class ClassReminderService {
       horizonEnd: horizonEnd?.toLocal(),
       clearHorizonEnd: horizonEnd == null,
     );
+  }
+
+  static Future<void> _cancelLegacyPluginReminders() async {
+    if (!Platform.isAndroid) return;
+    await initialize();
+    final pending = await _plugin.pendingNotificationRequests();
+    for (final request in pending) {
+      if (_isClassReminderPayload(request.payload)) {
+        await _plugin.cancel(id: request.id);
+      }
+    }
+  }
+
+  static Future<void> _invokeNativeCancel() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _nativeChannel.invokeMethod<void>('cancelSchedule');
+    } on MissingPluginException {
+      // Ignore in unsupported environments.
+    } on PlatformException catch (error) {
+      debugPrint('取消课前提醒失败: ${error.message}');
+    }
   }
 
   static bool _isClassReminderPayload(String? payload) {

@@ -1,9 +1,9 @@
-﻿import 'dart:io' show Platform;
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
-import 'login_screen.dart';
-import 'login_screen_android.dart';
+import 'package:hai_schedule/screens/login_screen.dart';
+import 'package:hai_schedule/screens/login_screen_android.dart';
 
 class LoginRouter extends StatelessWidget {
   const LoginRouter({

@@ -1,4 +1,4 @@
-package com.hainanu.hai_schedule
+﻿package com.hainanu.hai_schedule
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -14,6 +14,7 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import javax.net.ssl.HttpsURLConnection
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -25,7 +26,7 @@ import kotlin.concurrent.thread
 class AutoSyncScheduler : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        Log.d(TAG, "收到广播: ${intent.action}")
+        logd("收到广播: ${intent.action}")
         when (intent.action) {
             ACTION_RUN -> {
                 val pendingResult = goAsync()
@@ -39,7 +40,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                             context,
                             state = "failed",
                             message = "后台自动同步异常: ${t.message ?: "未知错误"}",
-                            error = t.stackTraceToString(),
+                            error = "${t::class.java.simpleName}: ${t.message ?: "未知错误"}",
                         )
                     } finally {
                         schedule(context, afterSuccessfulSync = syncSucceeded)
@@ -47,16 +48,17 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     }
                 }
             }
-            Intent.ACTION_BOOT_COMPLETED,
-            Intent.ACTION_MY_PACKAGE_REPLACED -> {
-                schedule(context, afterSuccessfulSync = false)
-            }
         }
     }
 
     companion object {
         private const val TAG = "HaiAutoSync"
         private const val ACTION_RUN = "com.hainanu.hai_schedule.AUTO_SYNC_RUN"
+
+        @Suppress("NOTHING_TO_INLINE")
+        private inline fun logd(msg: String) {
+            if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(TAG, msg)
+        }
         private const val REQUEST_CODE = 9310
 
         private const val BASE_URL = "https://ehall.hainanu.edu.cn"
@@ -66,8 +68,6 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private const val WEBVIEW_USER_AGENT = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
 
         private const val PREFS_FLUTTER = "FlutterSharedPreferences"
-        private const val PREFS_HOME_WIDGET = "HomeWidgetPreferences"
-
         private const val KEY_FREQUENCY = "auto_sync_frequency"
         private const val KEY_CUSTOM_INTERVAL_MINUTES = "auto_sync_custom_interval_minutes"
         private const val KEY_LAST_FETCH = "last_fetch_time"
@@ -76,6 +76,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private const val KEY_LAST_MESSAGE = "last_auto_sync_message"
         private const val KEY_LAST_ERROR = "last_auto_sync_error"
         private const val KEY_LAST_SOURCE = "last_auto_sync_source"
+        private const val KEY_LAST_DIFF_SUMMARY = "last_auto_sync_diff_summary"
         private const val KEY_LAST_SCHEDULE_JSON = "last_schedule_json"
         private const val KEY_LAST_SEMESTER = "last_semester_code"
         private const val KEY_LEGACY_SEMESTER = "current_semester"
@@ -85,9 +86,6 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private const val KEY_SCHEDULE_ARCHIVE = "schedule_archive_by_semester"
         private const val KEY_SCHEDULE_OVERRIDES = "schedule_overrides"
         private const val KEY_SCHOOL_TIME_CONFIG = "school_time_config"
-
-        private const val HOME_WIDGET_PAYLOAD_KEY = "hai_schedule_widget_payload"
-
         private const val DEFAULT_TOTAL_WEEKS = 20
         private const val PAGE_SIZE = 100
         private const val MAX_PAGES = 20
@@ -190,23 +188,18 @@ class AutoSyncScheduler : BroadcastReceiver() {
             val pendingIntent = createPendingIntent(context)
             alarmManager.cancel(pendingIntent)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAt,
-                    pendingIntent,
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAt,
-                    pendingIntent,
-                )
-            }
+            AlarmSchedulerCompat.schedule(
+                context = context,
+                alarmManager = alarmManager,
+                type = AlarmManager.RTC_WAKEUP,
+                triggerAtMillis = triggerAt,
+                pendingIntent = pendingIntent,
+                logTag = TAG,
+            )
 
             val nextIso = toIsoString(triggerAt)
             prefs.edit().putString(flutterKey(KEY_NEXT_SYNC), nextIso).apply()
-            Log.d(TAG, "后台同步已调度: $resolvedFrequency at $nextIso")
+            logd("后台同步已调度: $resolvedFrequency at $nextIso")
             return nextIso
         }
 
@@ -215,13 +208,13 @@ class AutoSyncScheduler : BroadcastReceiver() {
             alarmManager.cancel(createPendingIntent(context))
         }
 
-        private fun performSync(context: Context): Boolean {
-            Log.d(TAG, "开始执行后台同步")
+        private fun performSync(context: Context, retryDepth: Int = 0): Boolean {
+            logd("开始执行后台同步")
             val prefs = flutterPrefs(context)
             val semester = prefs.getString(flutterKey(KEY_ACTIVE_SEMESTER), null)
                 ?: prefs.getString(flutterKey(KEY_LAST_SEMESTER), null)
                 ?: prefs.getString(flutterKey(KEY_LEGACY_SEMESTER), null)
-            Log.d(TAG, "当前目标学期: ${semester ?: "<empty>"}")
+            logd("当前目标学期: ${semester ?: "<empty>"}")
 
             prefs.edit()
                 .putString(flutterKey(KEY_LAST_ATTEMPT), toIsoString(System.currentTimeMillis()))
@@ -231,7 +224,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 .apply()
 
             if (semester.isNullOrBlank()) {
-                Log.d(TAG, "后台同步终止: 缺少学期信息")
+                logd("后台同步终止: 缺少学期信息")
                 writeState(
                     context,
                     state = "login_required",
@@ -244,24 +237,34 @@ class AutoSyncScheduler : BroadcastReceiver() {
             val cookie = try {
                 val liveCookie = readMergedLiveCookie()
                 if (!liveCookie.isNullOrBlank()) {
-                    prefs.edit().putString(flutterKey(KEY_COOKIE_SNAPSHOT), liveCookie).apply()
+                    persistCookieSnapshot(context, prefs, liveCookie)
                     liveCookie
                 } else {
-                    prefs.getString(flutterKey(KEY_COOKIE_SNAPSHOT), null)
+                    loadStoredCookieSnapshot(context, prefs)
                 }
             } catch (t: Throwable) {
-                prefs.getString(flutterKey(KEY_COOKIE_SNAPSHOT), null)
+                loadStoredCookieSnapshot(context, prefs)
             }
 
             if (cookie.isNullOrBlank()) {
-                Log.d(TAG, "未读取到有效 cookie，尝试后台续登")
+                logd("未读取到有效 cookie，尝试后台续登")
                 val reloginCookie = tryBackgroundRelogin(context)
                 if (!reloginCookie.isNullOrBlank()) {
-                    Log.d(TAG, "后台续登成功，准备重试同步")
-                    prefs.edit().putString(flutterKey(KEY_COOKIE_SNAPSHOT), reloginCookie).apply()
-                    return performSync(context)
+                    logd("后台续登成功，准备重试同步")
+                    persistCookieSnapshot(context, prefs, reloginCookie)
+                    if (retryDepth >= 1) {
+                        logd("后台同步重试次数已达上限，终止重试")
+                        writeState(
+                            context,
+                            state = "failed",
+                            message = "后台同步重试次数过多，请手动刷新",
+                            error = null,
+                        )
+                        return false
+                    }
+                    return performSync(context, retryDepth = retryDepth + 1)
                 }
-                Log.d(TAG, "后台续登失败，无法继续同步")
+                logd("后台续登失败，无法继续同步")
                 writeState(
                     context,
                     state = "login_required",
@@ -274,34 +277,27 @@ class AutoSyncScheduler : BroadcastReceiver() {
             val json = fetchSchedulePayload(cookie, semester)
             val responseText = json.toString()
             val code = json.optString("code")
-            Log.d(TAG, "课表接口返回 code=$code")
+            logd("课表接口返回 code=$code")
             if (code != "0") {
-                Log.d(TAG, "现有登录态无效，尝试后台续登后重试")
+                logd("现有登录态无效，尝试后台续登后重试")
                 val reloginCookie = tryBackgroundRelogin(context)
                 if (!reloginCookie.isNullOrBlank()) {
-                    Log.d(TAG, "后台续登成功，正在重试课表接口")
-                    prefs.edit().putString(flutterKey(KEY_COOKIE_SNAPSHOT), reloginCookie).apply()
+                    logd("后台续登成功，正在重试课表接口")
+                    persistCookieSnapshot(context, prefs, reloginCookie)
                     val retryJson = fetchSchedulePayload(reloginCookie, semester)
                     val retryText = retryJson.toString()
-                    Log.d(TAG, "重试课表接口返回 code=${retryJson.optString("code")}")
+                    logd("重试课表接口返回 code=${retryJson.optString("code")}")
                     if (retryJson.optString("code") == "0") {
-                        val retryCourseCount = extractRows(retryJson)?.length() ?: 0
-                        Log.d(TAG, "后台续登后同步成功，课程数=$retryCourseCount")
-                        prefs.edit()
-                            .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), retryText)
-                            .putString(flutterKey(KEY_LAST_FETCH), toIsoString(System.currentTimeMillis()))
-                            .putString(flutterKey(KEY_LAST_STATE), "success")
-                            .putString(flutterKey(KEY_LAST_SOURCE), "background")
-                            .putString(flutterKey(KEY_LAST_MESSAGE), "后台续登后已同步 $retryCourseCount 门课程")
-                            .remove(flutterKey(KEY_LAST_ERROR))
-                            .apply()
-                        persistScheduleArchive(context, semester, retryText)
-                        saveWidgetPayload(context, retryJson, semester)
-                        TodayScheduleWidgetProvider.refreshAll(context)
-                        return true
+                        return persistSuccessfulSync(
+                            context = context,
+                            prefs = prefs,
+                            semester = semester,
+                            root = retryJson,
+                            rawScheduleJson = retryText,
+                        )
                     }
                 }
-                Log.d(TAG, "后台同步失败: 登录态仍无效")
+                logd("后台同步失败: 登录态仍无效")
                 writeState(
                     context,
                     state = "login_required",
@@ -311,20 +307,44 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 return false
             }
 
-            val courseCount = extractRows(json)?.length() ?: 0
-            Log.d(TAG, "后台同步成功，课程数=$courseCount")
+            return persistSuccessfulSync(
+                context = context,
+                prefs = prefs,
+                semester = semester,
+                root = json,
+                rawScheduleJson = responseText,
+            )
+        }
+
+        private fun persistSuccessfulSync(
+            context: Context,
+            prefs: SharedPreferences,
+            semester: String,
+            root: JSONObject,
+            rawScheduleJson: String,
+        ): Boolean {
+            val courses = parseCourses(root)
+            val previousCourses = loadArchivedCourses(prefs, semester)
+            val diffSummary = buildCourseDiffSummary(previousCourses, courses)
+            val message = buildSuccessMessage(courses.size, diffSummary)
+            val nowIso = toIsoString(System.currentTimeMillis())
+
             prefs.edit()
-                .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), responseText)
-                .putString(flutterKey(KEY_LAST_FETCH), toIsoString(System.currentTimeMillis()))
+                .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), rawScheduleJson)
+                .putString(flutterKey(KEY_LAST_FETCH), nowIso)
                 .putString(flutterKey(KEY_LAST_STATE), "success")
                 .putString(flutterKey(KEY_LAST_SOURCE), "background")
-                .putString(flutterKey(KEY_LAST_MESSAGE), "后台已同步 $courseCount 门课程")
+                .putString(flutterKey(KEY_LAST_MESSAGE), message)
+                .putString(flutterKey(KEY_LAST_DIFF_SUMMARY), diffSummary)
                 .remove(flutterKey(KEY_LAST_ERROR))
                 .apply()
 
-            persistScheduleArchive(context, semester, responseText)
-            saveWidgetPayload(context, json, semester)
+            persistScheduleArchive(context, semester, rawScheduleJson, courses)
+            saveProjectionPayload(context, semester, courses)
+            ClassReminderScheduler.rebuildFromStoredProjection(context)
+            ClassSilenceScheduler.rebuildFromStoredProjection(context)
             TodayScheduleWidgetProvider.refreshAll(context)
+            WidgetRefreshScheduler.start(context)
             return true
         }
 
@@ -339,12 +359,43 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 .putString(flutterKey(KEY_LAST_SOURCE), "background")
                 .putString(flutterKey(KEY_LAST_MESSAGE), message)
 
+            if (state != "success") {
+                editor.remove(flutterKey(KEY_LAST_DIFF_SUMMARY))
+            }
             if (error.isNullOrBlank()) {
                 editor.remove(flutterKey(KEY_LAST_ERROR))
             } else {
                 editor.putString(flutterKey(KEY_LAST_ERROR), error)
             }
             editor.apply()
+        }
+
+        private fun persistCookieSnapshot(
+            context: Context,
+            prefs: SharedPreferences,
+            cookie: String,
+        ) {
+            NativeCredentialStore.saveCookieSnapshot(context, cookie)
+            prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT)).apply()
+        }
+
+        private fun loadStoredCookieSnapshot(
+            context: Context,
+            prefs: SharedPreferences,
+        ): String? {
+            val secure = NativeCredentialStore.loadCookieSnapshot(context)
+            if (!secure.isNullOrBlank()) {
+                prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT)).apply()
+                return secure
+            }
+
+            val legacy = prefs.getString(flutterKey(KEY_COOKIE_SNAPSHOT), null)
+            if (!legacy.isNullOrBlank()) {
+                NativeCredentialStore.saveCookieSnapshot(context, legacy)
+                prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT)).apply()
+                return legacy
+            }
+            return null
         }
 
         private fun readMergedLiveCookie(): String? {
@@ -365,16 +416,16 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private fun tryBackgroundRelogin(context: Context): String? {
             val credential = NativeCredentialStore.load(context) ?: return null
             return try {
-                Log.d(TAG, "读取到已保存凭据，开始后台续登")
+                logd("读取到已保存凭据，开始后台续登")
                 val cookieJar = linkedMapOf<String, String>()
                 val loginPage = openRequest(
                     url = INDEX_URL,
                     cookieJar = cookieJar,
                     followRedirects = true,
                 )
-                Log.d(TAG, "后台续登已获取登录页: ${loginPage.url}")
+                logd("后台续登已获取登录页: ${loginPage.url}")
                 val form = parseLoginForm(loginPage.url, loginPage.body) ?: return null
-                Log.d(TAG, "后台续登已解析登录表单: ${form.actionUrl}")
+                logd("后台续登已解析登录表单: ${form.actionUrl}")
 
                 val fields = LinkedHashMap(form.hiddenFields)
                 fields["username"] = credential.first
@@ -416,9 +467,9 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     verifyUrl.contains("authserver") ||
                         verifyUrl.contains("login") ||
                         isMultiFactorChallenge(verifyPage.body)
-                Log.d(TAG, "后台续登校验页: ${verifyPage.url}")
+                logd("后台续登校验页: ${verifyPage.url}")
                 if (loginStillRequired) {
-                    Log.d(TAG, "后台续登校验失败，仍停留在登录页")
+                    logd("后台续登校验失败，仍停留在登录页")
                     return null
                 }
 
@@ -427,7 +478,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                         cookieJar.entries.joinToString("; ") { (key, value) -> "$key=$value" },
                     ),
                 ).ifBlank { null }
-                Log.d(TAG, "后台续登结束，cookie可用=${!mergedCookie.isNullOrBlank()}")
+                logd("后台续登结束，cookie可用=${!mergedCookie.isNullOrBlank()}")
                 mergedCookie
             } catch (t: Throwable) {
                 Log.e(TAG, "后台续登失败", t)
@@ -638,7 +689,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
             pageSize: Int,
         ): String {
             val requestUrl = "$API_URL?_=${System.currentTimeMillis()}"
-            val connection = (URL(requestUrl).openConnection() as HttpURLConnection).apply {
+            val connection = (URL(requestUrl).openConnection() as HttpsURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 15000
                 readTimeout = 15000
@@ -685,6 +736,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
             context: Context,
             semester: String,
             rawScheduleJson: String,
+            courses: List<ParsedCourse>,
         ) {
             val prefs = flutterPrefs(context)
             val archiveRaw = prefs.getString(flutterKey(KEY_SCHEDULE_ARCHIVE), null)
@@ -696,6 +748,12 @@ class AutoSyncScheduler : BroadcastReceiver() {
 
             val entry = archive.optJSONObject(semester) ?: JSONObject()
             entry.put("rawScheduleJson", rawScheduleJson)
+            entry.put(
+                "courses",
+                JSONArray().apply {
+                    courses.forEach { put(it.toJson()) }
+                },
+            )
             archive.put(semester, entry)
 
             prefs.edit()
@@ -707,111 +765,205 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 .apply()
         }
 
-        private fun saveWidgetPayload(context: Context, root: JSONObject, semester: String) {
-            val payload = JSONObject().apply {
-                put("schemaVersion", 1)
-                put("generatedAt", toIsoString(System.currentTimeMillis()))
-                put("semesterStart", semesterStartForCode(semester))
-                put("totalWeeks", DEFAULT_TOTAL_WEEKS)
-                put("classTimes", loadClassTimes(context))
-                put("slots", buildSlots(root))
-                put("overrides", loadOverrides(context, semester))
-            }
-
-            val widgetPrefs = context.getSharedPreferences(PREFS_HOME_WIDGET, Context.MODE_PRIVATE)
-            widgetPrefs.edit().putString(HOME_WIDGET_PAYLOAD_KEY, payload.toString()).apply()
-        }
-
-        private fun loadClassTimes(context: Context): JSONArray {
-            val raw = flutterPrefs(context).getString(flutterKey(KEY_SCHOOL_TIME_CONFIG), null)
-            if (!raw.isNullOrBlank()) {
-                try {
-                    val root = JSONObject(raw)
-                    val classTimes = root.optJSONArray("classTimes")
-                    if (classTimes != null && classTimes.length() > 0) {
-                        return classTimes
-                    }
-                } catch (_: Throwable) {
-                }
-            }
-            return buildClassTimes()
-        }
-
-        private fun buildClassTimes(): JSONArray {
-            val list = listOf(
-                Triple(1, "07:40", "08:25"),
-                Triple(2, "08:35", "09:20"),
-                Triple(3, "09:45", "10:30"),
-                Triple(4, "10:40", "11:25"),
-                Triple(5, "14:30", "15:15"),
-                Triple(6, "15:25", "16:10"),
-                Triple(7, "16:35", "17:20"),
-                Triple(8, "17:30", "18:15"),
-                Triple(9, "19:20", "20:05"),
-                Triple(10, "20:15", "21:00"),
-                Triple(11, "21:10", "21:55"),
-            )
-            val array = JSONArray()
-            list.forEach { (section, start, end) ->
-                array.put(JSONObject().apply {
-                    put("section", section)
-                    put("startTime", start)
-                    put("endTime", end)
-                })
-            }
-            return array
-        }
-
-        private fun buildSlots(root: JSONObject): JSONArray {
-            val rows = extractRows(root) ?: JSONArray()
-            val array = JSONArray()
-            for (i in 0 until rows.length()) {
-                val row = rows.optJSONObject(i) ?: continue
-                val courseId = row.optString("WID")
-                val courseName = row.optString("KCMC")
-                val teacher = row.optString("RKJS")
-                val pksjdd = row.optString("PKSJDD")
-                parseScheduleSlots(courseId, courseName, teacher, pksjdd).forEach { slot ->
-                    array.put(JSONObject().apply {
-                        put("courseId", slot.courseId)
-                        put("courseName", slot.courseName)
-                        put("teacher", slot.teacher)
-                        put("location", slot.location)
-                        put("weekday", slot.weekday)
-                        put("startSection", slot.startSection)
-                        put("endSection", slot.endSection)
-                        put("activeWeeks", JSONArray(slot.activeWeeks))
-                        put("color", slot.color)
-                    })
-                }
-            }
-            return array
-        }
-
-        private fun loadOverrides(context: Context, semester: String): JSONArray {
-            val raw = flutterPrefs(context).getString(flutterKey(KEY_SCHEDULE_OVERRIDES), null)
-            if (raw.isNullOrBlank()) return JSONArray()
-
-            val source = try {
-                JSONArray(raw)
+        private fun persistScheduleArchive(
+            context: Context,
+            semester: String,
+            rawScheduleJson: String,
+        ) {
+            val courses = try {
+                parseCourses(JSONObject(rawScheduleJson))
             } catch (_: Throwable) {
-                return JSONArray()
+                emptyList()
+            }
+            persistScheduleArchive(context, semester, rawScheduleJson, courses)
+        }
+
+        private fun saveProjectionPayload(
+            context: Context,
+            semester: String,
+            courses: List<ParsedCourse>,
+        ) {
+            val payload = ScheduleProjectionSupport.createPayload(
+                generatedAt = toIsoString(System.currentTimeMillis()),
+                semesterStart = ScheduleProjectionSupport.semesterStartForCode(semester),
+                totalWeeks = DEFAULT_TOTAL_WEEKS,
+                classTimes = ScheduleProjectionSupport.loadClassTimes(
+                    flutterPrefs(context).getString(flutterKey(KEY_SCHOOL_TIME_CONFIG), null),
+                ),
+                slots = buildProjectionSlots(courses),
+                overrides = ScheduleProjectionSupport.parseOverrides(
+                    flutterPrefs(context).getString(flutterKey(KEY_SCHEDULE_OVERRIDES), null),
+                    semester,
+                ),
+            )
+            ScheduleProjectionSupport.savePayload(context, payload)
+        }
+
+        private fun buildProjectionSlots(
+            courses: List<ParsedCourse>,
+        ): List<ScheduleProjectionSupport.ProjectionSlot> {
+            return buildList {
+                courses.forEach { course ->
+                    course.slots.forEach { slot ->
+                        add(
+                            ScheduleProjectionSupport.ProjectionSlot(
+                                courseId = slot.courseId,
+                                courseName = slot.courseName,
+                                teacher = slot.teacher.ifBlank { course.teacher },
+                                location = slot.location,
+                                weekday = slot.weekday,
+                                startSection = slot.startSection,
+                                endSection = slot.endSection,
+                                activeWeeks = slot.activeWeeks,
+                                color = slot.color,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+        private fun parseCourses(root: JSONObject): List<ParsedCourse> {
+            val rows = extractRows(root) ?: JSONArray()
+            return buildList {
+                for (i in 0 until rows.length()) {
+                    val row = rows.optJSONObject(i) ?: continue
+                    val courseId = row.optString("WID")
+                    val courseName = row.optString("KCMC")
+                    val teacher = row.optString("RKJS")
+                    add(
+                        ParsedCourse(
+                            id = courseId,
+                            code = row.optString("KCDM"),
+                            name = courseName,
+                            className = row.optString("BJMC"),
+                            teacher = teacher,
+                            college = row.optString("KKDW_DISPLAY"),
+                            credits = row.optDouble("XF"),
+                            totalHours = row.optInt("ZXS"),
+                            semester = row.optString("XNXQDM_DISPLAY"),
+                            campus = row.optString("XQDM_DISPLAY"),
+                            teachingType = row.optString("SKFSDM_DISPLAY"),
+                            slots = parseScheduleSlots(
+                                courseId = courseId,
+                                courseName = courseName,
+                                teacher = teacher,
+                                raw = row.optString("PKSJDD"),
+                            ),
+                        ),
+                    )
+                }
+            }
+        }
+
+        private fun loadArchivedCourses(
+            prefs: SharedPreferences,
+            semester: String,
+        ): List<ParsedCourse> {
+            val archiveRaw = prefs.getString(flutterKey(KEY_SCHEDULE_ARCHIVE), null)
+            val archive = try {
+                if (archiveRaw.isNullOrBlank()) JSONObject() else JSONObject(archiveRaw)
+            } catch (_: Throwable) {
+                return emptyList()
+            }
+            val entry = archive.optJSONObject(semester) ?: return emptyList()
+            val storedCourses = entry.optJSONArray("courses")
+            if (storedCourses != null) {
+                return parseArchivedCourseArray(storedCourses)
+            }
+            val rawScheduleJson = entry.optString("rawScheduleJson")
+            if (rawScheduleJson.isBlank()) return emptyList()
+            return try {
+                parseCourses(JSONObject(rawScheduleJson))
+            } catch (_: Throwable) {
+                emptyList()
+            }
+        }
+
+        private fun parseArchivedCourseArray(source: JSONArray): List<ParsedCourse> {
+            return buildList {
+                for (index in 0 until source.length()) {
+                    val item = source.optJSONObject(index) ?: continue
+                    add(
+                        ParsedCourse(
+                            id = item.optString("id"),
+                            code = item.optString("code"),
+                            name = item.optString("name"),
+                            className = item.optString("className"),
+                            teacher = item.optString("teacher"),
+                            college = item.optString("college"),
+                            credits = item.optDouble("credits"),
+                            totalHours = item.optInt("totalHours"),
+                            semester = item.optString("semester"),
+                            campus = item.optString("campus"),
+                            teachingType = item.optString("teachingType"),
+                            slots = buildList {
+                                val slotArray = item.optJSONArray("slots") ?: JSONArray()
+                                for (slotIndex in 0 until slotArray.length()) {
+                                    val slot = slotArray.optJSONObject(slotIndex) ?: continue
+                                    add(
+                                        ParsedSlot(
+                                            courseId = slot.optString("courseId"),
+                                            courseName = slot.optString("courseName"),
+                                            teacher = slot.optString("teacher"),
+                                            location = slot.optString("location"),
+                                            weekday = slot.optInt("weekday"),
+                                            startSection = slot.optInt("startSection"),
+                                            endSection = slot.optInt("endSection"),
+                                            activeWeeks = expandArchivedWeeks(slot.optJSONArray("weekRanges")),
+                                            color = pickColor(slot.optString("courseName")),
+                                        ),
+                                    )
+                                }
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+
+        private fun expandArchivedWeeks(weekRanges: JSONArray?): List<Int> {
+            if (weekRanges == null) return emptyList()
+            val weeks = linkedSetOf<Int>()
+            for (index in 0 until weekRanges.length()) {
+                val range = weekRanges.optJSONObject(index) ?: continue
+                val start = range.optInt("start")
+                val end = range.optInt("end")
+                val type = range.optString("type", "all")
+                for (week in start..end) {
+                    if (matchesWeekType(week, type)) {
+                        weeks.add(week)
+                    }
+                }
+            }
+            return weeks.toList()
+        }
+
+        private fun buildCourseDiffSummary(
+            previous: List<ParsedCourse>,
+            current: List<ParsedCourse>,
+        ): String {
+            val previousMap = previous.associate { it.identity() to it.signature() }
+            val currentMap = current.associate { it.identity() to it.signature() }
+            val added = currentMap.keys.count { !previousMap.containsKey(it) }
+            val removed = previousMap.keys.count { !currentMap.containsKey(it) }
+            val changed = currentMap.keys.count {
+                previousMap.containsKey(it) && previousMap[it] != currentMap[it]
             }
 
-            val filtered = JSONArray()
-            for (i in 0 until source.length()) {
-                val item = source.optJSONObject(i) ?: continue
-                if (item.optString("semesterCode") != semester) continue
-                filtered.put(JSONObject(item.toString()).apply {
-                    if (!has("status")) {
-                        put("status", "normal")
-                    }
-                    if (!has("color")) {
-                        put("color", pickColor(optString("courseName")))
-                    }
-                })
+            if (added == 0 && removed == 0 && changed == 0) {
+                return "璇捐〃鏃犲彉鍖?"
             }
-            return filtered
+
+            return buildList {
+                if (added > 0) add("鏂板 $added 闂?")
+                if (removed > 0) add("绉婚櫎 $removed 闂?")
+                if (changed > 0) add("璋冩暣 $changed 闂?")
+            }.joinToString("锛?")
+        }
+
+        private fun buildSuccessMessage(courseCount: Int, diffSummary: String): String {
+            return "宸插悓姝?$courseCount 闂ㄨ绋嬶紝$diffSummary"
         }
 
         private fun parseScheduleSlots(
@@ -829,7 +981,8 @@ class AutoSyncScheduler : BroadcastReceiver() {
 
                 val dayMatch = DAY_REGEX.matcher(segment)
                 if (!dayMatch.find()) return@forEach
-                val weekday = WEEKDAY_MAP[dayMatch.group(1)] ?: return@forEach
+                val weekdayKey = dayMatch.group(1) ?: return@forEach
+                val weekday = WEEKDAY_MAP[weekdayKey] ?: return@forEach
 
                 val sectionMatch = SECTION_REGEX.matcher(segment)
                 if (!sectionMatch.find()) return@forEach
@@ -933,38 +1086,14 @@ class AutoSyncScheduler : BroadcastReceiver() {
             }
         }
 
-        private fun semesterStartForCode(code: String): String {
-            val startYear = code.take(4).toIntOrNull() ?: return firstMondayOnOrAfter(2026, 3, 1)
-            val month = if (code.endsWith("1")) 9 else 3
-            val year = if (code.endsWith("1")) startYear else startYear + 1
-            return firstMondayOnOrAfter(year, month, 1)
-        }
-
-        private fun firstMondayOnOrAfter(year: Int, month: Int, dayOfMonth: Int): String {
-            val calendar = Calendar.getInstance().apply {
-                set(Calendar.YEAR, year)
-                set(Calendar.MONTH, month - 1)
-                set(Calendar.DAY_OF_MONTH, dayOfMonth)
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }
-            while (calendar.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
-                calendar.add(Calendar.DAY_OF_MONTH, 1)
-            }
-            return String.format(
-                Locale.US,
-                "%04d-%02d-%02d",
-                calendar.get(Calendar.YEAR),
-                calendar.get(Calendar.MONTH) + 1,
-                calendar.get(Calendar.DAY_OF_MONTH),
-            )
-        }
-
         private fun pickColor(courseName: String): Int {
             if (courseName.isBlank()) return COURSE_COLORS.first()
-            val index = (courseName.hashCode() and 0x7fffffff) % COURSE_COLORS.size
+            var hash = 0x811C9DC5.toInt()
+            courseName.forEach { ch ->
+                hash = hash xor ch.code
+                hash = (hash * 0x01000193).toInt()
+            }
+            val index = (hash.toLong() and 0xFFFFFFFFL).rem(COURSE_COLORS.size).toInt()
             return COURSE_COLORS[index]
         }
 
@@ -1085,5 +1214,115 @@ class AutoSyncScheduler : BroadcastReceiver() {
             val activeWeeks: List<Int>,
             val color: Int,
         )
+
+        private data class ParsedCourse(
+            val id: String,
+            val code: String,
+            val name: String,
+            val className: String,
+            val teacher: String,
+            val college: String,
+            val credits: Double,
+            val totalHours: Int,
+            val semester: String,
+            val campus: String,
+            val teachingType: String,
+            val slots: List<ParsedSlot>,
+        ) {
+            fun toJson(): JSONObject {
+                return JSONObject().apply {
+                    put("id", id)
+                    put("code", code)
+                    put("name", name)
+                    put("className", className)
+                    put("teacher", teacher)
+                    put("college", college)
+                    put("credits", credits)
+                    put("totalHours", totalHours)
+                    put("semester", semester)
+                    put("campus", campus)
+                    put("teachingType", teachingType)
+                    put(
+                        "slots",
+                        JSONArray().apply {
+                            slots.forEach { slot ->
+                                put(
+                                    JSONObject().apply {
+                                        put("courseId", slot.courseId)
+                                        put("courseName", slot.courseName)
+                                        put("teacher", slot.teacher)
+                                        put("weekday", slot.weekday)
+                                        put("startSection", slot.startSection)
+                                        put("endSection", slot.endSection)
+                                        put("location", slot.location)
+                                        put(
+                                            "weekRanges",
+                                            JSONArray().apply {
+                                                buildWeekRanges(slot.activeWeeks).forEach { range ->
+                                                    put(range)
+                                                }
+                                            },
+                                        )
+                                    },
+                                )
+                            }
+                        },
+                    )
+                }
+            }
+
+            fun identity(): String = "$code|$name|$teacher|$className"
+
+            fun signature(): String {
+                val slotSignatures = slots.map { slot ->
+                    listOf(
+                        slot.weekday,
+                        slot.startSection,
+                        slot.endSection,
+                        slot.location,
+                        slot.activeWeeks.joinToString("/"),
+                    ).joinToString("|")
+                }.sorted()
+                return listOf(
+                    college,
+                    credits,
+                    totalHours,
+                    semester,
+                    campus,
+                    teachingType,
+                    slotSignatures.joinToString(";"),
+                ).joinToString("|")
+            }
+        }
+
+        private fun buildWeekRanges(activeWeeks: List<Int>): List<JSONObject> {
+            if (activeWeeks.isEmpty()) return emptyList()
+            val ranges = mutableListOf<JSONObject>()
+            var start = activeWeeks.first()
+            var previous = start
+            activeWeeks.drop(1).forEach { week ->
+                if (week == previous + 1) {
+                    previous = week
+                } else {
+                    ranges.add(
+                        JSONObject().apply {
+                            put("start", start)
+                            put("end", previous)
+                            put("type", "all")
+                        },
+                    )
+                    start = week
+                    previous = week
+                }
+            }
+            ranges.add(
+                JSONObject().apply {
+                    put("start", start)
+                    put("end", previous)
+                    put("type", "all")
+                },
+            )
+            return ranges
+        }
     }
 }

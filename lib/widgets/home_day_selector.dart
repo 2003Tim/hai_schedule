@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../utils/constants.dart';
+import 'package:hai_schedule/utils/constants.dart';
 
 class HomeDaySelector extends StatelessWidget {
   const HomeDaySelector({
