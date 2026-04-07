@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:hai_schedule/models/school_time.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/widgets/adaptive_layout.dart';
 import 'package:hai_schedule/widgets/school_time_sections.dart';
 
 class SchoolTimeSettingsScreen extends StatefulWidget {
@@ -499,91 +500,115 @@ class _SchoolTimeSettingsScreenState extends State<SchoolTimeSettingsScreen> {
         int.tryParse(_morningLongBreakAfterController.text.trim()) ?? 2;
     final afternoonLongBreakAfter =
         int.tryParse(_afternoonLongBreakAfterController.text.trim()) ?? 2;
+    final isWideLayout = AdaptiveLayout.isWide(context, breakpoint: 860);
 
+    final basicsCard = SchoolTimeBasicsCard(
+      nameController: _nameController,
+      classTimesCount: _classTimes.length,
+      onAddSection: _addSection,
+      onRemoveSection: _removeSection,
+      canRemoveSection: _classTimes.length > 1,
+    );
+    final generatorCard = SchoolTimeGeneratorCard(
+      plannedSections: plannedSections,
+      saving: _saving,
+      lessonMinutesController: _lessonMinutesController,
+      breakMinutesController: _breakMinutesController,
+      morningCount: morningCount,
+      afternoonCount: afternoonCount,
+      eveningCount: eveningCount,
+      onMorningCountChanged:
+          (next) => _updateCountController(_morningCountController, next),
+      onAfternoonCountChanged:
+          (next) => _updateCountController(_afternoonCountController, next),
+      onEveningCountChanged:
+          (next) => _updateCountController(_eveningCountController, next),
+      morningStartText: _formatTimeOfDay(_morningStart),
+      afternoonStartText: _formatTimeOfDay(_afternoonStart),
+      eveningStartText: _formatTimeOfDay(_eveningStart),
+      onPickMorningStart: () => _pickGeneratorStart(period: 'morning'),
+      onPickAfternoonStart: () => _pickGeneratorStart(period: 'afternoon'),
+      onPickEveningStart: () => _pickGeneratorStart(period: 'evening'),
+      enableMorningLongBreak: _enableMorningLongBreak,
+      enableAfternoonLongBreak: _enableAfternoonLongBreak,
+      onMorningLongBreakChanged:
+          (value) => setState(() => _enableMorningLongBreak = value),
+      onAfternoonLongBreakChanged:
+          (value) => setState(() => _enableAfternoonLongBreak = value),
+      morningLongBreakController: _morningLongBreakController,
+      afternoonLongBreakController: _afternoonLongBreakController,
+      morningLongBreakAfter: morningLongBreakAfter,
+      afternoonLongBreakAfter: afternoonLongBreakAfter,
+      onMorningLongBreakAfterChanged:
+          (next) => _updateLongBreakAfterController(
+            _morningLongBreakAfterController,
+            next,
+          ),
+      onAfternoonLongBreakAfterChanged:
+          (next) => _updateLongBreakAfterController(
+            _afternoonLongBreakAfterController,
+            next,
+          ),
+      onGenerate: _generateSchedule,
+    );
+    final sectionListCard = SchoolTimeSectionListCard(
+      classTimes: _classTimes,
+      onEditSection: _editSection,
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text('作息时间设置'),
         actions: [
+          TextButton(
+            onPressed: _saving ? null : _save,
+            child: const Text('保存'),
+          ),
           TextButton(
             onPressed: _saving ? null : _resetToDefault,
             child: const Text('恢复默认'),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          SchoolTimeBasicsCard(
-            nameController: _nameController,
-            classTimesCount: _classTimes.length,
-            onAddSection: _addSection,
-            onRemoveSection: _removeSection,
-            canRemoveSection: _classTimes.length > 1,
+      body: SafeArea(
+        child: AdaptivePage(
+          maxWidth: 1320,
+          padding: EdgeInsets.zero,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: isWideLayout
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 10,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            basicsCard,
+                            const SizedBox(height: 16),
+                            generatorCard,
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        flex: 12,
+                        child: sectionListCard,
+                      ),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      basicsCard,
+                      const SizedBox(height: 16),
+                      generatorCard,
+                      const SizedBox(height: 16),
+                      sectionListCard,
+                    ],
+                  ),
           ),
-          const SizedBox(height: 16),
-          SchoolTimeGeneratorCard(
-            plannedSections: plannedSections,
-            saving: _saving,
-            lessonMinutesController: _lessonMinutesController,
-            breakMinutesController: _breakMinutesController,
-            morningCount: morningCount,
-            afternoonCount: afternoonCount,
-            eveningCount: eveningCount,
-            onMorningCountChanged:
-                (next) => _updateCountController(_morningCountController, next),
-            onAfternoonCountChanged:
-                (next) =>
-                    _updateCountController(_afternoonCountController, next),
-            onEveningCountChanged:
-                (next) => _updateCountController(_eveningCountController, next),
-            morningStartText: _formatTimeOfDay(_morningStart),
-            afternoonStartText: _formatTimeOfDay(_afternoonStart),
-            eveningStartText: _formatTimeOfDay(_eveningStart),
-            onPickMorningStart: () => _pickGeneratorStart(period: 'morning'),
-            onPickAfternoonStart:
-                () => _pickGeneratorStart(period: 'afternoon'),
-            onPickEveningStart: () => _pickGeneratorStart(period: 'evening'),
-            enableMorningLongBreak: _enableMorningLongBreak,
-            enableAfternoonLongBreak: _enableAfternoonLongBreak,
-            onMorningLongBreakChanged:
-                (value) => setState(() => _enableMorningLongBreak = value),
-            onAfternoonLongBreakChanged:
-                (value) => setState(() => _enableAfternoonLongBreak = value),
-            morningLongBreakController: _morningLongBreakController,
-            afternoonLongBreakController: _afternoonLongBreakController,
-            morningLongBreakAfter: morningLongBreakAfter,
-            afternoonLongBreakAfter: afternoonLongBreakAfter,
-            onMorningLongBreakAfterChanged:
-                (next) => _updateLongBreakAfterController(
-                  _morningLongBreakAfterController,
-                  next,
-                ),
-            onAfternoonLongBreakAfterChanged:
-                (next) => _updateLongBreakAfterController(
-                  _afternoonLongBreakAfterController,
-                  next,
-                ),
-            onGenerate: _generateSchedule,
-          ),
-          const SizedBox(height: 16),
-          SchoolTimeSectionListCard(
-            classTimes: _classTimes,
-            onEditSection: _editSection,
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _saving ? null : _save,
-            icon:
-                _saving
-                    ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                    : const Icon(Icons.save_rounded),
-            label: const Text('保存作息时间'),
-          ),
-        ],
+        ),
       ),
     );
   }

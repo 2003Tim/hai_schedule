@@ -201,7 +201,9 @@ class ReminderRepository {
 
   final AppStorage _storage;
 
-  Future<StoredReminderRecord> loadRecord() => _storage.loadReminderRecord();
+  Future<StoredReminderRecord> loadRecord({bool forceReload = false}) {
+    return _storage.loadReminderRecord(forceReload: forceReload);
+  }
 
   Future<void> saveLeadMinutes(int leadMinutes) => _storage.saveReminderLeadMinutes(leadMinutes);
 

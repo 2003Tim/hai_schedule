@@ -74,6 +74,7 @@ class SchoolTimeBasicsCard extends StatelessWidget {
               '当前共 $classTimesCount 节课。提醒、自动静音、小组件都会直接复用这份逐节时间表。',
               style: TextStyle(
                 fontSize: 13,
+                height: 1.5,
                 color: Theme.of(
                   context,
                 ).colorScheme.onSurface.withValues(alpha: 0.70),
@@ -554,7 +555,7 @@ class SchoolTimeSectionBlock extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               subtitle!,
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              style: TextStyle(fontSize: 12, height: 1.5, color: scheme.onSurfaceVariant),
             ),
           ],
           const SizedBox(height: 12),

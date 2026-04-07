@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:hai_schedule/services/app_backup_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/services/theme_provider.dart';
+import 'package:hai_schedule/widgets/adaptive_layout.dart';
 import 'package:hai_schedule/widgets/backup_restore_sections.dart';
 
 class BackupRestoreScreen extends StatefulWidget {
@@ -204,37 +205,76 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isWideLayout = AdaptiveLayout.isWide(context, breakpoint: 860);
+
     return Scaffold(
       appBar: AppBar(title: const Text('备份与恢复')),
       body: IgnorePointer(
         ignoring: _busy,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            BackupExportCard(
-              currentSummary: _currentSummary,
-              selectedExportDirectory: _selectedExportDirectory,
-              onPickExportDirectory: _pickExportDirectory,
-              onCopyBackupPath: _copyBackupPath,
-              onExportBackup: _exportBackup,
-              onCopyBackupJson: _copyBackupJson,
-              backupJson: _backupJson,
-              backupPath: _backupPath,
+        child: SafeArea(
+          child: AdaptivePage(
+            maxWidth: 1320,
+            padding: EdgeInsets.zero,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                if (isWideLayout)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: BackupExportCard(
+                          currentSummary: _currentSummary,
+                          selectedExportDirectory: _selectedExportDirectory,
+                          onPickExportDirectory: _pickExportDirectory,
+                          onCopyBackupPath: _copyBackupPath,
+                          onExportBackup: _exportBackup,
+                          onCopyBackupJson: _copyBackupJson,
+                          backupJson: _backupJson,
+                          backupPath: _backupPath,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: BackupRestoreCard(
+                          restoreController: _restoreController,
+                          restoreSummary: _restoreSummary,
+                          onPickBackupFile: _pickBackupFile,
+                          onClear: _clearRestoreInput,
+                          onRestoreChanged: _handleRestoreInputChanged,
+                          onRestoreBackup: _restoreBackup,
+                        ),
+                      ),
+                    ],
+                  )
+                else ...[
+                  BackupExportCard(
+                    currentSummary: _currentSummary,
+                    selectedExportDirectory: _selectedExportDirectory,
+                    onPickExportDirectory: _pickExportDirectory,
+                    onCopyBackupPath: _copyBackupPath,
+                    onExportBackup: _exportBackup,
+                    onCopyBackupJson: _copyBackupJson,
+                    backupJson: _backupJson,
+                    backupPath: _backupPath,
+                  ),
+                  const SizedBox(height: 16),
+                  BackupRestoreCard(
+                    restoreController: _restoreController,
+                    restoreSummary: _restoreSummary,
+                    onPickBackupFile: _pickBackupFile,
+                    onClear: _clearRestoreInput,
+                    onRestoreChanged: _handleRestoreInputChanged,
+                    onRestoreBackup: _restoreBackup,
+                  ),
+                ],
+                if (_backupJson != null) ...[
+                  const SizedBox(height: 16),
+                  RecentBackupJsonCard(backupJson: _backupJson!),
+                ],
+              ],
             ),
-            const SizedBox(height: 16),
-            BackupRestoreCard(
-              restoreController: _restoreController,
-              restoreSummary: _restoreSummary,
-              onPickBackupFile: _pickBackupFile,
-              onClear: _clearRestoreInput,
-              onRestoreChanged: _handleRestoreInputChanged,
-              onRestoreBackup: _restoreBackup,
-            ),
-            if (_backupJson != null) ...[
-              const SizedBox(height: 16),
-              RecentBackupJsonCard(backupJson: _backupJson!),
-            ],
-          ],
+          ),
         ),
       ),
     );

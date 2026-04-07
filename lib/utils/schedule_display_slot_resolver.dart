@@ -64,7 +64,7 @@ class ScheduleDisplaySlotResolver {
           if (cancelOverride != null) {
             return DisplayScheduleSlot(
               slot: slot,
-              teacher: course.teacher,
+              teacher: _effectiveTeacher(course, slot),
               isActive: false,
               isOverride: true,
               overrideType: cancelOverride.type,
@@ -84,7 +84,7 @@ class ScheduleDisplaySlotResolver {
 
           return DisplayScheduleSlot(
             slot: slot,
-            teacher: course.teacher,
+            teacher: _effectiveTeacher(course, slot),
             isActive: true,
           );
         }
@@ -102,7 +102,7 @@ class ScheduleDisplaySlotResolver {
             slot.getAllActiveWeeks().isNotEmpty) {
           return DisplayScheduleSlot(
             slot: slot,
-            teacher: course.teacher,
+            teacher: _effectiveTeacher(course, slot),
             isActive: false,
           );
         }
@@ -118,10 +118,10 @@ class ScheduleDisplaySlotResolver {
   }) {
     for (final course in courses) {
       if (course.id == slot.courseId) {
-        return course.teacher;
+        return _effectiveTeacher(course, slot);
       }
     }
-    return '';
+    return slot.teacher;
   }
 
   static ScheduleOverride? overrideForDateSlot({
@@ -189,7 +189,10 @@ class ScheduleDisplaySlotResolver {
       for (final slot in course.slots) {
         if (slot.weekday != weekday || !slot.isActiveInWeek(week)) continue;
         if (!ScheduleOverrideMatcher.matchesSource(override, slot)) continue;
-        return _ResolvedOverrideSource(slot: slot, teacher: course.teacher);
+        return _ResolvedOverrideSource(
+          slot: slot,
+          teacher: _effectiveTeacher(course, slot),
+        );
       }
     }
     return null;
@@ -219,6 +222,10 @@ class ScheduleDisplaySlotResolver {
               : source?.location ?? '',
       weekRanges: source?.weekRanges ?? const <WeekRange>[],
     );
+  }
+
+  static String _effectiveTeacher(Course course, ScheduleSlot slot) {
+    return slot.teacher.isNotEmpty ? slot.teacher : course.teacher;
   }
 }
 

@@ -513,8 +513,10 @@ class AppStorage {
     return plain;
   }
 
-  Future<StoredReminderRecord> loadReminderRecord() async {
-    final prefs = await _prefs;
+  Future<StoredReminderRecord> loadReminderRecord({
+    bool forceReload = false,
+  }) async {
+    final prefs = forceReload ? await _forceReloadedPrefs() : await _prefs;
     return StoredReminderRecord(
       leadMinutes: prefs.getInt(_reminderLeadTimeKey) ?? 0,
       lastBuildTime: AppStorageCodec.readTime(
@@ -569,6 +571,12 @@ class AppStorage {
   Future<SharedPreferences> _reloadedPrefs() async {
     final prefs = await _prefs;
     if (Platform.isAndroid) await prefs.reload();
+    return prefs;
+  }
+
+  Future<SharedPreferences> _forceReloadedPrefs() async {
+    final prefs = await _prefs;
+    await prefs.reload();
     return prefs;
   }
 

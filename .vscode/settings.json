@@ -1,3 +1,6 @@
 {
-    "dart.flutterSdkPath": "F:\\softWare\\flutter\\flutter3.22.3\\flutter"
+    "dart.flutterSdkPath": "F:\\softWare\\flutter\\flutter3.22.3\\flutter",
+    "cmake.sourceDirectory": "F:/storeFiles/Code/class_schedule/hai_schedule/windows",
+    "files.encoding": "utf8",
+    "files.autoGuessEncoding": true
 }

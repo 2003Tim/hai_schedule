@@ -179,10 +179,7 @@ void main() {
       () async {
         final provider = ScheduleProvider();
         await provider.setCourses([
-          _buildCourseWithTwoSlots(
-            teacher: '张老师',
-            slotTeacher: '',
-          ),
+          _buildCourseWithTwoSlots(teacher: '张老师', slotTeacher: ''),
         ], semesterCode: '20252');
         final date = provider.getDateForSlot(1, 1);
 
@@ -224,6 +221,18 @@ void main() {
         expect(untouchedDisplay.slot.location, '教三-303');
       },
     );
+
+    test('display slot prefers slot teacher over course teacher', () async {
+      final provider = ScheduleProvider();
+      await provider.setCourses([
+        _buildCourse(teacher: '张老师', slotTeacher: '李老师'),
+      ], semesterCode: '20252');
+
+      final display = provider.getDisplaySlotAt(1, 1, 1);
+
+      expect(display, isNotNull);
+      expect(display!.teacher, '李老师');
+    });
   });
 }
 

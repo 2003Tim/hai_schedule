@@ -7,6 +7,7 @@ import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/schedule_parser.dart';
 import 'package:hai_schedule/models/school_time.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
+import 'package:hai_schedule/utils/week_calculator.dart';
 
 class LoadedScheduleState {
   final List<Course> courses;
@@ -86,15 +87,7 @@ class ScheduleStateLoader {
   }
 
   String inferSemesterCode(DateTime now) {
-    final month = now.month;
-    final year = now.year;
-    if (month >= 8) {
-      return '${year}1';
-    }
-    if (month <= 1) {
-      return '${year - 1}1';
-    }
-    return '${year - 1}2';
+    return WeekCalculator.inferSemesterCode(now);
   }
 
   Future<List<Course>> _resolveCourses(ScheduleCache cache) async {

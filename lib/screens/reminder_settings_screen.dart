@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:hai_schedule/services/class_reminder_service.dart';
 import 'package:hai_schedule/services/class_silence_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/widgets/adaptive_layout.dart';
 import 'package:hai_schedule/widgets/reminder_settings_sections.dart';
 
 class ReminderSettingsScreen extends StatefulWidget {
@@ -255,8 +256,7 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen>
           policyAccessGranted: false,
         );
     final isDesktop = !Platform.isAndroid;
-    final isWideDesktop =
-        isDesktop && MediaQuery.of(context).size.width >= 1180;
+    final isWideLayout = AdaptiveLayout.isWide(context, breakpoint: 960);
     final reminderModeText =
         isDesktop
             ? '桌面预览模式，不直接发送系统通知'
@@ -301,40 +301,44 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen>
       child: Scaffold(
         appBar: AppBar(title: const Text('课前提醒')),
         body: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
-            children: [
-              if (isWideDesktop) ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 11, child: statusCard),
-                    const SizedBox(width: 14),
-                    Expanded(flex: 9, child: leadTimeCard),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 11, child: previewCard),
-                    const SizedBox(width: 14),
-                    Expanded(flex: 9, child: silenceCard),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                tipsCard,
-              ] else ...[
-                statusCard,
-                if (isDesktop) ...[const SizedBox(height: 14), previewCard],
-                const SizedBox(height: 14),
-                silenceCard,
-                const SizedBox(height: 14),
-                leadTimeCard,
-                const SizedBox(height: 14),
-                tipsCard,
+          child: AdaptivePage(
+            maxWidth: 1280,
+            padding: EdgeInsets.zero,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
+              children: [
+                if (isWideLayout) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 11, child: statusCard),
+                      const SizedBox(width: 14),
+                      Expanded(flex: 9, child: leadTimeCard),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 11, child: previewCard),
+                      const SizedBox(width: 14),
+                      Expanded(flex: 9, child: silenceCard),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  tipsCard,
+                ] else ...[
+                  statusCard,
+                  if (isDesktop) ...[const SizedBox(height: 14), previewCard],
+                  const SizedBox(height: 14),
+                  silenceCard,
+                  const SizedBox(height: 14),
+                  leadTimeCard,
+                  const SizedBox(height: 14),
+                  tipsCard,
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

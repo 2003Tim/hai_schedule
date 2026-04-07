@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/utils/semester_code_formatter.dart';
+import 'package:hai_schedule/widgets/adaptive_layout.dart';
 
 class ScheduleOverridesScreen extends StatelessWidget {
   const ScheduleOverridesScreen({super.key});
@@ -26,11 +27,22 @@ class ScheduleOverridesScreen extends StatelessWidget {
       ),
       body:
           overrides.isEmpty
-              ? _EmptyState(semesterCode: provider.currentSemesterCode)
-              : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                children: _buildSections(context, provider, overrides),
-              ),
+              ? SafeArea(
+                  child: AdaptivePage(
+                    maxWidth: 1100,
+                    child: _EmptyState(semesterCode: provider.currentSemesterCode),
+                  ),
+                )
+              : SafeArea(
+                  child: AdaptivePage(
+                    maxWidth: 1100,
+                    padding: EdgeInsets.zero,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                      children: _buildSections(context, provider, overrides),
+                    ),
+                  ),
+                ),
     );
   }
 

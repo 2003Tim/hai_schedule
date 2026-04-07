@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:hai_schedule/services/schedule_provider.dart';
-import 'package:hai_schedule/widgets/semester_management_sections.dart';
 import 'package:hai_schedule/screens/import_screen.dart';
 import 'package:hai_schedule/screens/login_router.dart';
+import 'package:hai_schedule/widgets/adaptive_layout.dart';
+import 'package:hai_schedule/widgets/semester_management_sections.dart';
 
 class SemesterManagementScreen extends StatelessWidget {
   const SemesterManagementScreen({super.key});
@@ -102,6 +103,7 @@ class SemesterManagementScreen extends StatelessWidget {
     final provider = context.watch<ScheduleProvider>();
     final codes = [...provider.availableSemesterCodes]
       ..sort((a, b) => b.compareTo(a));
+    final isWideLayout = AdaptiveLayout.isWide(context, breakpoint: 960);
 
     return Scaffold(
       appBar: AppBar(title: const Text('学期管理'), centerTitle: true),
@@ -111,33 +113,65 @@ class SemesterManagementScreen extends StatelessWidget {
         icon: const Icon(Icons.add_rounded),
         label: const Text('新建学期'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-        children: [
-          CurrentSemesterSummaryCard(
-            currentSemesterCode: provider.currentSemesterCode,
-          ),
-          const SizedBox(height: 16),
-          if (codes.isEmpty)
-            const EmptySemesterHint()
-          else
-            ...codes.map(
-              (code) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: SemesterManagementCard(
-                  semesterCode: code,
-                  isCurrent: code == provider.currentSemesterCode,
-                  canDelete: codes.length > 1,
-                  onDelete: () => _deleteSemester(context, semesterCode: code),
-                  onSwitch: () => _switchSemester(context, semesterCode: code),
-                  onLoginFetch:
-                      () => _openLoginFetch(context, semesterCode: code),
-                  onManualImport:
-                      () => _openManualImport(context, semesterCode: code),
-                ),
+      body: SafeArea(
+        child: AdaptivePage(
+          maxWidth: 1240,
+          padding: EdgeInsets.zero,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            children: [
+              CurrentSemesterSummaryCard(
+                currentSemesterCode: provider.currentSemesterCode,
               ),
-            ),
-        ],
+              const SizedBox(height: 16),
+              if (codes.isEmpty)
+                const EmptySemesterHint()
+              else if (isWideLayout)
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    for (final code in codes)
+                      SizedBox(
+                        width: 560,
+                        child: SemesterManagementCard(
+                          semesterCode: code,
+                          isCurrent: code == provider.currentSemesterCode,
+                          canDelete: codes.length > 1,
+                          onDelete:
+                              () => _deleteSemester(context, semesterCode: code),
+                          onSwitch:
+                              () => _switchSemester(context, semesterCode: code),
+                          onLoginFetch:
+                              () => _openLoginFetch(context, semesterCode: code),
+                          onManualImport:
+                              () => _openManualImport(context, semesterCode: code),
+                        ),
+                      ),
+                  ],
+                )
+              else
+                ...codes.map(
+                  (code) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: SemesterManagementCard(
+                      semesterCode: code,
+                      isCurrent: code == provider.currentSemesterCode,
+                      canDelete: codes.length > 1,
+                      onDelete:
+                          () => _deleteSemester(context, semesterCode: code),
+                      onSwitch:
+                          () => _switchSemester(context, semesterCode: code),
+                      onLoginFetch:
+                          () => _openLoginFetch(context, semesterCode: code),
+                      onManualImport:
+                          () => _openManualImport(context, semesterCode: code),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

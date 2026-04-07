@@ -10,13 +10,21 @@ Future<bool> showRestoreBackupConfirmDialog(
         context: context,
         builder: (dialogContext) {
           return AlertDialog(
+            scrollable: true,
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 24,
+            ),
             title: const Text('确认恢复'),
-            content: Text(
-              '恢复会覆盖当前本地数据。此操作不可撤销。\n\n'
-              '学期数：${summary.semesterCount}\n'
-              '临时安排：${summary.overrideCount}\n'
-              '课前提醒：${summary.reminderEnabled ? '已开启' : '未开启'}\n'
-              '上课自动静音：${summary.silenceEnabled ? '已开启' : '未开启'}',
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Text(
+                '恢复会覆盖当前本地数据。此操作不可撤销。\n\n'
+                '学期数：${summary.semesterCount}\n'
+                '临时安排：${summary.overrideCount}\n'
+                '课前提醒：${summary.reminderEnabled ? '已开启' : '未开启'}\n'
+                '上课自动静音：${summary.silenceEnabled ? '已开启' : '未开启'}',
+              ),
             ),
             actions: [
               TextButton(

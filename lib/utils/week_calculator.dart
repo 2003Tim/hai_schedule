@@ -6,10 +6,7 @@ class WeekCalculator {
   /// 总周数
   final int totalWeeks;
 
-  WeekCalculator({
-    required this.semesterStart,
-    this.totalWeeks = 20,
-  });
+  WeekCalculator({required this.semesterStart, this.totalWeeks = 20});
 
   /// 计算指定日期是第几周（从1开始）。
   /// 返回值可能超过 totalWeeks（学期结束后继续计数）。
@@ -39,38 +36,57 @@ class WeekCalculator {
   /// 根据学期码自动推算开学日期。
   /// 第一学期（term=1）：该学年9月1日起的第一个周一。
   /// 第二学期（term=2）：次年3月1日起的第一个周一。
-  /// 学期码无法解析时，fallback 到当前年份的第二学期。
-  factory WeekCalculator.hainanuSemester(String? semesterCode) {
-    if (semesterCode != null && semesterCode.length >= 5) {
-      final startYear = int.tryParse(semesterCode.substring(0, 4));
-      final term = semesterCode.substring(4);
-      if (startYear != null) {
-        if (term == '1') {
-          return WeekCalculator(
-            semesterStart: _firstMondayOnOrAfter(DateTime(startYear, 9, 1)),
-            totalWeeks: 20,
-          );
-        }
-        if (term == '2') {
-          return WeekCalculator(
-            semesterStart: _firstMondayOnOrAfter(DateTime(startYear + 1, 3, 1)),
-            totalWeeks: 20,
-          );
-        }
-      }
+  /// 学期码无法解析时，会按当前日期推断所在学期。
+  factory WeekCalculator.hainanuSemester(
+    String? semesterCode, {
+    DateTime? now,
+  }) {
+    final directMatch = _fromSemesterCode(semesterCode);
+    if (directMatch != null) {
+      return directMatch;
     }
-    // Fallback: 当前年份春季学期
-    final year = DateTime.now().month >= 9
-        ? DateTime.now().year
-        : DateTime.now().year - 1;
-    return WeekCalculator(
-      semesterStart: _firstMondayOnOrAfter(DateTime(year + 1, 3, 1)),
-      totalWeeks: 20,
-    );
+
+    return _fromSemesterCode(inferSemesterCode(now ?? DateTime.now()))!;
   }
 
   static DateTime _firstMondayOnOrAfter(DateTime date) {
     final offset = (DateTime.monday - date.weekday + 7) % 7;
     return date.add(Duration(days: offset));
+  }
+
+  static String inferSemesterCode(DateTime now) {
+    final month = now.month;
+    final year = now.year;
+    if (month >= 8) {
+      return '${year}1';
+    }
+    if (month <= 1) {
+      return '${year - 1}1';
+    }
+    return '${year - 1}2';
+  }
+
+  static WeekCalculator? _fromSemesterCode(String? semesterCode) {
+    if (semesterCode == null || semesterCode.length < 5) {
+      return null;
+    }
+
+    final startYear = int.tryParse(semesterCode.substring(0, 4));
+    final term = semesterCode.substring(4);
+    if (startYear == null) return null;
+
+    if (term == '1') {
+      return WeekCalculator(
+        semesterStart: _firstMondayOnOrAfter(DateTime(startYear, 9, 1)),
+        totalWeeks: 20,
+      );
+    }
+    if (term == '2') {
+      return WeekCalculator(
+        semesterStart: _firstMondayOnOrAfter(DateTime(startYear + 1, 3, 1)),
+        totalWeeks: 20,
+      );
+    }
+    return null;
   }
 }

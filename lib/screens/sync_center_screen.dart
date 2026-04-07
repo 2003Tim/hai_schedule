@@ -7,6 +7,7 @@ import 'package:hai_schedule/services/auth_credentials_service.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/portal_relogin_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/widgets/adaptive_layout.dart';
 import 'package:hai_schedule/widgets/sync_center_sections.dart';
 import 'package:hai_schedule/screens/import_screen.dart';
 import 'package:hai_schedule/screens/login_router.dart';
@@ -47,14 +48,9 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
     if (_isSyncing) return;
 
     final last = _lastManualSyncTime;
-    if (last != null &&
-        DateTime.now().difference(last) < _manualSyncCooldown) {
-      final remaining =
-          _manualSyncCooldown - DateTime.now().difference(last);
-      _showSnack(
-        '操作太频繁，请 ${remaining.inSeconds + 1} 秒后再试',
-        error: true,
-      );
+    if (last != null && DateTime.now().difference(last) < _manualSyncCooldown) {
+      final remaining = _manualSyncCooldown - DateTime.now().difference(last);
+      _showSnack('操作太频繁，请 ${remaining.inSeconds + 1} 秒后再试', error: true);
       return;
     }
     _lastManualSyncTime = DateTime.now();
@@ -283,75 +279,85 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
     final controller = TextEditingController(text: '$initialHours');
     String? errorText;
 
-    final result = await showDialog<int>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('自定义同步间隔'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('请输入同步间隔，单位为小时。建议不要低于 6 小时。'),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children:
-                        _customIntervalPresetHours
-                            .map(
-                              (hours) => ChoiceChip(
-                                label: Text('$hours 小时'),
-                                selected: controller.text.trim() == '$hours',
-                                onSelected: (_) {
-                                  setState(() {
-                                    controller.text = '$hours';
-                                    errorText = null;
-                                  });
-                                },
-                              ),
-                            )
-                            .toList(),
+    try {
+      return await showDialog<int>(
+        context: context,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setState) {
+              return AlertDialog(
+                scrollable: true,
+                insetPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 24,
+                ),
+                title: const Text('自定义同步间隔'),
+                content: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('请输入同步间隔，单位为小时。建议不要低于 6 小时。'),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children:
+                            _customIntervalPresetHours
+                                .map(
+                                  (hours) => ChoiceChip(
+                                    label: Text('$hours 小时'),
+                                    selected:
+                                        controller.text.trim() == '$hours',
+                                    onSelected: (_) {
+                                      setState(() {
+                                        controller.text = '$hours';
+                                        errorText = null;
+                                      });
+                                    },
+                                  ),
+                                )
+                                .toList(),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: controller,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: '间隔小时数',
+                          suffixText: '小时',
+                          errorText: errorText,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: '间隔小时数',
-                      suffixText: '小时',
-                      errorText: errorText,
-                    ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('取消'),
+                  ),
+                  FilledButton(
+                    onPressed: () {
+                      final hours = int.tryParse(controller.text.trim());
+                      if (hours == null || hours < 1 || hours > 720) {
+                        setState(() => errorText = '请输入 1 到 720 之间的整数小时');
+                        return;
+                      }
+                      Navigator.of(dialogContext).pop(hours * 60);
+                    },
+                    child: const Text('保存'),
                   ),
                 ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    final hours = int.tryParse(controller.text.trim());
-                    if (hours == null || hours < 1 || hours > 720) {
-                      setState(() => errorText = '请输入 1 到 720 之间的整数小时');
-                      return;
-                    }
-                    Navigator.of(dialogContext).pop(hours * 60);
-                  },
-                  child: const Text('保存'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    controller.dispose();
-    return result;
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
   }
 
   void _showSnack(String text, {bool error = false}) {
@@ -399,8 +405,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
     final statusColor = _statusColor(context, snapshot);
     final canEnableAutomatic = snapshot.credentialReady;
     final isDesktop = !Platform.isAndroid;
-    final isWideDesktop =
-        isDesktop && MediaQuery.of(context).size.width >= 1180;
+    final isWideLayout = AdaptiveLayout.isWide(context, breakpoint: 960);
 
     final statusCard = SyncCenterStatusCard(
       snapshot: snapshot,
@@ -435,50 +440,54 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('课表同步')),
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
-            physics: const AlwaysScrollableScrollPhysics(),
-            children: [
-              statusCard,
-              const SizedBox(height: 12),
-              if (isWideDesktop)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: SyncCenterSectionColumn(
-                        sections: [credentialCard, descriptionCard],
+        child: AdaptivePage(
+          maxWidth: 1280,
+          padding: EdgeInsets.zero,
+          child: RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                statusCard,
+                const SizedBox(height: 12),
+                if (isWideLayout)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: SyncCenterSectionColumn(
+                          sections: [credentialCard, descriptionCard],
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SyncCenterSectionColumn(
-                        sections: [
-                          settingsCard,
-                          if (desktopCapabilityCard != null)
-                            desktopCapabilityCard,
-                          const SyncCenterDesktopFlowCard(),
-                        ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SyncCenterSectionColumn(
+                          sections: [
+                            settingsCard,
+                            if (desktopCapabilityCard != null)
+                              desktopCapabilityCard,
+                            const SyncCenterDesktopFlowCard(),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
+                  )
+                else ...[
+                  credentialCard,
+                  const SizedBox(height: 12),
+                  settingsCard,
+                  if (isDesktop) ...[
+                    const SizedBox(height: 12),
+                    if (desktopCapabilityCard != null) desktopCapabilityCard,
+                    const SizedBox(height: 12),
+                    const SyncCenterDesktopFlowCard(),
                   ],
-                )
-              else ...[
-                credentialCard,
-                const SizedBox(height: 12),
-                settingsCard,
-                if (isDesktop) ...[
                   const SizedBox(height: 12),
-                  if (desktopCapabilityCard != null) desktopCapabilityCard,
-                  const SizedBox(height: 12),
-                  const SyncCenterDesktopFlowCard(),
+                  descriptionCard,
                 ],
-                const SizedBox(height: 12),
-                descriptionCard,
               ],
-            ],
+            ),
           ),
         ),
       ),

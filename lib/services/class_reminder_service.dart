@@ -82,14 +82,14 @@ class ClassReminderService {
   }
 
   static Future<ReminderSettings> loadSettings() async {
-    final record = await _repository.loadRecord();
+    final record = await _repository.loadRecord(forceReload: Platform.isAndroid);
     return ReminderSettings(
       leadTime: ReminderLeadTimeOption.fromMinutes(record.leadMinutes),
     );
   }
 
   static Future<ReminderSnapshot> loadSnapshot() async {
-    final record = await _repository.loadRecord();
+    final record = await _repository.loadRecord(forceReload: Platform.isAndroid);
     final settings = ReminderSettings(
       leadTime: ReminderLeadTimeOption.fromMinutes(record.leadMinutes),
     );

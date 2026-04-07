@@ -1,10 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 import 'package:hai_schedule/models/course.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
 import 'package:hai_schedule/services/app_storage.dart';
+import 'package:hai_schedule/utils/app_storage_schema.dart';
 
 import '../test_helpers/secure_storage_mock.dart';
 
@@ -365,6 +368,54 @@ void main() {
       expect(record.horizonEnd, horizonEnd);
       expect(record.exactAlarmEnabled, isTrue);
     });
+
+    test('reloads reminder state written outside Flutter cache', () async {
+      final originalStore = SharedPreferencesStorePlatform.instance;
+      final store = _MutableSharedPreferencesStore();
+      SharedPreferencesStorePlatform.instance = store;
+      SharedPreferences.resetStatic();
+      AppStorage.instance.resetForTesting();
+
+      final repository = ReminderRepository();
+
+      try {
+        await repository.saveLeadMinutes(15);
+        await repository.loadRecord();
+
+        store.writeRaw(
+          'flutter.${AppStorageSchema.reminderLeadTimeKey}',
+          15,
+        );
+        store.writeRaw(
+          'flutter.${AppStorageSchema.reminderScheduledCountKey}',
+          4,
+        );
+        store.writeRaw(
+          'flutter.${AppStorageSchema.reminderLastBuildTimeKey}',
+          DateTime(2026, 4, 7, 8, 30).toIso8601String(),
+        );
+        store.writeRaw(
+          'flutter.${AppStorageSchema.reminderHorizonEndKey}',
+          DateTime(2026, 4, 14, 8, 30).toIso8601String(),
+        );
+        store.writeRaw(
+          'flutter.${AppStorageSchema.reminderExactAlarmEnabledKey}',
+          true,
+        );
+
+        final record = await repository.loadRecord(forceReload: true);
+
+        expect(record.leadMinutes, 15);
+        expect(record.scheduledCount, 4);
+        expect(record.lastBuildTime, DateTime(2026, 4, 7, 8, 30));
+        expect(record.horizonEnd, DateTime(2026, 4, 14, 8, 30));
+        expect(record.exactAlarmEnabled, isTrue);
+      } finally {
+        SharedPreferencesStorePlatform.instance = originalStore;
+        SharedPreferences.resetStatic();
+        AppStorage.instance.resetForTesting();
+      }
+    });
   });
 
   group('ScheduleOverrideRepository', () {
@@ -411,6 +462,40 @@ void main() {
       expect(springOverrides.single.location, '教四-201');
     });
   });
+}
+
+class _MutableSharedPreferencesStore extends SharedPreferencesStorePlatform {
+  final Map<String, Object> _data = <String, Object>{};
+
+  @override
+  bool get isMock => true;
+
+  void writeRaw(String key, Object value) {
+    _data[key] = value;
+  }
+
+  @override
+  Future<bool> clear() async {
+    _data.removeWhere((key, _) => key.startsWith('flutter.'));
+    return true;
+  }
+
+  @override
+  Future<Map<String, Object>> getAll() async {
+    return Map<String, Object>.from(_data);
+  }
+
+  @override
+  Future<bool> remove(String key) async {
+    _data.remove(key);
+    return true;
+  }
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    _data[key] = value;
+    return true;
+  }
 }
 
 

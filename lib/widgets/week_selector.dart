@@ -40,7 +40,10 @@ class _WeekSelectorState extends State<WeekSelector> {
 
   void _scrollToSelected() {
     if (!_scrollController.hasClients) return;
-    final offset = (widget.selectedWeek - 1) * 50.0 - 100;
+    // item stride = width + 2*horizontal margin = (44 or 54) + 8
+    final isTablet = MediaQuery.sizeOf(context).width >= 600;
+    final itemStride = isTablet ? 62.0 : 52.0;
+    final offset = (widget.selectedWeek - 1) * itemStride - 100;
     _scrollController.animateTo(
       offset.clamp(0, _scrollController.position.maxScrollExtent),
       duration: const Duration(milliseconds: 300),
@@ -59,9 +62,12 @@ class _WeekSelectorState extends State<WeekSelector> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
+    final isTablet = MediaQuery.sizeOf(context).width >= 600;
+    final itemWidth = isTablet ? 54.0 : 44.0;
+    final containerHeight = isTablet ? 60.0 : 52.0;
 
     return SizedBox(
-      height: 52,
+      height: containerHeight,
       child: ListView.builder(
         controller: _scrollController,
         scrollDirection: Axis.horizontal,
@@ -76,7 +82,7 @@ class _WeekSelectorState extends State<WeekSelector> {
             onTap: () => widget.onWeekSelected(week),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              width: 44,
+              width: itemWidth,
               margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               decoration: BoxDecoration(
                 gradient: isSelected
@@ -117,7 +123,7 @@ class _WeekSelectorState extends State<WeekSelector> {
               child: Text(
                 '$week',
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: isTablet ? 16.0 : 14.0,
                   fontWeight: isSelected || isCurrent ? FontWeight.w700 : FontWeight.w500,
                   color: isSelected
                       ? Colors.white

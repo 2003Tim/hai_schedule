@@ -228,8 +228,13 @@ Future<bool> confirmScheduleOverrideConflict(
     context: context,
     builder: (dialogContext) {
       return AlertDialog(
+        scrollable: true,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         title: const Text('发现时间冲突'),
-        content: Text('目标时段已经有以下课程或临时安排：\n\n$summary\n\n仍然继续保存吗？'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Text('目标时段已经有以下课程或临时安排：\n\n$summary\n\n仍然继续保存吗？'),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),

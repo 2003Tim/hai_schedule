@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'package:hai_schedule/services/theme_provider.dart';
+import 'package:hai_schedule/widgets/adaptive_layout.dart';
 
 class ThemeSectionTitle extends StatelessWidget {
   const ThemeSectionTitle(this.title, {super.key});
@@ -90,80 +91,93 @@ class ThemePresetGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 1.0,
-      ),
-      itemCount: presets.length,
-      itemBuilder: (context, index) {
-        final preset = presets[index];
-        final isSelected = selectedId == preset.id;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final crossAxisCount = AdaptiveLayout.columnsForWidth(
+          width,
+          minTileWidth: width >= AdaptiveLayout.wideWidth ? 150 : 120,
+          minCount: width >= AdaptiveLayout.tabletWidth ? 3 : 2,
+          maxCount: 5,
+        );
+        final childAspectRatio = width >= AdaptiveLayout.wideWidth ? 1.08 : 1.0;
 
-        return GestureDetector(
-          onTap: () => onSelected(preset.id),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            decoration: BoxDecoration(
-              color: preset.backgroundColor,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isSelected ? preset.primaryColor : Colors.transparent,
-                width: isSelected ? 2.5 : 1,
-              ),
-              boxShadow:
-                  isSelected
-                      ? [
-                        BoxShadow(
-                          color: preset.primaryColor.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]
-                      : [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(preset.emoji, style: const TextStyle(fontSize: 24)),
-                const SizedBox(height: 6),
-                Text(
-                  preset.name,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                    color: preset.textColor,
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: childAspectRatio,
+          ),
+          itemCount: presets.length,
+          itemBuilder: (context, index) {
+            final preset = presets[index];
+            final isSelected = selectedId == preset.id;
+
+            return GestureDetector(
+              onTap: () => onSelected(preset.id),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  color: preset.backgroundColor,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected ? preset.primaryColor : Colors.transparent,
+                    width: isSelected ? 2.5 : 1,
                   ),
+                  boxShadow:
+                      isSelected
+                          ? [
+                            BoxShadow(
+                              color: preset.primaryColor.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                          : [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
                 ),
-                const SizedBox(height: 6),
-                Row(
+                child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(
-                    4,
-                    (i) => Container(
-                      width: 12,
-                      height: 12,
-                      margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                      decoration: BoxDecoration(
-                        color: preset.courseColors[i],
-                        borderRadius: BorderRadius.circular(3),
+                  children: [
+                    Text(preset.emoji, style: const TextStyle(fontSize: 24)),
+                    const SizedBox(height: 6),
+                    Text(
+                      preset.name,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                        color: preset.textColor,
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        4,
+                        (i) => Container(
+                          width: 12,
+                          height: 12,
+                          margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                          decoration: BoxDecoration(
+                            color: preset.courseColors[i],
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );

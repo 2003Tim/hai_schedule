@@ -5,6 +5,7 @@ import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/utils/constants.dart';
 import 'package:hai_schedule/utils/schedule_slot_dialog_utils.dart';
+import 'package:hai_schedule/widgets/adaptive_layout.dart';
 
 Future<void> openScheduleOverrideForm(
   BuildContext context, {
@@ -24,18 +25,21 @@ Future<void> openScheduleOverrideForm(
     isScrollControlled: true,
     showDragHandle: true,
     builder: (_) {
-      return ScheduleOverrideFormSheet(
-        hostContext: context,
-        provider: provider,
-        week: week,
-        weekday: weekday,
-        date: date,
-        type: type,
-        initialOverride: initialOverride,
-        sourceSlot: sourceSlot,
-        sourceTeacher: sourceTeacher,
-        initialStartSection: initialStartSection,
-        initialEndSection: initialEndSection,
+      return AdaptiveSheet(
+        maxWidth: 760,
+        child: ScheduleOverrideFormSheet(
+          hostContext: context,
+          provider: provider,
+          week: week,
+          weekday: weekday,
+          date: date,
+          type: type,
+          initialOverride: initialOverride,
+          sourceSlot: sourceSlot,
+          sourceTeacher: sourceTeacher,
+          initialStartSection: initialStartSection,
+          initialEndSection: initialEndSection,
+        ),
       );
     },
   );
@@ -202,132 +206,135 @@ class _ScheduleOverrideFormSheetState extends State<ScheduleOverrideFormSheet> {
     );
 
     return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          0,
-          16,
-          16 + MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                scheduleOverrideFormTitle(widget.type),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${formatScheduleDialogDate(widget.date)} 周${WeekdayNames.getShort(widget.weekday)}',
-                style: TextStyle(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.68),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: '课程名称',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      key: ValueKey('start-$_startSection-$_endSection'),
-                      initialValue: _startSection,
-                      decoration: const InputDecoration(
-                        labelText: '开始节次',
-                        border: OutlineInputBorder(),
-                      ),
-                      items:
-                          startItems
-                              .map(
-                                (value) => DropdownMenuItem<int>(
-                                  value: value,
-                                  child: Text('第$value节'),
-                                ),
-                              )
-                              .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() {
-                          _startSection = value;
-                          if (_endSection < _startSection) {
-                            _endSection = _startSection;
-                          }
-                        });
-                      },
-                    ),
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            0,
+            16,
+            16 + MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  scheduleOverrideFormTitle(widget.type),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      key: ValueKey('end-$_startSection-$_endSection'),
-                      initialValue: _endSection,
-                      decoration: const InputDecoration(
-                        labelText: '结束节次',
-                        border: OutlineInputBorder(),
-                      ),
-                      items:
-                          endItems
-                              .map(
-                                (value) => DropdownMenuItem<int>(
-                                  value: value,
-                                  child: Text('第$value节'),
-                                ),
-                              )
-                              .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() => _endSection = value);
-                      },
-                    ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${formatScheduleDialogDate(widget.date)} 周${WeekdayNames.getShort(widget.weekday)}',
+                  style: TextStyle(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.68),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _locationController,
-                decoration: const InputDecoration(
-                  labelText: '地点',
-                  border: OutlineInputBorder(),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _teacherController,
-                decoration: const InputDecoration(
-                  labelText: '教师',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: '课程名称',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _noteController,
-                minLines: 2,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: '备注',
-                  hintText: '例如：调到实验楼、和某课程换课、临时补课说明',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        key: ValueKey('start-$_startSection-$_endSection'),
+                        initialValue: _startSection,
+                        decoration: const InputDecoration(
+                          labelText: '开始节次',
+                          border: OutlineInputBorder(),
+                        ),
+                        items:
+                            startItems
+                                .map(
+                                  (value) => DropdownMenuItem<int>(
+                                    value: value,
+                                    child: Text('第$value节'),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _startSection = value;
+                            if (_endSection < _startSection) {
+                              _endSection = _startSection;
+                            }
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        key: ValueKey('end-$_startSection-$_endSection'),
+                        initialValue: _endSection,
+                        decoration: const InputDecoration(
+                          labelText: '结束节次',
+                          border: OutlineInputBorder(),
+                        ),
+                        items:
+                            endItems
+                                .map(
+                                  (value) => DropdownMenuItem<int>(
+                                    value: value,
+                                    child: Text('第$value节'),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() => _endSection = value);
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(onPressed: _save, child: const Text('保存')),
-              ),
-            ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _locationController,
+                  decoration: const InputDecoration(
+                    labelText: '地点',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _teacherController,
+                  decoration: const InputDecoration(
+                    labelText: '教师',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _noteController,
+                  minLines: 2,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: '备注',
+                    hintText: '例如：调到实验楼、和某课程换课、临时补课说明',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(onPressed: _save, child: const Text('保存')),
+                ),
+              ],
+            ),
           ),
         ),
       ),

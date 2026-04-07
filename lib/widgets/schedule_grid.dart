@@ -16,11 +16,9 @@ class ScheduleGrid extends StatelessWidget {
 
   const ScheduleGrid({super.key, required this.provider, this.weekOverride});
 
-  static const double _headerHeight = 60;
-  static const double _timeColWidth = 40;
-  static const double _cellHeight = 58;
   static const double _periodGap = 10;
-  static const double _dayColumnHorizontalInset = 3;
+  // 与 CourseCard / _EmptyScheduleCell 的 horizontal margin 保持一致，确保列严格对齐
+  static const double _dayColumnHorizontalInset = 2;
 
   static const int _statusNone = 0;
   static const int _statusCurrent = 1;
@@ -28,6 +26,11 @@ class ScheduleGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isTablet = MediaQuery.sizeOf(context).width >= 600;
+    final cellHeight = isTablet ? 70.0 : 58.0;
+    final headerHeight = isTablet ? 68.0 : 60.0;
+    final timeColWidth = isTablet ? 48.0 : 40.0;
+
     final week = weekOverride ?? provider.selectedWeek;
     final days = provider.displayDays;
     final timeConfig = provider.timeConfig;
@@ -37,7 +40,12 @@ class ScheduleGrid extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
         child: Column(
           children: [
-            _buildDayHeader(context, week, days),
+            _buildDayHeader(
+              context, week, days,
+              headerHeight: headerHeight,
+              timeColWidth: timeColWidth,
+              isTablet: isTablet,
+            ),
             const SizedBox(height: 10),
             Expanded(
               child: SingleChildScrollView(
@@ -45,11 +53,19 @@ class ScheduleGrid extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     RepaintBoundary(
-                      child: _buildTimeColumn(context, timeConfig),
+                      child: _buildTimeColumn(
+                        context, timeConfig,
+                        cellHeight: cellHeight,
+                        timeColWidth: timeColWidth,
+                        isTablet: isTablet,
+                      ),
                     ),
                     Expanded(
                       child: RepaintBoundary(
-                        child: _buildGrid(context, week, days, timeConfig),
+                        child: _buildGrid(
+                          context, week, days, timeConfig,
+                          cellHeight: cellHeight,
+                        ),
                       ),
                     ),
                   ],
@@ -62,7 +78,14 @@ class ScheduleGrid extends StatelessWidget {
     );
   }
 
-  Widget _buildDayHeader(BuildContext context, int week, int days) {
+  Widget _buildDayHeader(
+    BuildContext context,
+    int week,
+    int days, {
+    required double headerHeight,
+    required double timeColWidth,
+    required bool isTablet,
+  }) {
     final today = provider.todayWeekday;
     final isCurrentWeek = week == provider.currentWeek;
     final theme = Theme.of(context);
@@ -96,17 +119,17 @@ class ScheduleGrid extends StatelessWidget {
         ),
       ),
       child: SizedBox(
-        height: _headerHeight,
+        height: headerHeight,
         child: Row(
           children: [
             SizedBox(
-              width: _timeColWidth,
+              width: timeColWidth,
               child: Center(
                 child: Text(
                   '${provider.weekCalc.getWeekMonday(week).month}\n月',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: isTablet ? 12.0 : 11.0,
                     color: primaryTextColor,
                     height: 1.25,
                     fontWeight: FontWeight.w700,
@@ -159,7 +182,7 @@ class ScheduleGrid extends StatelessWidget {
                               WeekdayNames.getShort(weekday),
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: isTablet ? 13.0 : 12.0,
                                 fontWeight:
                                     isToday ? FontWeight.w700 : FontWeight.w500,
                                 color: secondaryTextColor,
@@ -170,8 +193,8 @@ class ScheduleGrid extends StatelessWidget {
                           Align(
                             alignment: Alignment.center,
                             child: Container(
-                              width: 24,
-                              height: 24,
+                              width: isTablet ? 28.0 : 24.0,
+                              height: isTablet ? 28.0 : 24.0,
                               alignment: Alignment.center,
                               decoration:
                                   isToday
@@ -193,7 +216,7 @@ class ScheduleGrid extends StatelessWidget {
                                 '${date.day}',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: isTablet ? 13.0 : 12.0,
                                   color:
                                       isToday ? Colors.white : primaryTextColor,
                                   fontWeight: FontWeight.w700,
@@ -214,7 +237,13 @@ class ScheduleGrid extends StatelessWidget {
     );
   }
 
-  Widget _buildTimeColumn(BuildContext context, SchoolTimeConfig config) {
+  Widget _buildTimeColumn(
+    BuildContext context,
+    SchoolTimeConfig config, {
+    required double cellHeight,
+    required double timeColWidth,
+    required bool isTablet,
+  }) {
     final theme = Theme.of(context);
     final isLightTheme = theme.brightness == Brightness.light;
     final primaryTextColor =
@@ -251,14 +280,14 @@ class ScheduleGrid extends StatelessWidget {
                 () =>
                     _openSectionTimeEditor(context, section: s, classTime: ct),
             child: SizedBox(
-              height: _cellHeight,
+              height: cellHeight,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     '$s',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: isTablet ? 15.0 : 13.0,
                       fontWeight: FontWeight.w700,
                       color: primaryTextColor,
                     ),
@@ -268,7 +297,7 @@ class ScheduleGrid extends StatelessWidget {
                     '${ct.startTime}\n${ct.endTime}',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 7.2,
+                      fontSize: isTablet ? 8.5 : 7.2,
                       height: 1.2,
                       color: secondaryTextColor,
                     ),
@@ -285,22 +314,26 @@ class ScheduleGrid extends StatelessWidget {
       }
     }
 
-    return SizedBox(width: _timeColWidth, child: Column(children: children));
+    return SizedBox(width: timeColWidth, child: Column(children: children));
   }
 
   Widget _buildGrid(
     BuildContext context,
     int week,
     int days,
-    SchoolTimeConfig timeConfig,
-  ) {
+    SchoolTimeConfig timeConfig, {
+    required double cellHeight,
+  }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: List.generate(days, (dayIndex) {
         final weekday = dayIndex + 1;
         return Expanded(
           child: RepaintBoundary(
-            child: _buildDayColumn(context, week, weekday, timeConfig),
+            child: _buildDayColumn(
+              context, week, weekday, timeConfig,
+              cellHeight: cellHeight,
+            ),
           ),
         );
       }),
@@ -311,8 +344,9 @@ class ScheduleGrid extends StatelessWidget {
     BuildContext context,
     int week,
     int weekday,
-    SchoolTimeConfig timeConfig,
-  ) {
+    SchoolTimeConfig timeConfig, {
+    required double cellHeight,
+  }) {
     final children = <Widget>[];
 
     for (final period in TimePeriod.values) {
@@ -333,7 +367,7 @@ class ScheduleGrid extends StatelessWidget {
             CourseCard(
               slot: displaySlot.slot,
               timeConfig: timeConfig,
-              cellHeight: _cellHeight,
+              cellHeight: cellHeight,
               isActive: displaySlot.isActive,
               teacher: displaySlot.teacher,
               overrideType: displaySlot.overrideType,
@@ -362,7 +396,7 @@ class ScheduleGrid extends StatelessWidget {
         final targetSection = section;
         children.add(
           _EmptyScheduleCell(
-            height: _cellHeight,
+            height: cellHeight,
             onLongPress: () => openScheduleOverrideForm(
               context,
               provider: provider,
@@ -566,7 +600,7 @@ class _EmptyScheduleCell extends StatelessWidget {
       onLongPress: onLongPress,
       child: Container(
         height: height,
-        margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 1.5),
+        margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1.5),
         decoration: BoxDecoration(
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(14),

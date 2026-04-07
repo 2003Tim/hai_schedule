@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:hai_schedule/models/schedule_parser.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/utils/semester_code_formatter.dart';
+import 'package:hai_schedule/widgets/adaptive_layout.dart';
 
 class ImportScreen extends StatefulWidget {
   const ImportScreen({super.key, this.initialSemesterCode});
@@ -29,75 +30,121 @@ class _ImportScreenState extends State<ImportScreen> {
 
   String get _targetSemesterLabel => formatOptionalSemesterCode(
     widget.initialSemesterCode,
-    emptyLabel: '\u5f53\u524d\u5b66\u671f',
+    emptyLabel: '当前学期',
   );
-  /*
-    final code = widget.initialSemesterCode;
-    if (code == null || code.isEmpty) return '当前学期';
-    if (!RegExp(r'^\d{4}[12]$').hasMatch(code)) return code;
-    final startYear = int.parse(code.substring(0, 4));
-    final endYear = startYear + 1;
-    final term = code.endsWith('1') ? '第一学期' : '第二学期';
-    return '$startYear-$endYear $term';
-  }
-
-  */
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('导入课表')),
-      body: SingleChildScrollView(
+      body: SafeArea(
+        child: AdaptivePage(
+          maxWidth: 1180,
+          child: SingleChildScrollView(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isWideLayout =
+                    constraints.maxWidth >= 960 &&
+                    AdaptiveLayout.isTablet(context);
+
+                if (!isWideLayout) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildGuideCard(context),
+                      const SizedBox(height: 16),
+                      _buildEditorCard(context),
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(width: 360, child: _buildGuideCard(context)),
+                    const SizedBox(width: 16),
+                    Expanded(child: _buildEditorCard(context)),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGuideCard(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  '如何获取课表数据',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '导入目标：$_targetSemesterLabel',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _stepItem('1', '登录教务系统并打开“我的课表”页面'),
+            _stepItem('2', '按 F12 打开开发者工具，切到 Network'),
+            _stepItem('3', '筛选 Fetch/XHR 并刷新页面'),
+            _stepItem('4', '找到 xsjxrwcx.do 请求，复制 Response 内容'),
+            _stepItem('5', '把 JSON 粘贴到右侧，再点击“确认导入”'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditorCard(BuildContext context) {
+    return Card(
+      child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 20,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          '如何获取课表数据',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '导入目标：$_targetSemesterLabel',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _stepItem('1', '登录教务系统并打开“我的课表”页面'),
-                    _stepItem('2', '按 F12 打开开发者工具，切到 Network'),
-                    _stepItem('3', '筛选 Fetch/XHR 并刷新页面'),
-                    _stepItem('4', '找到 xsjxrwcx.do 请求，复制 Response 内容'),
-                    _stepItem('5', '把 JSON 粘贴到下方，再点击“确认导入”'),
-                  ],
+            const Text(
+              '粘贴课表 JSON',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '支持直接预览解析结果，确认无误后导入到 $_targetSemesterLabel。',
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurface.withValues(
+                  alpha: 0.68,
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             TextField(
               controller: _controller,
-              maxLines: 8,
+              maxLines: 14,
+              minLines: 10,
               decoration: InputDecoration(
                 hintText: '粘贴 API 返回的 JSON 数据...',
                 border: const OutlineInputBorder(),

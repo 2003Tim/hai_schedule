@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:hai_schedule/services/app_repositories.dart';
-import 'package:hai_schedule/utils/semester_code_formatter.dart' as semester_formatter;
+import 'package:hai_schedule/utils/semester_code_formatter.dart'
+    as semester_formatter;
 
 Future<String?> showCreateSemesterDialog(BuildContext context) async {
   final controller = TextEditingController();
@@ -13,31 +14,39 @@ Future<String?> showCreateSemesterDialog(BuildContext context) async {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
+              scrollable: true,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 24,
+              ),
               title: const Text('新建学期'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      labelText: '学期代码',
-                      hintText: '例如：20251 或 20252',
-                      errorText: errorText,
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: '学期代码',
+                        hintText: '例如：20251 或 20252',
+                        errorText: errorText,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    '先创建学期容器，再对这个学期执行登录同步或手动导入。',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.68),
+                    const SizedBox(height: 10),
+                    Text(
+                      '先创建学期容器，再对这个学期执行登录同步或手动导入。',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.68),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -74,9 +83,17 @@ Future<bool> confirmDeleteSemester(
         context: context,
         builder: (dialogContext) {
           return AlertDialog(
+            scrollable: true,
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 24,
+            ),
             title: const Text('删除学期'),
-            content: Text(
-              '确认删除 ${formatSemesterCode(semesterCode)} 吗？\n\n这会同时删除该学期的课表缓存和临时安排。',
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Text(
+                '确认删除 ${formatSemesterCode(semesterCode)} 吗？\n\n这会同时删除该学期的课表缓存和临时安排。',
+              ),
             ),
             actions: [
               TextButton(

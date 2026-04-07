@@ -67,41 +67,44 @@ class ScheduleSlotMenuSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final slot = displaySlot.slot;
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            title: Text(slot.courseName),
-            subtitle: Text(
-              '${formatScheduleDialogDate(date)} 第${slot.startSection}-${slot.endSection}节',
-            ),
-          ),
-          if (displaySlot.canMarkCancel)
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
             ListTile(
-              leading: const Icon(Icons.event_busy_outlined),
-              title: const Text('本次停课'),
-              onTap: () => _markCancel(context),
+              title: Text(slot.courseName),
+              subtitle: Text(
+                '${formatScheduleDialogDate(date)} 第${slot.startSection}-${slot.endSection}节',
+              ),
             ),
-          if (displaySlot.canAdjustOccurrence)
-            ListTile(
-              leading: const Icon(Icons.edit_calendar_outlined),
-              title: Text(scheduleOverrideActionLabel(_sourceOverride)),
-              onTap: () => _editOccurrence(context),
-            ),
-          if (displaySlot.isReferenceOnly)
-            const ListTile(
-              leading: Icon(Icons.info_outline_rounded),
-              title: Text('本周不开设'),
-              subtitle: Text('这节课只是为了参考显示，不对应本周实际课次，所以不能直接停课或调整。'),
-            ),
-          if (_sourceOverride != null)
-            ListTile(
-              leading: const Icon(Icons.delete_outline),
-              title: const Text('删除临时覆盖'),
-              onTap: () => _deleteOverride(context),
-            ),
-          const SizedBox(height: 8),
-        ],
+            if (displaySlot.canMarkCancel)
+              ListTile(
+                leading: const Icon(Icons.event_busy_outlined),
+                title: const Text('本次停课'),
+                onTap: () => _markCancel(context),
+              ),
+            if (displaySlot.canAdjustOccurrence)
+              ListTile(
+                leading: const Icon(Icons.edit_calendar_outlined),
+                title: Text(scheduleOverrideActionLabel(_sourceOverride)),
+                onTap: () => _editOccurrence(context),
+              ),
+            if (displaySlot.isReferenceOnly)
+              const ListTile(
+                leading: Icon(Icons.info_outline_rounded),
+                title: Text('本周不开设'),
+                subtitle: Text('这节课只是为了参考显示，不对应本周实际课次，所以不能直接停课或调整。'),
+              ),
+            if (_sourceOverride != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('删除临时覆盖'),
+                onTap: () => _deleteOverride(context),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
@@ -177,12 +180,14 @@ class ScheduleSlotDetailsSheet extends StatelessWidget {
     final originalSummary = buildOriginalScheduleSummary(_sourceOverride);
 
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -363,7 +368,8 @@ class ScheduleSlotDetailsSheet extends StatelessWidget {
                   ),
               ],
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );
