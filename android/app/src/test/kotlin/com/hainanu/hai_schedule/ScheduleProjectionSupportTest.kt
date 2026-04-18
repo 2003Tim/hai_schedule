@@ -182,6 +182,70 @@ class ScheduleProjectionSupportTest {
         assertTrue(occurrences[0].startAtMillis > now.timeInMillis)
     }
 
+    @Test
+    fun resolveDaySlots_modifyWithTargetCourseIdKeepsOtherSlotsOfSameCourse() {
+        val payload = projectionPayload(
+            slots = listOf(
+                ScheduleProjectionSupport.ProjectionSlot(
+                    courseId = "math",
+                    courseName = "Linear Algebra",
+                    teacher = "Prof A",
+                    location = "A101",
+                    weekday = 1,
+                    startSection = 1,
+                    endSection = 2,
+                    activeWeeks = listOf(1, 2, 3),
+                    color = 11,
+                ),
+                ScheduleProjectionSupport.ProjectionSlot(
+                    courseId = "math",
+                    courseName = "Linear Algebra",
+                    teacher = "Prof A",
+                    location = "B201",
+                    weekday = 1,
+                    startSection = 3,
+                    endSection = 4,
+                    activeWeeks = listOf(1, 2, 3),
+                    color = 22,
+                ),
+            ),
+            overrides = listOf(
+                ScheduleProjectionSupport.ProjectionOverride(
+                    id = "modify-math",
+                    semesterCode = "2026-1",
+                    dateKey = "2026-03-02",
+                    weekday = 1,
+                    startSection = 5,
+                    endSection = 6,
+                    type = "modify",
+                    targetCourseId = "math",
+                    courseName = "Advanced Algebra",
+                    teacher = "",
+                    location = "A301",
+                    status = "normal",
+                    sourceStartSection = 1,
+                    sourceEndSection = 2,
+                    color = 33,
+                ),
+            ),
+        )
+
+        val target = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            set(2026, Calendar.MARCH, 2, 12, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        val resolved = payload.resolveDaySlots(target)
+        assertEquals(2, resolved.size)
+        assertEquals("Linear Algebra", resolved[0].courseName)
+        assertEquals(3, resolved[0].startSection)
+        assertEquals(4, resolved[0].endSection)
+        assertEquals("B201", resolved[0].location)
+        assertEquals("Advanced Algebra", resolved[1].courseName)
+        assertEquals(5, resolved[1].startSection)
+        assertEquals(6, resolved[1].endSection)
+    }
+
     private fun projectionPayload(
         slots: List<ScheduleProjectionSupport.ProjectionSlot>,
         overrides: List<ScheduleProjectionSupport.ProjectionOverride> = emptyList(),

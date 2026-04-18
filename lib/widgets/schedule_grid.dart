@@ -21,6 +21,10 @@ class ScheduleGrid extends StatelessWidget {
   static const double _cellHeight = 58;
   static const double _periodGap = 10;
   static const double _dayColumnHorizontalInset = 3;
+  static const EdgeInsets _cardInset = EdgeInsets.symmetric(
+    horizontal: 2,
+    vertical: 1.5,
+  );
 
   static const int _statusNone = 0;
   static const int _statusCurrent = 1;
@@ -313,68 +317,120 @@ class ScheduleGrid extends StatelessWidget {
     int weekday,
     SchoolTimeConfig timeConfig,
   ) {
+    final displaySlots =
+        provider.getDisplaySlotsForDay(week, weekday).toList()..sort((a, b) {
+          final referenceCompare = (a.isReferenceOnly ? 0 : 1).compareTo(
+            b.isReferenceOnly ? 0 : 1,
+          );
+          if (referenceCompare != 0) return referenceCompare;
+          final startCompare = a.slot.startSection.compareTo(
+            b.slot.startSection,
+          );
+          if (startCompare != 0) return startCompare;
+          return a.slot.endSection.compareTo(b.slot.endSection);
+        });
+
+    return SizedBox(
+      height: _dayColumnHeight(timeConfig),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: _buildDayTrack(
+              context,
+              week: week,
+              weekday: weekday,
+              timeConfig: timeConfig,
+            ),
+          ),
+          ...displaySlots.map((displaySlot) {
+            final lessonStatus = _lessonStatusForSlot(
+              week: week,
+              weekday: weekday,
+              slot: displaySlot.slot,
+            );
+            final top = _offsetForSection(
+              displaySlot.slot.startSection,
+              timeConfig,
+            );
+            final height = displaySlot.slot.sectionSpan * _cellHeight;
+            return Positioned(
+              top: top,
+              left: 0,
+              right: 0,
+              height: height,
+              child: Padding(
+                padding: _cardInset,
+                child: CourseCard(
+                  key: ValueKey(
+                    'schedule-card-$weekday-${displaySlot.slot.courseId}-${displaySlot.slot.startSection}-${displaySlot.slot.endSection}',
+                  ),
+                  slot: displaySlot.slot,
+                  timeConfig: timeConfig,
+                  cellHeight: _cellHeight,
+                  isActive: displaySlot.isActive,
+                  teacher: displaySlot.teacher,
+                  overrideType: displaySlot.overrideType,
+                  isCurrentLesson: lessonStatus == _statusCurrent,
+                  isUpcomingLesson: lessonStatus == _statusUpcoming,
+                  margin: EdgeInsets.zero,
+                  onTap:
+                      () => openScheduleSlotDetails(
+                        context,
+                        provider: provider,
+                        week: week,
+                        weekday: weekday,
+                        displaySlot: displaySlot,
+                      ),
+                  onLongPress:
+                      () => openScheduleSlotMenu(
+                        context,
+                        provider: provider,
+                        week: week,
+                        weekday: weekday,
+                        displaySlot: displaySlot,
+                      ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDayTrack(
+    BuildContext context, {
+    required int week,
+    required int weekday,
+    required SchoolTimeConfig timeConfig,
+  }) {
     final children = <Widget>[];
 
     for (final period in TimePeriod.values) {
       children.add(const SizedBox(height: 18));
 
-      int section = period.startSection;
-      while (section <= period.endSection &&
-          section <= timeConfig.totalSections) {
-        final displaySlot = provider.getDisplaySlotAt(week, weekday, section);
-
-        if (displaySlot != null && displaySlot.slot.startSection == section) {
-          final lessonStatus = _lessonStatusForSlot(
-            week: week,
-            weekday: weekday,
-            slot: displaySlot.slot,
-          );
-          children.add(
-            CourseCard(
-              slot: displaySlot.slot,
-              timeConfig: timeConfig,
-              cellHeight: _cellHeight,
-              isActive: displaySlot.isActive,
-              teacher: displaySlot.teacher,
-              overrideType: displaySlot.overrideType,
-              isCurrentLesson: lessonStatus == _statusCurrent,
-              isUpcomingLesson: lessonStatus == _statusUpcoming,
-              onTap: () => openScheduleSlotDetails(
-                context,
-                provider: provider,
-                week: week,
-                weekday: weekday,
-                displaySlot: displaySlot,
-              ),
-              onLongPress: () => openScheduleSlotMenu(
-                context,
-                provider: provider,
-                week: week,
-                weekday: weekday,
-                displaySlot: displaySlot,
-              ),
-            ),
-          );
-          section = displaySlot.slot.endSection + 1;
-          continue;
-        }
-
+      for (
+        var section = period.startSection;
+        section <= period.endSection && section <= timeConfig.totalSections;
+        section++
+      ) {
         final targetSection = section;
         children.add(
           _EmptyScheduleCell(
             height: _cellHeight,
-            onLongPress: () => openScheduleOverrideForm(
-              context,
-              provider: provider,
-              week: week,
-              weekday: weekday,
-              type: ScheduleOverrideType.add,
-              initialStartSection: targetSection,
-              initialEndSection: targetSection,
-            ),
+            onLongPress:
+                () => openScheduleOverrideForm(
+                  context,
+                  provider: provider,
+                  week: week,
+                  weekday: weekday,
+                  type: ScheduleOverrideType.add,
+                  initialStartSection: targetSection,
+                  initialEndSection: targetSection,
+                ),
           ),
         );
-        section++;
       }
 
       if (period != TimePeriod.evening) {
@@ -383,6 +439,46 @@ class ScheduleGrid extends StatelessWidget {
     }
 
     return Column(children: children);
+  }
+
+  double _dayColumnHeight(SchoolTimeConfig timeConfig) {
+    var height = 0.0;
+    for (final period in TimePeriod.values) {
+      height += 18;
+      for (
+        var section = period.startSection;
+        section <= period.endSection && section <= timeConfig.totalSections;
+        section++
+      ) {
+        height += _cellHeight;
+      }
+      if (period != TimePeriod.evening) {
+        height += _periodGap;
+      }
+    }
+    return height;
+  }
+
+  double _offsetForSection(int section, SchoolTimeConfig timeConfig) {
+    var offset = 0.0;
+    for (final period in TimePeriod.values) {
+      offset += 18;
+      for (
+        var currentSection = period.startSection;
+        currentSection <= period.endSection &&
+            currentSection <= timeConfig.totalSections;
+        currentSection++
+      ) {
+        if (currentSection == section) {
+          return offset;
+        }
+        offset += _cellHeight;
+      }
+      if (period != TimePeriod.evening) {
+        offset += _periodGap;
+      }
+    }
+    return offset;
   }
 
   Future<void> _openSectionTimeEditor(
@@ -551,7 +647,6 @@ class ScheduleGrid extends StatelessWidget {
     if (hour == null || minute == null) return null;
     return hour * 60 + minute;
   }
-
 }
 
 class _EmptyScheduleCell extends StatelessWidget {
@@ -566,7 +661,7 @@ class _EmptyScheduleCell extends StatelessWidget {
       onLongPress: onLongPress,
       child: Container(
         height: height,
-        margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 1.5),
+        margin: const EdgeInsets.symmetric(horizontal: 3),
         decoration: BoxDecoration(
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(14),

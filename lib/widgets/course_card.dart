@@ -18,6 +18,7 @@ class CourseCard extends StatelessWidget {
   final bool isUpcomingLesson;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final EdgeInsetsGeometry margin;
 
   const CourseCard({
     super.key,
@@ -31,6 +32,7 @@ class CourseCard extends StatelessWidget {
     this.isUpcomingLesson = false,
     this.onTap,
     this.onLongPress,
+    this.margin = const EdgeInsets.symmetric(horizontal: 2, vertical: 1.5),
   });
 
   @override
@@ -80,7 +82,7 @@ class CourseCard extends StatelessWidget {
         onLongPress: onLongPress,
         child: Container(
           height: height,
-          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1.5),
+          margin: margin,
           decoration: BoxDecoration(
             color: bgColor,
             borderRadius: BorderRadius.circular(14),

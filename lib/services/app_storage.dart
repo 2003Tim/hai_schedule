@@ -515,6 +515,7 @@ class AppStorage {
 
   Future<StoredReminderRecord> loadReminderRecord() async {
     final prefs = await _prefs;
+    await prefs.reload();
     return StoredReminderRecord(
       leadMinutes: prefs.getInt(_reminderLeadTimeKey) ?? 0,
       lastBuildTime: AppStorageCodec.readTime(

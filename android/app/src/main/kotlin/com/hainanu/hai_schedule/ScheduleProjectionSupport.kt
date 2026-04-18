@@ -530,11 +530,30 @@ object ScheduleProjectionSupport {
     }
 
     private fun matchesSource(override: ProjectionOverride, slot: ProjectionSlot): Boolean {
-        val matchesCourseId = override.targetCourseId.isNotBlank() && override.targetCourseId == slot.courseId
-        val sourceStart = override.sourceStartSection ?: override.startSection
-        val sourceEnd = override.sourceEndSection ?: override.endSection
-        val matchesSections = sourceStart == slot.startSection && sourceEnd == slot.endSection
-        return matchesCourseId || matchesSections
+        val targetCourseId = override.targetCourseId.takeIf { it.isNotBlank() }
+        if (targetCourseId != null && targetCourseId != slot.courseId) {
+            return false
+        }
+
+        val hasExplicitSourceSections =
+            override.sourceStartSection != null || override.sourceEndSection != null
+        if (hasExplicitSourceSections) {
+            val sourceStart = override.sourceStartSection ?: override.startSection
+            val sourceEnd = override.sourceEndSection ?: override.endSection
+            return sourceStart == slot.startSection && sourceEnd == slot.endSection
+        }
+
+        if (targetCourseId != null) {
+            return if (override.type == "modify") {
+                true
+            } else {
+                slot.startSection == override.startSection &&
+                    slot.endSection == override.endSection
+            }
+        }
+
+        return slot.startSection == override.startSection &&
+            slot.endSection == override.endSection
     }
 
     private fun optNullableInt(item: JSONObject, key: String): Int? {

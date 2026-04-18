@@ -365,6 +365,31 @@ void main() {
       expect(record.horizonEnd, horizonEnd);
       expect(record.exactAlarmEnabled, isTrue);
     });
+
+    test('reloads reminder state updated outside the cached prefs instance', () async {
+      final repository = ReminderRepository();
+      final buildTime = DateTime(2026, 4, 18, 9, 30);
+      final horizonEnd = buildTime.add(const Duration(days: 7));
+
+      final initial = await repository.loadRecord();
+      expect(initial.scheduledCount, 0);
+      expect(initial.lastBuildTime, isNull);
+
+      SharedPreferences.setMockInitialValues({
+        'class_reminder_lead_minutes': 10,
+        'class_reminder_last_build_time': buildTime.toIso8601String(),
+        'class_reminder_horizon_end': horizonEnd.toIso8601String(),
+        'class_reminder_scheduled_count': 5,
+        'class_reminder_exact_alarm_enabled': true,
+      });
+
+      final refreshed = await repository.loadRecord();
+      expect(refreshed.leadMinutes, 10);
+      expect(refreshed.scheduledCount, 5);
+      expect(refreshed.lastBuildTime, buildTime);
+      expect(refreshed.horizonEnd, horizonEnd);
+      expect(refreshed.exactAlarmEnabled, isTrue);
+    });
   });
 
   group('ScheduleOverrideRepository', () {
@@ -412,5 +437,3 @@ void main() {
     });
   });
 }
-
-
