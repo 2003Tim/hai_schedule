@@ -6,10 +6,7 @@ class WeekCalculator {
   /// 总周数
   final int totalWeeks;
 
-  WeekCalculator({
-    required this.semesterStart,
-    this.totalWeeks = 20,
-  });
+  WeekCalculator({required this.semesterStart, this.totalWeeks = 20});
 
   /// 计算指定日期是第几周（从1开始）。
   /// 返回值可能超过 totalWeeks（学期结束后继续计数）。
@@ -60,13 +57,26 @@ class WeekCalculator {
       }
     }
     // Fallback: 当前年份春季学期
-    final year = DateTime.now().month >= 9
-        ? DateTime.now().year
-        : DateTime.now().year - 1;
+    final year =
+        DateTime.now().month >= 9
+            ? DateTime.now().year
+            : DateTime.now().year - 1;
     return WeekCalculator(
       semesterStart: _firstMondayOnOrAfter(DateTime(year + 1, 3, 1)),
       totalWeeks: 20,
     );
+  }
+
+  static String inferSemesterCode(DateTime now) {
+    final month = now.month;
+    final year = now.year;
+    if (month >= 8) {
+      return '${year}1';
+    }
+    if (month <= 1) {
+      return '${year - 1}1';
+    }
+    return '${year - 1}2';
   }
 
   static DateTime _firstMondayOnOrAfter(DateTime date) {

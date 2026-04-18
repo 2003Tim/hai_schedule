@@ -274,12 +274,19 @@ class ScheduleProvider extends ChangeNotifier {
       final resolvedSemester = await _stateLoader.resolveTargetSemesterCode(
         semesterCode,
       );
+      final semesterStart = _stateLoader.inferSemesterStartFromRawScheduleJson(
+        rawScheduleJson,
+        semesterCode: resolvedSemester,
+      );
       _courses = courses;
       _currentSemesterCode = resolvedSemester;
       _availableSemesterCodes = await _stateLoader.loadAvailableSemesterCodes(
         additional: resolvedSemester,
       );
-      _applySemesterContext(resolvedSemester);
+      _applySemesterContext(
+        resolvedSemester,
+        semesterStartOverride: semesterStart,
+      );
       await _scheduleRepository.saveSemesterSchedule(
         semesterCode: resolvedSemester,
         rawScheduleJson: rawScheduleJson,
@@ -323,8 +330,14 @@ class ScheduleProvider extends ChangeNotifier {
     );
   }
 
-  void _applySemesterContext(String? semesterCode) {
-    _weekCalc = WeekCalculator.hainanuSemester(semesterCode);
+  void _applySemesterContext(
+    String? semesterCode, {
+    DateTime? semesterStartOverride,
+  }) {
+    _weekCalc =
+        semesterStartOverride == null
+            ? WeekCalculator.hainanuSemester(semesterCode)
+            : WeekCalculator(semesterStart: semesterStartOverride);
     _currentWeek = _weekCalc.getWeekNumber();
     final desiredWeek = _selectedWeek == 0 ? _currentWeek : _selectedWeek;
     _selectedWeek = desiredWeek.clamp(1, _weekCalc.totalWeeks);
@@ -357,6 +370,9 @@ class ScheduleProvider extends ChangeNotifier {
     _availableSemesterCodes = state.availableSemesterCodes;
     _displayDays = state.displayDays;
     _showNonCurrentWeek = state.showNonCurrentWeek;
-    _applySemesterContext(state.currentSemesterCode);
+    _applySemesterContext(
+      state.currentSemesterCode,
+      semesterStartOverride: state.semesterStart,
+    );
   }
 }

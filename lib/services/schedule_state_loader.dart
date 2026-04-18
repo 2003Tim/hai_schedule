@@ -7,11 +7,13 @@ import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/schedule_parser.dart';
 import 'package:hai_schedule/models/school_time.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
+import 'package:hai_schedule/utils/week_calculator.dart';
 
 class LoadedScheduleState {
   final List<Course> courses;
   final List<ScheduleOverride> overrides;
   final SchoolTimeConfig timeConfig;
+  final DateTime? semesterStart;
   final String? currentSemesterCode;
   final List<String> availableSemesterCodes;
   final int displayDays;
@@ -21,6 +23,7 @@ class LoadedScheduleState {
     required this.courses,
     required this.overrides,
     required this.timeConfig,
+    required this.semesterStart,
     required this.currentSemesterCode,
     required this.availableSemesterCodes,
     required this.displayDays,
@@ -56,6 +59,10 @@ class ScheduleStateLoader {
       courses: await _resolveCourses(cache),
       overrides: await _overrideRepository.load(cache.semesterCode),
       timeConfig: await _schoolTimeRepository.load(),
+      semesterStart: inferSemesterStartFromRawScheduleJson(
+        cache.rawScheduleJson,
+        semesterCode: cache.semesterCode,
+      ),
       currentSemesterCode: cache.semesterCode,
       availableSemesterCodes: await loadAvailableSemesterCodes(
         additional: cache.semesterCode,
@@ -82,25 +89,33 @@ class ScheduleStateLoader {
     if (activeSemester != null && activeSemester.isNotEmpty) {
       return activeSemester;
     }
-    return inferSemesterCode(DateTime.now());
+    return WeekCalculator.inferSemesterCode(DateTime.now());
   }
 
-  String inferSemesterCode(DateTime now) {
-    final month = now.month;
-    final year = now.year;
-    if (month >= 8) {
-      return '${year}1';
+  String inferSemesterCode(DateTime now) =>
+      WeekCalculator.inferSemesterCode(now);
+
+  DateTime? inferSemesterStartFromRawScheduleJson(
+    String? rawScheduleJson, {
+    String? semesterCode,
+  }) {
+    if (rawScheduleJson == null || rawScheduleJson.isEmpty) return null;
+    try {
+      final data = json.decode(rawScheduleJson) as Map<String, dynamic>;
+      return ScheduleParser.inferSemesterStart(
+        data,
+        semesterCode: semesterCode,
+      );
+    } catch (_) {
+      return null;
     }
-    if (month <= 1) {
-      return '${year - 1}1';
-    }
-    return '${year - 1}2';
   }
 
   Future<List<Course>> _resolveCourses(ScheduleCache cache) async {
     if (cache.rawScheduleJson != null && cache.rawScheduleJson!.isNotEmpty) {
       try {
-        final data = json.decode(cache.rawScheduleJson!) as Map<String, dynamic>;
+        final data =
+            json.decode(cache.rawScheduleJson!) as Map<String, dynamic>;
         final parsedCourses = ScheduleParser.parseApiResponse(data);
         if (parsedCourses.isNotEmpty) {
           await _scheduleRepository.saveSemesterSchedule(

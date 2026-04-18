@@ -84,6 +84,8 @@ class DailyScheduleView extends StatelessWidget {
         if (index == 0) {
           return DailyHeaderCard(
             weekdayLabel: _weekdayLabel(weekday),
+            dateLabel: '${date.month}/${date.day}',
+            subtitle: _headerSubtitle(date, entries.length),
             count: entries.length,
             onAddPressed:
                 () => openScheduleOverrideForm(
@@ -122,15 +124,31 @@ class DailyScheduleView extends StatelessWidget {
   }
 }
 
+String _headerSubtitle(DateTime date, int count) {
+  final today = DateTime.now();
+  final todayDate = DateTime(today.year, today.month, today.day);
+  final targetDate = DateTime(date.year, date.month, date.day);
+  final diffDays = targetDate.difference(todayDate).inDays;
+  final prefix = switch (diffDays) {
+    0 => '今天',
+    1 => '明天',
+    -1 => '昨天',
+    _ => '这一天',
+  };
+
+  if (count == 0) {
+    return prefix == '今天' ? '今天暂时没有课程安排' : '$prefix没有课程安排';
+  }
+  if (prefix == '今天') {
+    return '今天有 $count 节课，加油！';
+  }
+  if (prefix == '明天') {
+    return '明天有 $count 节课，提前做好准备';
+  }
+  return '$prefix有 $count 节课，记得留意时间';
+}
+
 String _weekdayLabel(int weekday) {
-  const labels = <String>[
-    '周一',
-    '周二',
-    '周三',
-    '周四',
-    '周五',
-    '周六',
-    '周日',
-  ];
+  const labels = <String>['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
   return labels[(weekday - 1).clamp(0, 6)];
 }

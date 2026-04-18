@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/utils/constants.dart';
 
@@ -63,16 +64,19 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
   List<_SlotInfo> _getSlots(int week, int weekday) {
     final tc = p.timeConfig;
     final slots = <_SlotInfo>[];
-    for (final course in p.courses) {
-      for (final slot in course.slots) {
-        if (slot.weekday == weekday && slot.isActiveInWeek(week)) {
-          slots.add(_SlotInfo(
-            slot: slot,
-            teacher: course.teacher,
-            times: tc.getSlotTime(slot.startSection, slot.endSection),
-          ));
-        }
+    for (final displaySlot in p.getDisplaySlotsForDay(week, weekday)) {
+      if (!displaySlot.isActive ||
+          displaySlot.overrideType == ScheduleOverrideType.cancel) {
+        continue;
       }
+      final slot = displaySlot.slot;
+      slots.add(
+        _SlotInfo(
+          slot: slot,
+          teacher: displaySlot.teacher,
+          times: tc.getSlotTime(slot.startSection, slot.endSection),
+        ),
+      );
     }
     slots.sort((a, b) => a.slot.startSection.compareTo(b.slot.startSection));
     return slots;
@@ -106,9 +110,10 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
             children: [
               _buildHeader(context, date, weekday, week, isToday),
               Expanded(
-                child: slots.isEmpty
-                    ? _buildEmpty(context, isToday)
-                    : _buildTimeline(context, slots, isToday),
+                child:
+                    slots.isEmpty
+                        ? _buildEmpty(context, isToday)
+                        : _buildTimeline(context, slots, isToday),
               ),
               _buildFooter(context, slots, isToday),
               // 设置面板（可折叠）
@@ -120,17 +125,23 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, DateTime date, int weekday,
-      int week, bool isToday) {
+  Widget _buildHeader(
+    BuildContext context,
+    DateTime date,
+    int weekday,
+    int week,
+    bool isToday,
+  ) {
     final cs = Theme.of(context).colorScheme;
 
-    final dateLabel = isToday
-        ? '今天'
-        : _dayOffset == 1
+    final dateLabel =
+        isToday
+            ? '今天'
+            : _dayOffset == 1
             ? '明天'
             : _dayOffset == -1
-                ? '昨天'
-                : '${date.month}/${date.day}';
+            ? '昨天'
+            : '${date.month}/${date.day}';
 
     return Container(
       padding: const EdgeInsets.fromLTRB(6, 10, 4, 8),
@@ -141,8 +152,12 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
       ),
       child: Row(
         children: [
-          _tapIcon(Icons.chevron_left_rounded, 20, cs.onSurface.withValues(alpha: 0.4),
-              () => setState(() => _dayOffset--)),
+          _tapIcon(
+            Icons.chevron_left_rounded,
+            20,
+            cs.onSurface.withValues(alpha: 0.4),
+            () => setState(() => _dayOffset--),
+          ),
           Expanded(
             child: GestureDetector(
               onTap: () => setState(() => _dayOffset = 0),
@@ -168,13 +183,25 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
               ),
             ),
           ),
-          _tapIcon(Icons.chevron_right_rounded, 20, cs.onSurface.withValues(alpha: 0.4),
-              () => setState(() => _dayOffset++)),
+          _tapIcon(
+            Icons.chevron_right_rounded,
+            20,
+            cs.onSurface.withValues(alpha: 0.4),
+            () => setState(() => _dayOffset++),
+          ),
           const SizedBox(width: 2),
-          _tapIcon(Icons.open_in_new_rounded, 15, cs.onSurface.withValues(alpha: 0.35),
-              widget.onOpenMain),
-          _tapIcon(Icons.close_rounded, 15, cs.onSurface.withValues(alpha: 0.35),
-              widget.onClose),
+          _tapIcon(
+            Icons.open_in_new_rounded,
+            15,
+            cs.onSurface.withValues(alpha: 0.35),
+            widget.onOpenMain,
+          ),
+          _tapIcon(
+            Icons.close_rounded,
+            15,
+            cs.onSurface.withValues(alpha: 0.35),
+            widget.onClose,
+          ),
         ],
       ),
     );
@@ -204,24 +231,40 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
           const SizedBox(height: 10),
           Text(
             isToday ? '今天没有课，好好休息' : '这天没有课',
-            style: TextStyle(fontSize: 13, color: cs.onSurface.withValues(alpha: 0.4)),
+            style: TextStyle(
+              fontSize: 13,
+              color: cs.onSurface.withValues(alpha: 0.4),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTimeline(BuildContext context, List<_SlotInfo> slots, bool isToday) {
+  Widget _buildTimeline(
+    BuildContext context,
+    List<_SlotInfo> slots,
+    bool isToday,
+  ) {
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
       itemCount: slots.length,
-      itemBuilder: (context, index) =>
-          _buildItem(context, slots[index], isToday, index == slots.length - 1),
+      itemBuilder:
+          (context, index) => _buildItem(
+            context,
+            slots[index],
+            isToday,
+            index == slots.length - 1,
+          ),
     );
   }
 
   Widget _buildItem(
-      BuildContext context, _SlotInfo info, bool isToday, bool isLast) {
+    BuildContext context,
+    _SlotInfo info,
+    bool isToday,
+    bool isLast,
+  ) {
     final cs = Theme.of(context).colorScheme;
     final slot = info.slot;
     final startTime = info.times?.$1 ?? '';
@@ -246,7 +289,8 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
     final isOngoing = status == _Status.ongoing;
     final isFinished = status == _Status.finished;
     final dimText = cs.onSurface.withValues(alpha: isFinished ? 0.25 : 0.5);
-    final mainText = isFinished ? cs.onSurface.withValues(alpha: 0.3) : cs.onSurface;
+    final mainText =
+        isFinished ? cs.onSurface.withValues(alpha: 0.3) : cs.onSurface;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -257,17 +301,23 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
             width: 46,
             child: Column(
               children: [
-                Text(startTime,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: isOngoing ? color : dimText,
-                    )),
-                Text(endTime,
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: cs.onSurface.withValues(alpha: isFinished ? 0.15 : 0.3),
-                    )),
+                Text(
+                  startTime,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isOngoing ? color : dimText,
+                  ),
+                ),
+                Text(
+                  endTime,
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: cs.onSurface.withValues(
+                      alpha: isFinished ? 0.15 : 0.3,
+                    ),
+                  ),
+                ),
                 if (!isLast)
                   Container(
                     width: 1,
@@ -283,13 +333,19 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: isOngoing
-                    ? color.withValues(alpha: 0.1)
-                    : cs.surfaceContainerHighest.withValues(alpha: isFinished ? 0.3 : 0.6),
+                color:
+                    isOngoing
+                        ? color.withValues(alpha: 0.1)
+                        : cs.surfaceContainerHighest.withValues(
+                          alpha: isFinished ? 0.3 : 0.6,
+                        ),
                 borderRadius: BorderRadius.circular(10),
-                border: isOngoing
-                    ? Border.all(color: color.withValues(alpha: 0.35))
-                    : Border.all(color: cs.outlineVariant.withValues(alpha: 0.12)),
+                border:
+                    isOngoing
+                        ? Border.all(color: color.withValues(alpha: 0.35))
+                        : Border.all(
+                          color: cs.outlineVariant.withValues(alpha: 0.12),
+                        ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -300,7 +356,10 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
                         width: 7,
                         height: 7,
                         decoration: BoxDecoration(
-                          color: isFinished ? cs.onSurface.withValues(alpha: 0.15) : color,
+                          color:
+                              isFinished
+                                  ? cs.onSurface.withValues(alpha: 0.15)
+                                  : color,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -312,14 +371,18 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: mainText,
-                            decoration: isFinished ? TextDecoration.lineThrough : null,
-                            decorationColor: cs.onSurface.withValues(alpha: 0.2),
+                            decoration:
+                                isFinished ? TextDecoration.lineThrough : null,
+                            decorationColor: cs.onSurface.withValues(
+                              alpha: 0.2,
+                            ),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (isOngoing) _badge('进行中', color, color.withValues(alpha: 0.12)),
+                      if (isOngoing)
+                        _badge('进行中', color, color.withValues(alpha: 0.12)),
                       if (status == _Status.upcoming && _isNext(info))
                         _countdownBadge(startMin, cs),
                     ],
@@ -329,19 +392,31 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
                     padding: const EdgeInsets.only(left: 15),
                     child: Row(
                       children: [
-                        Icon(Icons.location_on_outlined, size: 12, color: dimText),
+                        Icon(
+                          Icons.location_on_outlined,
+                          size: 12,
+                          color: dimText,
+                        ),
                         const SizedBox(width: 3),
-                        Text(_shortLoc(slot.location),
-                            style: TextStyle(fontSize: 11, color: dimText)),
+                        Text(
+                          _shortLoc(slot.location),
+                          style: TextStyle(fontSize: 11, color: dimText),
+                        ),
                         if (info.teacher.isNotEmpty) ...[
                           const SizedBox(width: 10),
-                          Icon(Icons.person_outline_rounded, size: 12, color: dimText),
+                          Icon(
+                            Icons.person_outline_rounded,
+                            size: 12,
+                            color: dimText,
+                          ),
                           const SizedBox(width: 3),
                           Expanded(
-                            child: Text(_shortTeacher(info.teacher),
-                                style: TextStyle(fontSize: 11, color: dimText),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis),
+                            child: Text(
+                              _shortTeacher(info.teacher),
+                              style: TextStyle(fontSize: 11, color: dimText),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                       ],
@@ -353,7 +428,9 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
                       '第${slot.startSection}-${slot.endSection}节',
                       style: TextStyle(
                         fontSize: 10,
-                        color: cs.onSurface.withValues(alpha: isFinished ? 0.15 : 0.3),
+                        color: cs.onSurface.withValues(
+                          alpha: isFinished ? 0.15 : 0.3,
+                        ),
                       ),
                     ),
                   ),
@@ -369,10 +446,18 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
   Widget _badge(String text, Color textColor, Color bgColor) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration:
-          BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(4)),
-      child: Text(text,
-          style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: textColor)),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w600,
+          color: textColor,
+        ),
+      ),
     );
   }
 
@@ -384,7 +469,11 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
   }
 
   /// 底部：课程统计 + 设置按钮
-  Widget _buildFooter(BuildContext context, List<_SlotInfo> slots, bool isToday) {
+  Widget _buildFooter(
+    BuildContext context,
+    List<_SlotInfo> slots,
+    bool isToday,
+  ) {
     final cs = Theme.of(context).colorScheme;
     final tc = p.timeConfig;
     int done = 0;
@@ -405,27 +494,44 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
       child: Row(
         children: [
           if (slots.isNotEmpty) ...[
-            Text('共 ${slots.length} 节',
-                style: TextStyle(fontSize: 10, color: cs.onSurface.withValues(alpha: 0.35))),
+            Text(
+              '共 ${slots.length} 节',
+              style: TextStyle(
+                fontSize: 10,
+                color: cs.onSurface.withValues(alpha: 0.35),
+              ),
+            ),
             if (isToday && done > 0) ...[
               const SizedBox(width: 6),
-              Text('已完成 $done/${slots.length}',
-                  style: TextStyle(fontSize: 10, color: cs.onSurface.withValues(alpha: 0.25))),
+              Text(
+                '已完成 $done/${slots.length}',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: cs.onSurface.withValues(alpha: 0.25),
+                ),
+              ),
             ],
           ],
           if (_dayOffset != 0)
             GestureDetector(
               onTap: () => setState(() => _dayOffset = 0),
-              child: Text('回到今天',
-                  style: TextStyle(
-                      fontSize: 10, color: cs.primary, fontWeight: FontWeight.w500)),
+              child: Text(
+                '回到今天',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: cs.primary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           const Spacer(),
           // 设置齿轮按钮
           GestureDetector(
             onTap: () => setState(() => _showSettings = !_showSettings),
             child: Icon(
-              _showSettings ? Icons.expand_more_rounded : Icons.settings_rounded,
+              _showSettings
+                  ? Icons.expand_more_rounded
+                  : Icons.settings_rounded,
               size: 15,
               color: cs.onSurface.withValues(alpha: _showSettings ? 0.5 : 0.3),
             ),
@@ -452,16 +558,29 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
           // 透明度滑块
           Row(
             children: [
-              Icon(Icons.opacity_rounded, size: 14, color: cs.onSurface.withValues(alpha: 0.4)),
+              Icon(
+                Icons.opacity_rounded,
+                size: 14,
+                color: cs.onSurface.withValues(alpha: 0.4),
+              ),
               const SizedBox(width: 6),
-              Text('透明度',
-                  style: TextStyle(fontSize: 11, color: cs.onSurface.withValues(alpha: 0.5))),
+              Text(
+                '透明度',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: cs.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
               Expanded(
                 child: SliderTheme(
                   data: SliderThemeData(
                     trackHeight: 2,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 6,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 12,
+                    ),
                     activeTrackColor: cs.primary,
                     inactiveTrackColor: cs.onSurface.withValues(alpha: 0.1),
                     thumbColor: cs.primary,
@@ -478,7 +597,10 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
                 width: 32,
                 child: Text(
                   '${(widget.opacity * 100).round()}%',
-                  style: TextStyle(fontSize: 10, color: cs.onSurface.withValues(alpha: 0.4)),
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: cs.onSurface.withValues(alpha: 0.4),
+                  ),
                   textAlign: TextAlign.right,
                 ),
               ),
@@ -492,38 +614,50 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
               child: Row(
                 children: [
                   Icon(
-                    widget.alwaysOnTop ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                    widget.alwaysOnTop
+                        ? Icons.push_pin_rounded
+                        : Icons.push_pin_outlined,
                     size: 14,
-                    color: widget.alwaysOnTop
-                        ? cs.primary
-                        : cs.onSurface.withValues(alpha: 0.4),
+                    color:
+                        widget.alwaysOnTop
+                            ? cs.primary
+                            : cs.onSurface.withValues(alpha: 0.4),
                   ),
                   const SizedBox(width: 6),
-                  Text('窗口置顶',
-                      style: TextStyle(
-                          fontSize: 11, color: cs.onSurface.withValues(alpha: 0.5))),
+                  Text(
+                    '窗口置顶',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: cs.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
                   const Spacer(),
                   // 简易开关指示
                   Container(
                     width: 32,
                     height: 18,
                     decoration: BoxDecoration(
-                      color: widget.alwaysOnTop
-                          ? cs.primary.withValues(alpha: 0.2)
-                          : cs.onSurface.withValues(alpha: 0.08),
+                      color:
+                          widget.alwaysOnTop
+                              ? cs.primary.withValues(alpha: 0.2)
+                              : cs.onSurface.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(9),
                     ),
                     child: AnimatedAlign(
                       duration: const Duration(milliseconds: 200),
-                      alignment: widget.alwaysOnTop
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
+                      alignment:
+                          widget.alwaysOnTop
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
                       child: Container(
                         width: 14,
                         height: 14,
                         margin: const EdgeInsets.symmetric(horizontal: 2),
                         decoration: BoxDecoration(
-                          color: widget.alwaysOnTop ? cs.primary : cs.onSurface.withValues(alpha: 0.3),
+                          color:
+                              widget.alwaysOnTop
+                                  ? cs.primary
+                                  : cs.onSurface.withValues(alpha: 0.3),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -540,7 +674,8 @@ class _MiniScheduleOverlayState extends State<MiniScheduleOverlay> {
 
   bool _isNext(_SlotInfo info) {
     if (_dayOffset != 0) return false;
-    final m = p.timeConfig.getClassTime(info.slot.startSection)?.startMinutes ?? 0;
+    final m =
+        p.timeConfig.getClassTime(info.slot.startSection)?.startMinutes ?? 0;
     return m > _nowMinutes;
   }
 

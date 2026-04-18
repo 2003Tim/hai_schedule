@@ -85,17 +85,40 @@ class HomeOverflowMenu extends StatelessWidget {
     required this.onSelected,
     required this.formatSemesterCode,
     this.syncSnapshot,
+    this.showLabel = false,
   });
 
   final ScheduleProvider provider;
   final AutoSyncSnapshot? syncSnapshot;
   final ValueChanged<HomeMenuAction> onSelected;
   final String Function(String code) formatSemesterCode;
+  final bool showLabel;
 
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<HomeMenuAction>(
-      icon: const Icon(Icons.more_vert, size: 22),
+      tooltip: '更多设置',
+      icon: showLabel ? null : const Icon(Icons.more_vert, size: 22),
+      child:
+          showLabel
+              ? Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Text(
+                      '更多设置',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(Icons.expand_more_rounded, size: 18),
+                  ],
+                ),
+              )
+              : null,
       onSelected: onSelected,
       itemBuilder: (context) {
         final currentSemesterCode = provider.currentSemesterCode;
@@ -206,6 +229,7 @@ class HomeScheduleBody extends StatelessWidget {
     required this.onLoginFetch,
     required this.onManualImport,
     required this.wrapScheduleSemantics,
+    this.navigationKey,
   });
 
   final ScheduleProvider provider;
@@ -215,6 +239,7 @@ class HomeScheduleBody extends StatelessWidget {
   final VoidCallback onLoginFetch;
   final VoidCallback onManualImport;
   final Widget Function(Widget child, String label) wrapScheduleSemantics;
+  final Key? navigationKey;
 
   @override
   Widget build(BuildContext context) {
@@ -225,6 +250,7 @@ class HomeScheduleBody extends StatelessWidget {
           children: [
             const SizedBox(height: 6),
             Padding(
+              key: navigationKey,
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
               child: WeekSelector(
                 currentWeek: provider.currentWeek,
@@ -247,7 +273,7 @@ class HomeScheduleBody extends StatelessWidget {
                   onSelected: onDaySelected,
                 ),
               ),
-            const HomeNextLessonCard(),
+            HomeNextLessonCard(),
             Expanded(
               child:
                   provider.courses.isEmpty

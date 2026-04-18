@@ -11,18 +11,20 @@ class DailyHeaderCard extends StatelessWidget {
   const DailyHeaderCard({
     super.key,
     required this.weekdayLabel,
+    required this.dateLabel,
+    required this.subtitle,
     required this.count,
     required this.onAddPressed,
   });
 
   final String weekdayLabel;
+  final String dateLabel;
+  final String subtitle;
   final int count;
   final VoidCallback onAddPressed;
 
   @override
   Widget build(BuildContext context) {
-    final subtitle = count == 0 ? '今天暂时没有课程安排' : '今天有 $count 节课，加油！';
-
     return Row(
       children: [
         Expanded(
@@ -30,7 +32,7 @@ class DailyHeaderCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                weekdayLabel,
+                '$weekdayLabel · $dateLabel',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,

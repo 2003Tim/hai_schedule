@@ -283,6 +283,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ScheduleProvider>();
+    final width = MediaQuery.of(context).size.width;
+    final isDesktopLayout = width >= 1200;
+    final layoutKey = ValueKey<String>(
+      isDesktopLayout
+          ? 'home.layout.desktop'
+          : width >= 720
+          ? 'home.layout.tablet'
+          : 'home.layout.mobile',
+    );
+    Widget quickActions = HomeOverflowMenu(
+      key: const ValueKey('home.panel.quickActions'),
+      provider: provider,
+      syncSnapshot: _syncSnapshot,
+      formatSemesterCode: _formatSemesterCode,
+      showLabel: isDesktopLayout,
+      onSelected: (action) async {
+        await _handleMenuAction(action, provider);
+      },
+    );
+    if (isDesktopLayout) {
+      quickActions = KeyedSubtree(
+        key: const ValueKey('home.layout.desktop.side'),
+        child: quickActions,
+      );
+    }
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -300,6 +325,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onPressed: () => _toggleViewMode(provider),
         ),
         title: HomeAppBarTitle(
+          key: const ValueKey('home.panel.overview'),
           currentWeekText: _currentWeekText(provider),
           semesterLabel:
               provider.currentSemesterCode == null
@@ -313,28 +339,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               tooltip: '切换悬浮窗',
               onPressed: widget.onToggleOverlay,
             ),
-          HomeOverflowMenu(
-            provider: provider,
-            syncSnapshot: _syncSnapshot,
-            formatSemesterCode: _formatSemesterCode,
-            onSelected: (action) async {
-              await _handleMenuAction(action, provider);
-            },
-          ),
+          quickActions,
         ],
       ),
-      body: HomeScheduleBody(
-        provider: provider,
-        showDayView: _viewMode == _ScheduleViewMode.day,
-        selectedDay: _effectiveSelectedDay(provider),
-        onDaySelected: _selectDay,
-        onLoginFetch: () async {
-          await _openLoginFetch(provider);
-        },
-        onManualImport: () async {
-          await _openManualImport(provider);
-        },
-        wrapScheduleSemantics: _wrapWindowsScheduleSemantics,
+      body: KeyedSubtree(
+        key: layoutKey,
+        child: HomeScheduleBody(
+          key: const ValueKey('home.panel.schedule'),
+          provider: provider,
+          showDayView: _viewMode == _ScheduleViewMode.day,
+          selectedDay: _effectiveSelectedDay(provider),
+          navigationKey: const ValueKey('home.panel.navigation'),
+          onDaySelected: _selectDay,
+          onLoginFetch: () async {
+            await _openLoginFetch(provider);
+          },
+          onManualImport: () async {
+            await _openManualImport(provider);
+          },
+          wrapScheduleSemantics: _wrapWindowsScheduleSemantics,
+        ),
       ),
     );
   }
