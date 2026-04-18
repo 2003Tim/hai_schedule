@@ -87,6 +87,11 @@
       "sourceLocation": "",
       "sourceStartSection": 1,
       "sourceEndSection": 2,
+      "activeWeeks": [
+        1,
+        2,
+        3
+      ],
       "color": 4288380902
     },
     {
@@ -108,6 +113,11 @@
       "sourceLocation": "",
       "sourceStartSection": null,
       "sourceEndSection": null,
+      "activeWeeks": [
+        1,
+        2,
+        3
+      ],
       "color": 4282631582
     },
     {
@@ -129,6 +139,9 @@
       "sourceLocation": "",
       "sourceStartSection": null,
       "sourceEndSection": null,
+      "activeWeeks": [
+        1
+      ],
       "color": 4294937180
     }
   ]

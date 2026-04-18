@@ -104,6 +104,7 @@ object ScheduleProjectionSupport {
                         status = item.optString("status", "normal"),
                         sourceStartSection = optNullableInt(item, "sourceStartSection"),
                         sourceEndSection = optNullableInt(item, "sourceEndSection"),
+                        activeWeeks = parseWeeks(item.optJSONArray("activeWeeks")),
                         color = item.optInt("color"),
                     ),
                 )
@@ -222,6 +223,7 @@ object ScheduleProjectionSupport {
                             weekday = weekday,
                             startSection = modifyOverride.startSection,
                             endSection = modifyOverride.endSection,
+                            activeWeeks = modifyOverride.activeWeeks.ifEmpty { slot.activeWeeks },
                             color = modifyOverride.color.takeIf { it != 0 } ?: slot.color,
                         ),
                     )
@@ -237,6 +239,7 @@ object ScheduleProjectionSupport {
                         weekday = slot.weekday,
                         startSection = slot.startSection,
                         endSection = slot.endSection,
+                        activeWeeks = slot.activeWeeks,
                         color = slot.color,
                     ),
                 )
@@ -254,6 +257,7 @@ object ScheduleProjectionSupport {
                             weekday = weekday,
                             startSection = item.startSection,
                             endSection = item.endSection,
+                            activeWeeks = item.activeWeeks.ifEmpty { listOf(rawWeek) },
                             color = item.color,
                         ),
                     )
@@ -407,6 +411,7 @@ object ScheduleProjectionSupport {
         val status: String,
         val sourceStartSection: Int?,
         val sourceEndSection: Int?,
+        val activeWeeks: List<Int>,
         val color: Int,
     ) {
         fun toJson(): JSONObject {
@@ -429,6 +434,7 @@ object ScheduleProjectionSupport {
                 if (sourceEndSection != null) {
                     put("sourceEndSection", sourceEndSection)
                 }
+                put("activeWeeks", JSONArray(activeWeeks))
                 put("color", color)
             }
         }
@@ -442,6 +448,7 @@ object ScheduleProjectionSupport {
         val weekday: Int,
         val startSection: Int,
         val endSection: Int,
+        val activeWeeks: List<Int>,
         val color: Int,
     )
 
@@ -522,9 +529,19 @@ object ScheduleProjectionSupport {
                         status = item.optString("status", "normal"),
                         sourceStartSection = optNullableInt(item, "sourceStartSection"),
                         sourceEndSection = optNullableInt(item, "sourceEndSection"),
+                        activeWeeks = parseWeeks(item.optJSONArray("activeWeeks")),
                         color = item.optInt("color"),
                     ),
                 )
+            }
+        }
+    }
+
+    private fun parseWeeks(source: JSONArray?): List<Int> {
+        if (source == null) return emptyList()
+        return buildList {
+            for (index in 0 until source.length()) {
+                add(source.optInt(index))
             }
         }
     }

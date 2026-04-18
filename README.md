@@ -13,6 +13,7 @@
 - 周课表视图（左右滑动切周）和日课表视图（左右滑动切天）
 - 工作日 / 7 天列数切换，非本周课程灰显 / 隐藏
 - 临时加课、停课、调课（按学期维护，支持孤立状态检测）
+- 首页课前提醒横条：只聚焦今明两天最近一节课，支持无课空态、周次进度环和周次总览弹层
 
 ### Android 专属
 - 课前提醒（本地通知，支持提前 5 / 10 / 15 / 30 分钟或关闭，7 天滚动窗口）
@@ -22,6 +23,8 @@
 - 今日课表 4×2 桌面小组件（支持前一天 / 今天 / 后一天切换，空态 / 有课态，课程状态文案）
 
 ### Windows 专属
+- 课前提醒策略保存与未来 7 天桌面预览（不直接发送系统通知）
+- 前台自动同步（应用启动或回到前台时按频率自动检查并进入登录抓课流程）
 - 迷你悬浮小窗（可拖拽、透明度可调、可置顶）
 
 ### 通用
@@ -42,9 +45,11 @@
 | 临时覆盖 | ✓ | ✓ |
 | 主题 / 背景 | ✓ | ✓ |
 | 备份恢复 | ✓ | ✓ |
-| 课前提醒 | ✓ | — |
+| 首页课前提醒卡片 | ✓ | ✓ |
+| 课前提醒通知 | ✓ | — |
+| 课前提醒策略 / 未来预览 | ✓ | ✓ |
 | 自动静音 | ✓ | — |
-| 后台自动同步 | ✓ | — |
+| 自动同步 | ✓（后台） | ✓（前台） |
 | 桌面小组件 | ✓ | — |
 | 迷你悬浮窗 | — | ✓ |
 
@@ -61,7 +66,7 @@
 | WebView | webview_flutter（Android）/ webview_windows（Windows）|
 | 通知 | flutter_local_notifications + timezone |
 | 小组件 | home_widget + Kotlin AppWidgetProvider |
-| 后台同步 | WorkManager（Kotlin） |
+| 自动同步 | WorkManager（Android）+ 前台频率检查（Windows） |
 | 自动静音 | AlarmManager + NotificationManager（Kotlin） |
 | 窗口管理 | window_manager（Windows） |
 
@@ -88,19 +93,24 @@ lib/
 │   └── app_theme_preset.dart      # 主题预设定义
 │
 ├── services/                      # 业务服务层
+│   ├── app_bootstrap.dart         # 应用启动编排（平台初始化 + Provider 预热）
 │   ├── schedule_provider.dart     # 核心状态管理（ChangeNotifier）
 │   ├── theme_provider.dart        # 主题状态管理
 │   ├── app_storage.dart           # 统一存储入口（单例）
 │   ├── app_repositories.dart      # 仓库层（对 AppStorage 的领域包装）
-│   ├── auto_sync_service.dart     # 自动同步调度与执行
-│   ├── class_reminder_service.dart# 课前提醒调度
+│   ├── auto_sync_service.dart     # 自动同步调度与执行（Android 后台 / Windows 前台）
+│   ├── class_reminder_service.dart# 课前提醒调度（Android 通知 / Windows 预览）
 │   ├── class_silence_service.dart # 上课自动静音
 │   ├── widget_sync_service.dart   # 桌面小组件数据推送
+│   ├── schedule_derived_output_coordinator.dart # 提醒/静音/小组件派生输出协调
+│   ├── schedule_state_loader.dart # 课表归档恢复与学期上下文装配
+│   ├── schedule_sync_result_service.dart # 同步成功后的差量摘要与状态落盘
 │   ├── auth_credentials_service.dart # 账号密码安全存取
 │   ├── schedule_login_fetch_service.dart # 登录抓取编排
 │   ├── schedule_login_script_builder.dart# JS 脚本构建
 │   ├── login_fetch_coordinator.dart      # 多步抓取状态机
 │   ├── portal_relogin_service.dart       # 会话过期恢复登录
+│   ├── desktop_portal_login_service.dart # Windows 端门户直连登录
 │   ├── api_service.dart           # HTTP 课表接口调用
 │   └── app_backup_service.dart    # 备份与恢复（含回滚）
 │
@@ -124,6 +134,7 @@ lib/
 ├── widgets/                       # UI 组件库
 │   ├── schedule_grid.dart         # 周课表网格
 │   ├── daily_schedule_view.dart   # 日课表视图
+│   ├── home_next_lesson_card.dart # 首页课前提醒卡片（今明两天 + 周次进度环）
 │   ├── swipeable_schedule_view.dart      # 可滑动周视图
 │   ├── swipeable_daily_schedule_view.dart# 可滑动日视图
 │   ├── mini_overlay.dart          # Windows 迷你悬浮窗
@@ -141,6 +152,8 @@ lib/
     ├── auto_sync_course_diff.dart # 课表差量对比
     ├── auto_sync_schedule_policy.dart # 同步时间策略
     ├── schedule_override_validator.dart  # 覆盖项孤立检测
+    ├── schedule_ui_tokens.dart    # 首页/倒计时卡片视觉 token
+    ├── theme_appearance.dart      # 主题外观与可读性颜色计算
     ├── app_storage_codec.dart     # 存储编解码工具
     ├── constants.dart             # 课程配色（FNV-1a 哈希）
     ├── app_logger.dart            # 统一日志
@@ -155,6 +168,7 @@ android/app/src/main/kotlin/com/hainanu/hai_schedule/
 └── NativeCredentialStore.kt       # 原生加密凭据存储
 
 test/
+├── widgets/                       # 组件与布局测试（首页、桌面适配、课表网格）
 ├── services/                      # 服务层测试（行为契约）
 └── utils/                         # 纯函数工具测试
 ```
@@ -181,8 +195,15 @@ flutter run -d android
 
 两个根 Provider：
 
-- `ScheduleProvider`：持有课表数据、周次状态、临时覆盖，更新后自动扇出至小组件同步、课前提醒重排和自动静音重排。
+- `ScheduleProvider`：持有课表数据、周次状态、临时覆盖，并通过 `ScheduleDerivedOutputCoordinator` 统一扇出到小组件同步、课前提醒重排和自动静音重排。
 - `ThemeProvider`：持有主题偏好，更新后异步保存并触发小组件外观刷新。
+
+### 启动流程
+
+`main()` 先通过 `AppBootstrap.initialize()` 完成平台初始化，再预热 `ScheduleProvider` / `ThemeProvider`：
+
+- Android：初始化课前提醒通道，并显示启动页后再切入首页
+- Windows：初始化窗口尺寸、标题与居中策略，再进入桌面壳层
 
 ### 存储分层
 
@@ -220,9 +241,18 @@ LoginRouter（平台分发）
 
 ---
 
-## Android 自动同步
+## 首页提醒卡片
 
-后台同步流程：
+- 首页 `HomeNextLessonCard` 只展示今明两天内最近一节课，不再把跨度拉到更远日期
+- 无课时会展示轻量空态文案，避免首页结构突然塌陷
+- 右侧进度环可直接查看该课程在当前学期的周次分布
+- 这套首页展示策略不影响提醒设置页里的未来 7 天提醒构建与预览逻辑
+
+---
+
+## 自动同步模式
+
+Android 后台同步流程：
 
 1. WorkManager 按配置频率唤醒 `AutoSyncScheduler`
 2. 读取活动学期和 Cookie 快照
@@ -230,7 +260,13 @@ LoginRouter（平台分发）
 4. 调用教务系统 API 拉取课表，与本地做差量对比
 5. 成功后更新归档，并推送差量摘要至同步中心
 
-前台同步在 App 恢复时也会自动触发（Android）。
+Windows 前台自动同步流程：
+
+1. 应用启动或回到前台时，按你设置的频率检查是否到点
+2. 若到点，则复用同一套登录抓课链路进入前台同步流程
+3. 不是系统级后台常驻任务，但会继续复用凭据管理、差量对比和归档落盘逻辑
+
+Android 前台同步在 App 恢复时也会自动触发；Windows 则依赖前台检查机制而非后台常驻调度。
 
 ---
 
@@ -321,4 +357,5 @@ flutter build windows --release
 - 原生资源文件必须位于 `android/app/src/main/res/...`，避免创建错误的双层目录
 - 桌面小组件布局（RemoteViews）只能使用系统支持的受限 View 类型
 - 教务系统页面结构变化时，登录抓取的 JS 注入脚本可能需要同步调整
-- Windows 端不支持课前提醒、自动静音和后台同步，这些功能在 Windows 下会被平台守卫静默跳过
+- Windows 端不直接发送课前提醒系统通知，也不支持自动静音
+- Windows 端当前提供的是提醒策略保存、未来 7 天桌面预览和前台自动同步，不是系统级后台常驻任务

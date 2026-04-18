@@ -11,12 +11,13 @@ import 'package:hai_schedule/utils/week_calculator.dart';
 
 void main() {
   test('build matches shared projection fixture contract', () async {
-    final fixture = json.decode(
-          await File(
-            'test/fixtures/schedule_projection_payload_v2.json',
-          ).readAsString(),
-        )
-        as Map<String, dynamic>;
+    final fixture =
+        json.decode(
+              await File(
+                'test/fixtures/schedule_projection_payload_v2.json',
+              ).readAsString(),
+            )
+            as Map<String, dynamic>;
 
     final payload = ScheduleProjectionPayload.build(
       courses: [

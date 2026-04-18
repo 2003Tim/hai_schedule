@@ -87,6 +87,7 @@ class ScheduleProjectionSupportTest {
                     status = "normal",
                     sourceStartSection = 1,
                     sourceEndSection = 2,
+                    activeWeeks = listOf(1, 2, 3),
                     color = 33,
                 ),
                 ScheduleProjectionSupport.ProjectionOverride(
@@ -104,6 +105,7 @@ class ScheduleProjectionSupportTest {
                     status = "normal",
                     sourceStartSection = null,
                     sourceEndSection = null,
+                    activeWeeks = listOf(1, 2, 3),
                     color = 0,
                 ),
                 ScheduleProjectionSupport.ProjectionOverride(
@@ -121,6 +123,7 @@ class ScheduleProjectionSupportTest {
                     status = "normal",
                     sourceStartSection = null,
                     sourceEndSection = null,
+                    activeWeeks = listOf(1),
                     color = 44,
                 ),
             ),
@@ -136,10 +139,12 @@ class ScheduleProjectionSupportTest {
         assertEquals("Advanced Algebra", resolved[0].courseName)
         assertEquals(2, resolved[0].startSection)
         assertEquals(3, resolved[0].endSection)
+        assertEquals(listOf(1, 2, 3), resolved[0].activeWeeks)
         assertEquals(33, resolved[0].color)
         assertEquals("Temporary", resolved[1].courseName)
         assertEquals(4, resolved[1].startSection)
         assertEquals(4, resolved[1].endSection)
+        assertEquals(listOf(1), resolved[1].activeWeeks)
     }
 
     @Test
@@ -225,6 +230,7 @@ class ScheduleProjectionSupportTest {
                     status = "normal",
                     sourceStartSection = 1,
                     sourceEndSection = 2,
+                    activeWeeks = listOf(1, 2, 3),
                     color = 33,
                 ),
             ),
