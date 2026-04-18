@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:hai_schedule/models/course.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
@@ -68,6 +69,115 @@ void main() {
       );
     },
   );
+
+  testWidgets('home next lesson card keeps a warm empty state for free days', (
+    tester,
+  ) async {
+    final provider = ScheduleProvider();
+    await provider.ready;
+    final themeProvider = ThemeProvider();
+    await themeProvider.ready;
+
+    final now = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+      10,
+    );
+
+    await tester.pumpWidget(
+      _TestShell(
+        scheduleProvider: provider,
+        themeProvider: themeProvider,
+        child: HomeNextLessonCard(nowFactory: () => now),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('home.nextLesson.empty')), findsOneWidget);
+    expect(find.text('今明两天都没有课'), findsOneWidget);
+    expect(find.text('享受你的自由时光吧。'), findsOneWidget);
+  });
+
+  testWidgets('home next lesson card opens active week overview from progress ring', (
+    tester,
+  ) async {
+    final provider = ScheduleProvider();
+    await provider.ready;
+    final themeProvider = ThemeProvider();
+    await themeProvider.ready;
+
+    final tomorrow = DateTime.now().add(const Duration(days: 1));
+    final semesterCode = _semesterCoveringDate(tomorrow);
+    final lessonWeek = WeekCalculator.hainanuSemester(
+      semesterCode,
+    ).getWeekNumber(tomorrow);
+    await provider.setCourses(<Course>[
+      Course(
+        id: 'course-sheet',
+        code: 'CS101',
+        name: '进度总览课',
+        className: '1班',
+        teacher: '陈老师',
+        college: '信息学院',
+        credits: 2,
+        totalHours: 32,
+        semester: semesterCode,
+        slots: <ScheduleSlot>[
+          ScheduleSlot(
+            courseId: 'course-sheet',
+            courseName: '进度总览课',
+            teacher: '陈老师',
+            weekday: tomorrow.weekday,
+            startSection: 1,
+            endSection: 2,
+            location: '教学楼C',
+            weekRanges: <WeekRange>[
+              WeekRange(start: lessonWeek, end: lessonWeek),
+            ],
+          ),
+        ],
+      ),
+    ], semesterCode: semesterCode);
+
+    final now = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+      21,
+    );
+
+    await tester.pumpWidget(
+      _TestShell(
+        scheduleProvider: provider,
+        themeProvider: themeProvider,
+        child: HomeNextLessonCard(nowFactory: () => now),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('home.nextLesson.progressRing')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('home.nextLesson.progressRing')));
+    await tester.pumpAndSettle();
+
+    final inactiveWeek = lessonWeek == 1 ? 2 : 1;
+    expect(
+      find.byKey(const ValueKey('home.nextLesson.weeksSheet')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey('home.nextLesson.week.$lessonWeek.active')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey('home.nextLesson.week.$inactiveWeek.inactive')),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('daily schedule view copy reflects the selected day', (
     tester,

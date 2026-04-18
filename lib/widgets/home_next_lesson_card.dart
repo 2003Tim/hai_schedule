@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -10,9 +12,10 @@ import 'package:hai_schedule/services/class_reminder_service.dart';
 import 'package:hai_schedule/services/class_silence_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/utils/constants.dart';
+import 'package:hai_schedule/utils/schedule_ui_tokens.dart';
 
 class HomeNextLessonCard extends StatefulWidget {
-  HomeNextLessonCard({super.key, DateTime Function()? nowFactory})
+  const HomeNextLessonCard({super.key, DateTime Function()? nowFactory})
     : nowFactory = nowFactory ?? DateTime.now;
 
   final DateTime Function() nowFactory;
@@ -77,55 +80,53 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
     final now = widget.nowFactory();
     final nowDate = DateTime(now.year, now.month, now.day);
     final nowMinutes = now.hour * 60 + now.minute;
-    final currentWeek = provider.weekCalc.getWeekNumber(now);
     final timeConfig = provider.timeConfig;
-    if (currentWeek > provider.weekCalc.totalWeeks) return null;
 
-    final startWeek = currentWeek < 1 ? 1 : currentWeek;
-    final startWeekday = currentWeek < 1 ? 1 : now.weekday;
+    for (var dayOffset = 0; dayOffset <= 1; dayOffset++) {
+      final lessonDate = nowDate.add(Duration(days: dayOffset));
+      final lessonWeek = provider.weekCalc.getWeekNumber(lessonDate);
+      if (lessonWeek < 1 || lessonWeek > provider.weekCalc.totalWeeks) {
+        continue;
+      }
 
-    for (var week = startWeek; week <= provider.weekCalc.totalWeeks; week++) {
-      final dayStart = week == startWeek ? startWeekday : 1;
-      for (var weekday = dayStart; weekday <= DateTime.daysPerWeek; weekday++) {
-        final slots =
-            provider
-                .getDisplaySlotsForDay(week, weekday)
-                .where(
-                  (slot) =>
-                      slot.isActive &&
-                      slot.overrideType != ScheduleOverrideType.cancel,
-                )
-                .toList();
-        if (slots.isEmpty) continue;
+      final slots =
+          provider
+              .getDisplaySlotsForDay(lessonWeek, lessonDate.weekday)
+              .where(
+                (slot) =>
+                    slot.isActive &&
+                    slot.overrideType != ScheduleOverrideType.cancel,
+              )
+              .toList();
+      if (slots.isEmpty) continue;
 
-        final lessonDate = provider.getDateForSlot(week, weekday);
-        final isToday =
-            currentWeek >= 1 &&
-            week == currentWeek &&
-            weekday == now.weekday &&
-            _isSameDate(lessonDate, nowDate);
+      final isToday = dayOffset == 0;
 
-        for (final slot in slots) {
-          final start = timeConfig.getClassTime(slot.slot.startSection);
-          final end = timeConfig.getClassTime(slot.slot.endSection);
-          if (start == null || end == null) continue;
-          if (isToday && end.endMinutes < nowMinutes) {
-            continue;
-          }
-
-          final isOngoing =
-              isToday &&
-              nowMinutes >= start.startMinutes &&
-              nowMinutes <= end.endMinutes;
-          return _buildLessonInfo(
-            slot: slot,
-            lessonDate: lessonDate,
-            nowDate: nowDate,
-            nowMinutes: nowMinutes,
-            isOngoing: isOngoing,
-            timeConfig: timeConfig,
-          );
+      for (final slot in slots) {
+        final start = timeConfig.getClassTime(slot.slot.startSection);
+        final end = timeConfig.getClassTime(slot.slot.endSection);
+        if (start == null || end == null) continue;
+        if (isToday && end.endMinutes < nowMinutes) {
+          continue;
         }
+
+        final isOngoing =
+            isToday &&
+            nowMinutes >= start.startMinutes &&
+            nowMinutes <= end.endMinutes;
+        final activeWeeks = slot.slot.getAllActiveWeeks();
+
+        return _buildLessonInfo(
+          slot: slot,
+          lessonDate: lessonDate,
+          lessonWeek: lessonWeek,
+          nowDate: nowDate,
+          nowMinutes: nowMinutes,
+          activeWeeks:
+              activeWeeks.isEmpty ? <int>[lessonWeek] : activeWeeks.toSet().toList(),
+          isOngoing: isOngoing,
+          timeConfig: timeConfig,
+        );
       }
     }
 
@@ -135,8 +136,10 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
   _NextLessonInfo _buildLessonInfo({
     required DisplayScheduleSlot slot,
     required DateTime lessonDate,
+    required int lessonWeek,
     required DateTime nowDate,
     required int nowMinutes,
+    required List<int> activeWeeks,
     required bool isOngoing,
     required SchoolTimeConfig timeConfig,
   }) {
@@ -169,6 +172,9 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
     return _NextLessonInfo(
       slot: slot.slot,
       teacher: slot.teacher,
+      lessonDate: lessonDate,
+      lessonWeek: lessonWeek,
+      activeWeeks: activeWeeks..sort(),
       label: label,
       timeText: timeText,
       startText: startText,
@@ -200,10 +206,42 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
     return labels[(weekday - 1).clamp(0, 6)];
   }
 
+  String _sheetDateLabel(DateTime nowDate, DateTime lessonDate) {
+    if (_isSameDate(nowDate, lessonDate)) {
+      return '今天 · ${lessonDate.month}/${lessonDate.day}';
+    }
+    return '${_weekdayLabel(lessonDate.weekday)} · ${lessonDate.month}/${lessonDate.day}';
+  }
+
+  Future<void> _showWeeksSheet(
+    BuildContext context, {
+    required _NextLessonInfo info,
+    required int displayWeek,
+    required int totalWeeks,
+    required Color baseColor,
+  }) async {
+    final now = widget.nowFactory();
+    final nowDate = DateTime(now.year, now.month, now.day);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return _HomeNextLessonWeeksSheet(
+          info: info,
+          displayWeek: displayWeek,
+          totalWeeks: totalWeeks,
+          baseColor: baseColor,
+          dateLabel: _sheetDateLabel(nowDate, info.lessonDate),
+        );
+      },
+    );
+  }
+
   Widget _buildStatusIcon({required IconData icon, required Color baseColor}) {
     return Container(
-      width: 20,
-      height: 20,
+      width: 18,
+      height: 18,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.20),
@@ -213,7 +251,100 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
           width: 0.5,
         ),
       ),
-      child: Icon(icon, size: 11, color: baseColor.withValues(alpha: 0.88)),
+      child: Icon(icon, size: 10, color: baseColor.withValues(alpha: 0.88)),
+    );
+  }
+
+  Widget _buildCardShell({required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.20),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.40),
+          width: 0.5,
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(11, 5, 11, 5),
+      child: child,
+    );
+  }
+
+  Widget _buildEmptyStateCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurfaceColor = theme.colorScheme.onSurface;
+    final accentColor = ScheduleUiTokens.terracotta;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 320;
+          final indicatorHeight = isCompact ? 16.0 : 18.0;
+          final badgeSize = isCompact ? 34.0 : 38.0;
+
+          return _buildCardShell(
+            child: Row(
+              key: const ValueKey('home.nextLesson.empty'),
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 3,
+                  height: indicatorHeight,
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.90),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '今明两天都没有课',
+                        style: TextStyle(
+                          fontSize: isCompact ? 12.5 : 13,
+                          fontWeight: FontWeight.w800,
+                          color: onSurfaceColor.withValues(alpha: 0.92),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '享受你的自由时光吧。',
+                        style: TextStyle(
+                          fontSize: 10.2,
+                          height: 1.15,
+                          color: onSurfaceColor.withValues(alpha: 0.66),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  width: badgeSize,
+                  height: badgeSize,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: accentColor.withValues(alpha: 0.12),
+                    border: Border.all(
+                      color: accentColor.withValues(alpha: 0.20),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.wb_sunny_rounded,
+                    size: isCompact ? 18 : 20,
+                    color: accentColor.withValues(alpha: 0.90),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -221,11 +352,16 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
   Widget build(BuildContext context) {
     final provider = context.watch<ScheduleProvider>();
     final info = _computeNextLesson(provider);
-    if (info == null) return const SizedBox.shrink();
+    if (info == null) return _buildEmptyStateCard(context);
 
     final theme = Theme.of(context);
     final baseColor = CourseColors.getColor(info.slot.courseName);
     final onSurfaceColor = theme.colorScheme.onSurface;
+    final rawWeek = provider.weekCalc.getWeekNumber(widget.nowFactory());
+    final displayWeek =
+        rawWeek < 1
+            ? info.lessonWeek
+            : rawWeek.clamp(1, provider.weekCalc.totalWeeks);
 
     final reminderEnabled = _reminderSnapshot?.settings.enabled == true;
     final silenceEnabled =
@@ -241,18 +377,35 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
       if (info.teacher.isNotEmpty) info.teacher,
     ].join(' · ');
     final countdownText = info.label;
-    final timeText =
-        info.isOngoing && info.endText.isNotEmpty
-            ? '至 ${info.endText}'
-            : (info.startText.isNotEmpty ? info.startText : '--:--');
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 320;
-          final horizontalGap = isCompact ? 10.0 : 14.0;
-          final indicatorHeight = isCompact ? 20.0 : 24.0;
+          final isCompact = constraints.maxWidth < 340;
+          final horizontalGap = isCompact ? 8.0 : 9.0;
+          final indicatorHeight = isCompact ? 14.0 : 16.0;
+          final supportMeta = [
+            primaryMeta,
+            if (info.dateText.isNotEmpty) info.dateText,
+            if (secondaryMeta.isNotEmpty) secondaryMeta,
+          ].join(' · ');
+          final progressRing = _ProgressRingButton(
+            key: const ValueKey('home.nextLesson.progressRing'),
+            currentWeek: displayWeek,
+            totalWeeks: provider.weekCalc.totalWeeks,
+            baseColor: baseColor,
+            size: isCompact ? 40 : 44,
+            onTap:
+                () => _showWeeksSheet(
+                  context,
+                  info: info,
+                  displayWeek: displayWeek,
+                  totalWeeks: provider.weekCalc.totalWeeks,
+                  baseColor: baseColor,
+                ),
+          );
+          final hasStatus = reminderEnabled || silenceEnabled;
 
           final details = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -260,171 +413,105 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
             children: [
               Text(
                 info.slot.courseName,
-                maxLines: isCompact ? 3 : 2,
-                softWrap: true,
-                overflow: TextOverflow.fade,
-                style: TextStyle(
-                  fontSize: isCompact ? 13 : 13.5,
-                  fontWeight: FontWeight.w800,
-                  height: 1.22,
-                  color: onSurfaceColor.withValues(alpha: 0.94),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                primaryMeta,
-                maxLines: isCompact ? 2 : 1,
-                overflow: TextOverflow.fade,
-                softWrap: true,
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                  height: 1.2,
-                  color: onSurfaceColor.withValues(alpha: 0.72),
-                ),
-              ),
-              if (info.dateText.isNotEmpty) ...[
-                const SizedBox(height: 3),
-                Text(
-                  info.dateText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                    color: onSurfaceColor.withValues(alpha: 0.68),
-                  ),
-                ),
-              ],
-              if (secondaryMeta.isNotEmpty) ...[
-                const SizedBox(height: 3),
-                Text(
-                  secondaryMeta,
-                  maxLines: isCompact ? 3 : 2,
-                  softWrap: true,
-                  overflow: TextOverflow.fade,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    height: 1.25,
-                    color: onSurfaceColor.withValues(alpha: 0.64),
-                  ),
-                ),
-              ],
-            ],
-          );
-
-          final trailing = Column(
-            crossAxisAlignment:
-                isCompact ? CrossAxisAlignment.start : CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                countdownText,
-                textAlign: isCompact ? TextAlign.left : TextAlign.right,
-                maxLines: isCompact ? 3 : 2,
-                softWrap: true,
-                overflow: TextOverflow.fade,
-                style: TextStyle(
-                  fontSize: isCompact ? 13 : 14,
-                  fontWeight: FontWeight.w800,
-                  height: 1.12,
-                  color: baseColor.withValues(alpha: 0.96),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                timeText,
-                textAlign: isCompact ? TextAlign.left : TextAlign.right,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                  color: onSurfaceColor.withValues(alpha: 0.62),
+                  fontSize: isCompact ? 12.8 : 13.4,
+                  fontWeight: FontWeight.w800,
+                  height: 1.05,
+                  color: onSurfaceColor.withValues(alpha: 0.94),
                 ),
               ),
-              if (reminderEnabled || silenceEnabled) ...[
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (reminderEnabled)
-                      _buildStatusIcon(
-                        icon: Icons.notifications_active_rounded,
-                        baseColor: baseColor,
+              const SizedBox(height: 2),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      supportMeta,
+                      maxLines: isCompact ? 2 : 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: isCompact,
+                      style: TextStyle(
+                        fontSize: 10.0,
+                        fontWeight: FontWeight.w600,
+                        height: 1.1,
+                        color: onSurfaceColor.withValues(alpha: 0.72),
                       ),
-                    if (reminderEnabled && silenceEnabled)
-                      const SizedBox(width: 4),
-                    if (silenceEnabled)
-                      _buildStatusIcon(
-                        icon: Icons.volume_off_rounded,
-                        baseColor: baseColor,
-                      ),
-                  ],
-                ),
-              ],
+                    ),
+                  ),
+                ],
+              ),
             ],
           );
 
-          return Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.20),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.40),
-                width: 0.5,
-              ),
-            ),
-            padding: EdgeInsets.fromLTRB(
-              isCompact ? 12 : 14,
-              9,
-              isCompact ? 12 : 14,
-              9,
-            ),
-            child:
-                isCompact
-                    ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          final trailing = Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (hasStatus)
+                    Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 3,
-                              height: indicatorHeight,
-                              margin: const EdgeInsets.only(top: 3),
-                              decoration: BoxDecoration(
-                                color: baseColor.withValues(alpha: 0.92),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(child: details),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        trailing,
-                      ],
-                    )
-                    : Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 3,
-                          height: indicatorHeight,
-                          margin: const EdgeInsets.only(top: 3),
-                          decoration: BoxDecoration(
-                            color: baseColor.withValues(alpha: 0.92),
-                            borderRadius: BorderRadius.circular(4),
+                        if (reminderEnabled)
+                          _buildStatusIcon(
+                            icon: Icons.notifications_active_rounded,
+                            baseColor: baseColor,
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(child: details),
-                        SizedBox(width: horizontalGap),
-                        Flexible(child: trailing),
+                        if (reminderEnabled && silenceEnabled)
+                          const SizedBox(width: 4),
+                        if (silenceEnabled)
+                          _buildStatusIcon(
+                            icon: Icons.volume_off_rounded,
+                            baseColor: baseColor,
+                          ),
                       ],
                     ),
+                  if (hasStatus) const SizedBox(height: 2),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: isCompact ? 82 : 102),
+                    child: Text(
+                      countdownText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: isCompact ? 12.2 : 12.8,
+                        fontWeight: FontWeight.w800,
+                        height: 1,
+                        color: baseColor.withValues(alpha: 0.96),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(width: isCompact ? 6 : 8),
+              progressRing,
+            ],
+          );
+
+          return _buildCardShell(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 3,
+                  height: indicatorHeight,
+                  decoration: BoxDecoration(
+                    color: baseColor.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: details),
+                SizedBox(width: horizontalGap),
+                trailing,
+              ],
+            ),
           );
         },
       ),
@@ -436,6 +523,9 @@ class _NextLessonInfo {
   const _NextLessonInfo({
     required this.slot,
     required this.teacher,
+    required this.lessonDate,
+    required this.lessonWeek,
+    required this.activeWeeks,
     required this.label,
     required this.timeText,
     required this.startText,
@@ -446,10 +536,380 @@ class _NextLessonInfo {
 
   final ScheduleSlot slot;
   final String teacher;
+  final DateTime lessonDate;
+  final int lessonWeek;
+  final List<int> activeWeeks;
   final String label;
   final String timeText;
   final String startText;
   final String endText;
   final String dateText;
   final bool isOngoing;
+}
+
+class _ProgressRingButton extends StatelessWidget {
+  const _ProgressRingButton({
+    super.key,
+    required this.currentWeek,
+    required this.totalWeeks,
+    required this.baseColor,
+    required this.size,
+    required this.onTap,
+  });
+
+  final int currentWeek;
+  final int totalWeeks;
+  final Color baseColor;
+  final double size;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurfaceColor = theme.colorScheme.onSurface;
+    final progress =
+        totalWeeks <= 0
+            ? 0.0
+            : (currentWeek / totalWeeks).clamp(0.0, 1.0).toDouble();
+
+    return Tooltip(
+      message: '查看本学期周次分布',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: progress),
+              duration: const Duration(milliseconds: 650),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, child) {
+                return CustomPaint(
+                  painter: _ProgressRingPainter(
+                    progress: value,
+                    color: baseColor,
+                  ),
+                  child: child,
+                );
+              },
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$currentWeek/$totalWeeks',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: size < 56 ? 9.5 : 10.5,
+                        fontWeight: FontWeight.w800,
+                        height: 1.1,
+                        color: baseColor.withValues(alpha: 0.94),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '周次',
+                      style: TextStyle(
+                        fontSize: size < 56 ? 8 : 8.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1,
+                        color: onSurfaceColor.withValues(alpha: 0.52),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProgressRingPainter extends CustomPainter {
+  const _ProgressRingPainter({required this.progress, required this.color});
+
+  final double progress;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const strokeWidth = 5.5;
+    final center = size.center(Offset.zero);
+    final radius = (math.min(size.width, size.height) - strokeWidth) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    final basePaint =
+        Paint()
+          ..color = color.withValues(alpha: 0.10)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth;
+
+    final progressPaint =
+        Paint()
+          ..color = color.withValues(alpha: 0.92)
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = strokeWidth;
+
+    canvas.drawCircle(center, radius, basePaint);
+    if (progress <= 0) return;
+    canvas.drawArc(
+      rect,
+      -math.pi / 2,
+      math.pi * 2 * progress,
+      false,
+      progressPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ProgressRingPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.color != color;
+  }
+}
+
+class _HomeNextLessonWeeksSheet extends StatelessWidget {
+  const _HomeNextLessonWeeksSheet({
+    required this.info,
+    required this.displayWeek,
+    required this.totalWeeks,
+    required this.baseColor,
+    required this.dateLabel,
+  });
+
+  final _NextLessonInfo info;
+  final int displayWeek;
+  final int totalWeeks;
+  final Color baseColor;
+  final String dateLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryText = ScheduleUiTokens.primaryTextFor(theme);
+    final secondaryText = ScheduleUiTokens.secondaryTextFor(theme);
+    final activeWeeks = info.activeWeeks.toSet();
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        child: ClipRRect(
+          borderRadius: ScheduleUiTokens.sheetRadius,
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: DecoratedBox(
+              key: const ValueKey('home.nextLesson.weeksSheet'),
+              decoration: ScheduleUiTokens.glassCardDecoration(
+                theme,
+                borderRadius: ScheduleUiTokens.sheetRadius,
+                fillColor: ScheduleUiTokens.glassFillFor(theme, alpha: 0.88),
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: secondaryText.withValues(alpha: 0.24),
+                          borderRadius: ScheduleUiTokens.pillRadius,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      info.slot.courseName,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: primaryText,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '亮起的周次表示这门课在该周有课。',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.4,
+                        color: secondaryText,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _WeekSheetPill(
+                          icon: Icons.calendar_today_rounded,
+                          label: dateLabel,
+                          tintColor: baseColor,
+                        ),
+                        _WeekSheetPill(
+                          icon: Icons.schedule_rounded,
+                          label: '第${info.slot.startSection}-${info.slot.endSection}节',
+                          tintColor: baseColor,
+                        ),
+                        _WeekSheetPill(
+                          icon: Icons.timelapse_rounded,
+                          label: '第$displayWeek/$totalWeeks周',
+                          tintColor: baseColor,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: totalWeeks,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 5,
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                            childAspectRatio: 1.08,
+                          ),
+                      itemBuilder: (context, index) {
+                        final week = index + 1;
+                        final isActive = activeWeeks.contains(week);
+                        final isCurrent = week == displayWeek;
+                        return _WeekCell(
+                          week: week,
+                          isActive: isActive,
+                          isCurrent: isCurrent,
+                          baseColor: baseColor,
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WeekSheetPill extends StatelessWidget {
+  const _WeekSheetPill({
+    required this.icon,
+    required this.label,
+    required this.tintColor,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color tintColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: tintColor.withValues(alpha: 0.10),
+        borderRadius: ScheduleUiTokens.pillRadius,
+        border: Border.all(color: tintColor.withValues(alpha: 0.14)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: tintColor.withValues(alpha: 0.90)),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: tintColor.withValues(alpha: 0.92),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeekCell extends StatelessWidget {
+  const _WeekCell({
+    required this.week,
+    required this.isActive,
+    required this.isCurrent,
+    required this.baseColor,
+  });
+
+  final int week;
+  final bool isActive;
+  final bool isCurrent;
+  final Color baseColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryText = ScheduleUiTokens.primaryTextFor(theme);
+    final secondaryText = ScheduleUiTokens.secondaryTextFor(theme);
+    final borderColor =
+        isActive
+            ? baseColor.withValues(alpha: 0.40)
+            : (isCurrent
+                ? baseColor.withValues(alpha: 0.22)
+                : ScheduleUiTokens.glassBorderFor(theme).withValues(alpha: 0.55));
+    final fillColor =
+        isActive
+            ? baseColor.withValues(alpha: 0.14)
+            : theme.colorScheme.surface.withValues(
+              alpha: theme.brightness == Brightness.dark ? 0.32 : 0.56,
+            );
+
+    return Container(
+      key: ValueKey(
+        'home.nextLesson.week.$week.${isActive ? 'active' : 'inactive'}',
+      ),
+      decoration: BoxDecoration(
+        color: fillColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: isCurrent ? 1.2 : 1),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            '$week',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              height: 1,
+              color:
+                  isActive
+                      ? baseColor.withValues(alpha: 0.96)
+                      : primaryText.withValues(alpha: 0.78),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '周',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              height: 1,
+              color:
+                  isActive
+                      ? baseColor.withValues(alpha: 0.78)
+                      : secondaryText.withValues(alpha: 0.82),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

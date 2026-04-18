@@ -99,26 +99,6 @@ class HomeOverflowMenu extends StatelessWidget {
     return PopupMenuButton<HomeMenuAction>(
       tooltip: '更多设置',
       icon: showLabel ? null : const Icon(Icons.more_vert, size: 22),
-      child:
-          showLabel
-              ? Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Text(
-                      '更多设置',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    SizedBox(width: 4),
-                    Icon(Icons.expand_more_rounded, size: 18),
-                  ],
-                ),
-              )
-              : null,
       onSelected: onSelected,
       itemBuilder: (context) {
         final currentSemesterCode = provider.currentSemesterCode;
@@ -215,6 +195,26 @@ class HomeOverflowMenu extends StatelessWidget {
           ),
         ];
       },
+      child:
+          showLabel
+              ? Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Text(
+                      '更多设置',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(Icons.expand_more_rounded, size: 18),
+                  ],
+                ),
+              )
+              : null,
     );
   }
 }

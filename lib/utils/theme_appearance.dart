@@ -79,6 +79,14 @@ class ThemeAppearance {
     );
   }
 
+  static Color readableForeground(
+    Color background, {
+    Color light = Colors.white,
+    Color dark = const Color(0xFF111111),
+  }) {
+    return background.computeLuminance() > 0.58 ? dark : light;
+  }
+
   static ThemeData buildThemeData(
     AppThemePreset preset, {
     required bool hasCustomBg,
