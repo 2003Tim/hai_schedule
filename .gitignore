@@ -52,6 +52,7 @@ app.*.map.json
 .tmp/
 .claude/
 backupversion/
+release/
 
 # Gradle user home cache (downloaded by build, not project files)
 android/.gradle-user/
