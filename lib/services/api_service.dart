@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
-import 'package:hai_schedule/models/course.dart';
-import 'package:hai_schedule/models/schedule_parser.dart';
+import 'package:hai_schedule/services/dio_client.dart';
+import 'package:hai_schedule/services/login_expired_exception.dart';
+import 'package:hai_schedule/services/portal_session_expiry_detector.dart';
 
 /// 教务系统 API 服务
 class ApiService {
@@ -13,32 +16,43 @@ class ApiService {
   static const _pageSize = 100;
   static const _maxPages = 20;
 
-  final Dio _dio;
+  ApiService({String? cookie, DioClient? dioClient})
+    : _client =
+          dioClient ??
+          DioClient(
+            options: BaseOptions(
+              baseUrl: _baseUrl,
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 15),
+              headers: {
+                'Content-Type':
+                    'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Origin': _baseUrl,
+                'Referer': _indexUrl,
+                'User-Agent':
+                    'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 '
+                    '(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+                'Accept-Language': 'zh-CN,zh;q=0.9',
+                if (cookie != null && cookie.isNotEmpty) 'Cookie': cookie,
+              },
+            ),
+          ) {
+    _dio = _client.dio;
+    if (cookie != null && cookie.isNotEmpty) {
+      updateCookie(cookie);
+    }
+  }
 
-  ApiService({String? cookie})
-    : _dio = Dio(
-        BaseOptions(
-          baseUrl: _baseUrl,
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(seconds: 15),
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'X-Requested-With': 'XMLHttpRequest',
-            'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'Origin': _baseUrl,
-            'Referer': _indexUrl,
-            'User-Agent':
-                'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 '
-                '(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-            if (cookie != null) 'Cookie': cookie,
-          },
-        ),
-      );
+  final DioClient _client;
+  late final Dio _dio;
+
+  String? get currentCookie => _client.currentCookie;
 
   /// 更新 Cookie
   void updateCookie(String cookie) {
-    _dio.options.headers['Cookie'] = cookie;
+    _client.updateCookie(cookie);
   }
 
   /// 拉取完整课表原始 JSON，自动合并分页结果。
@@ -54,13 +68,21 @@ class ApiService {
           data: 'pageSize=$_pageSize&pageNumber=$pageNumber&XNXQDM=$semester',
         );
 
-        if (response.statusCode != 200 || response.data is! Map) {
+        if (PortalSessionExpiryDetector.isExpiredResponse(response)) {
+          throw const LoginExpiredException();
+        }
+
+        if (response.statusCode != 200) {
           throw ApiException('请求失败: HTTP ${response.statusCode}');
         }
 
-        final pageData = Map<String, dynamic>.from(response.data as Map);
-        if (pageData['code'] != '0') {
-          throw ApiException('接口返回错误: code=${pageData['code']}，可能需要重新登录');
+        final pageData = _readJsonMap(response.data);
+        if (_isLoginExpiredPayload(pageData)) {
+          throw const LoginExpiredException();
+        }
+
+        if (pageData['code']?.toString() != '0') {
+          throw ApiException('接口返回错误: code=${pageData['code']}');
         }
 
         merged ??= pageData;
@@ -88,27 +110,17 @@ class ApiService {
           e.type == DioExceptionType.receiveTimeout) {
         throw ApiException('连接超时，请检查网络');
       }
+      if (e.error is LoginExpiredException) {
+        throw e.error as LoginExpiredException;
+      }
+      if (e.response != null &&
+          PortalSessionExpiryDetector.isExpiredResponse(e.response!)) {
+        throw const LoginExpiredException();
+      }
+      if (e.response?.statusCode != null) {
+        throw ApiException('请求失败: HTTP ${e.response!.statusCode}');
+      }
       throw ApiException('网络错误: ${e.message}');
-    }
-  }
-
-  /// 拉取解析后的课表。
-  Future<List<Course>> fetchGraduateSchedule({required String semester}) async {
-    final data = await fetchGraduateScheduleRaw(semester: semester);
-    final courses = ScheduleParser.parseApiResponse(data);
-    if (courses.isEmpty) {
-      throw ApiException('未解析到课程数据，请检查是否有选课');
-    }
-    return courses;
-  }
-
-  /// 测试 Cookie 是否有效。
-  Future<bool> testCookie({required String semester}) async {
-    try {
-      await fetchGraduateSchedule(semester: semester);
-      return true;
-    } catch (_) {
-      return false;
     }
   }
 
@@ -133,6 +145,43 @@ class ApiService {
       return;
     }
     targetRows.addAll(incomingRows);
+  }
+
+  static Map<String, dynamic> _readJsonMap(dynamic data) {
+    if (PortalSessionExpiryDetector.isExpiredBody(data)) {
+      throw const LoginExpiredException();
+    }
+
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+
+    if (data is String) {
+      final trimmed = data.trim();
+      if (trimmed.isEmpty) {
+        throw ApiException('课表接口返回空响应');
+      }
+
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+      } on FormatException {
+        throw ApiException('课表接口返回了非 JSON 数据');
+      }
+    }
+
+    throw ApiException('课表接口返回了非 JSON 数据');
+  }
+
+  static bool _isLoginExpiredPayload(Map<String, dynamic> payload) {
+    final message =
+        payload['msg']?.toString() ?? payload['message']?.toString() ?? '';
+    return PortalSessionExpiryDetector.isExpiredStatusCode(
+          int.tryParse(payload['code']?.toString() ?? ''),
+        ) ||
+        PortalSessionExpiryDetector.isExpiredBody(message);
   }
 }
 

@@ -148,7 +148,7 @@ class WindowsDesktopSidebar extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'Windows 端现在已经把课表、同步、提醒、临时安排、学期与备份这些核心入口提到了桌面工作台里，常用视图控制也可以直接在左侧完成。',
+                      'Windows 端现在已经把课表、同步、提醒、临时安排和学期这些核心入口提到了桌面工作台里，常用视图控制也可以直接在左侧完成。',
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.45,
@@ -381,7 +381,7 @@ class DesktopQuickControlsCard extends StatelessWidget {
               FilledButton.tonalIcon(
                 onPressed: onGoToCurrentWeek,
                 icon: const Icon(Icons.today_rounded, size: 18),
-                label: const Text('回到本周'),
+                label: const Text('回到今天'),
               ),
             ],
           ),

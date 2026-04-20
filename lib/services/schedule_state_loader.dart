@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/schedule_parser.dart';
 import 'package:hai_schedule/models/school_time.dart';
@@ -16,6 +17,7 @@ class LoadedScheduleState {
   final DateTime? semesterStart;
   final String? currentSemesterCode;
   final List<String> availableSemesterCodes;
+  final List<SemesterOption> availableSemesterOptions;
   final int displayDays;
   final bool showNonCurrentWeek;
 
@@ -26,6 +28,7 @@ class LoadedScheduleState {
     required this.semesterStart,
     required this.currentSemesterCode,
     required this.availableSemesterCodes,
+    required this.availableSemesterOptions,
     required this.displayDays,
     required this.showNonCurrentWeek,
   });
@@ -67,6 +70,9 @@ class ScheduleStateLoader {
       availableSemesterCodes: await loadAvailableSemesterCodes(
         additional: cache.semesterCode,
       ),
+      availableSemesterOptions: await loadAvailableSemesterOptions(
+        additional: cache.semesterCode,
+      ),
       displayDays: preferences.displayDays,
       showNonCurrentWeek: preferences.showNonCurrentWeek,
     );
@@ -79,6 +85,39 @@ class ScheduleStateLoader {
       merged.add(additional);
     }
     return merged.toList()..sort((a, b) => b.compareTo(a));
+  }
+
+  Future<List<SemesterOption>> loadAvailableSemesterOptions({
+    String? additional,
+  }) async {
+    final knownOptions = await _scheduleRepository.loadKnownSemesterOptions();
+    final availableCodes = await loadAvailableSemesterCodes(
+      additional: additional,
+    );
+    final merged = <String, SemesterOption>{};
+
+    for (final option in knownOptions) {
+      if (!option.isValid) continue;
+      merged[option.normalizedCode] = SemesterOption(
+        code: option.normalizedCode,
+        name: option.normalizedName,
+      );
+    }
+
+    for (final code in availableCodes) {
+      final normalizedCode = code.trim();
+      if (normalizedCode.isEmpty) continue;
+      merged.putIfAbsent(
+        normalizedCode,
+        () => SemesterOption(code: normalizedCode, name: ''),
+      );
+    }
+
+    final values =
+        merged.values.toList()..sort(
+          (left, right) => right.normalizedCode.compareTo(left.normalizedCode),
+        );
+    return values;
   }
 
   Future<String> resolveTargetSemesterCode(String? semesterCode) async {

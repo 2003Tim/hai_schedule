@@ -7,14 +7,15 @@ import 'package:flutter/services.dart';
 
 import 'package:hai_schedule/models/auto_sync_models.dart';
 import 'package:hai_schedule/models/course.dart';
-import 'package:hai_schedule/models/schedule_parser.dart';
 import 'package:hai_schedule/utils/auto_sync_course_diff.dart';
 import 'package:hai_schedule/utils/auto_sync_schedule_policy.dart';
 import 'package:hai_schedule/utils/auto_sync_text.dart';
-import 'package:hai_schedule/services/api_service.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
 import 'package:hai_schedule/services/auth_credentials_service.dart';
+import 'package:hai_schedule/services/course_repository.dart';
+import 'package:hai_schedule/services/dio_client.dart';
+import 'package:hai_schedule/services/login_expired_exception.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/services/schedule_sync_result_service.dart';
 
@@ -109,6 +110,8 @@ class AutoSyncService {
   }
 
   static Future<void> handleCredentialCleared() async {
+    await DioClient.clearAllSessions();
+    await _clearLiveWebViewCookies();
     await AppStorage.instance.clearCookieSnapshot();
     await _syncRepository.saveStatus(
       state: AutoSyncState.idle.value,
@@ -297,54 +300,56 @@ class AutoSyncService {
       }
 
       final cookie = await _readCookie();
-      if (cookie == null || cookie.isEmpty) {
-        await _markLoginRequired('未读取到登录态，请重新登录教务系统', source: source);
-        return AutoSyncResult.loginRequired(
-          '未读取到登录态，请重新登录教务系统',
-          await loadSnapshot(),
-        );
-      }
-
-      final api = ApiService(cookie: cookie);
-      final rawData = await api
-          .fetchGraduateScheduleRaw(semester: semester)
+      final courseRepository = CourseRepository();
+      final fetchResult = await courseRepository
+          .fetchGraduateSchedule(semester: semester, cookie: cookie)
           .timeout(
             const Duration(seconds: 30),
             onTimeout: () => throw TimeoutException('课表同步超时，请稍后重试'),
           );
-      final courses = ScheduleParser.parseApiResponse(rawData);
-      if (courses.isEmpty) {
-        await _markFailed('接口返回成功，但未解析到课程数据', source: source);
-        return AutoSyncResult.failed('接口返回成功，但未解析到课程数据', await loadSnapshot());
-      }
 
-      await _storeCookieSnapshot(cookie);
+      final latestCookie = courseRepository.currentCookie;
+      if (latestCookie != null && latestCookie.isNotEmpty) {
+        await _storeCookieSnapshot(latestCookie);
+      }
       await _persistSuccess(
-        rawData: rawData,
+        rawData: fetchResult.rawData,
         semester: semester,
-        courses: courses,
+        courses: fetchResult.courses,
         provider: provider,
         source: source,
       );
 
       final snapshot = await loadSnapshot();
       return AutoSyncResult.success(
-        courses.length,
-        _buildSuccessMessage(courses.length, snapshot.lastDiffSummary),
+        fetchResult.courses.length,
+        _buildSuccessMessage(
+          fetchResult.courses.length,
+          snapshot.lastDiffSummary,
+        ),
         snapshot,
       );
+    } on LoginExpiredException catch (e) {
+      await _clearInvalidCookieSnapshot();
+      await _markLoginRequired(
+        e.message,
+        source: source,
+        error: 'login_expired',
+      );
+      return AutoSyncResult.loginRequired(e.message, await loadSnapshot());
     } catch (e, st) {
       debugPrint('自动同步失败: $e');
       debugPrint('$st');
       final requiresLogin = _looksLikeLoginFailure(e.toString());
       if (requiresLogin) {
+        await _clearInvalidCookieSnapshot();
         await _markLoginRequired(
-          '登录态已失效，请重新登录后再同步',
+          LoginExpiredException.defaultMessage,
           source: source,
           error: e.toString(),
         );
         return AutoSyncResult.loginRequired(
-          '登录态已失效，请重新登录后再同步',
+          LoginExpiredException.defaultMessage,
           await loadSnapshot(),
         );
       }
@@ -549,6 +554,15 @@ class AutoSyncService {
     }
   }
 
+  static Future<void> _clearLiveWebViewCookies() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod('clearCookies');
+    } on PlatformException catch (e) {
+      debugPrint('清理 WebView Cookie 失败: ${e.message}');
+    }
+  }
+
   static Future<String?> _invokeGetCookie(String url) async {
     try {
       return await _channel.invokeMethod<String>('getCookie', {'url': url});
@@ -560,6 +574,10 @@ class AutoSyncService {
 
   static Future<void> _storeCookieSnapshot(String cookie) async {
     await _syncRepository.saveCookieSnapshot(cookie);
+  }
+
+  static Future<void> _clearInvalidCookieSnapshot() async {
+    await AppStorage.instance.clearCookieSnapshot();
   }
 
   static Future<String?> _readLiveCookieBundle() async {

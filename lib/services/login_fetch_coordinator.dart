@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:hai_schedule/models/login_fetch_coordinator_models.dart';
+import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/utils/login_fetch_coordinator_text.dart';
-import 'package:hai_schedule/utils/semester_code_formatter.dart' as semester_formatter;
+import 'package:hai_schedule/utils/semester_code_formatter.dart'
+    as semester_formatter;
 import 'package:hai_schedule/services/schedule_login_fetch_service.dart';
 
 export '../models/login_fetch_coordinator_models.dart';
@@ -151,6 +153,7 @@ class LoginFetchCoordinator {
     required LoginFetchChunkState chunkState,
     required ValueChanged<LoginFetchUiStateUpdate> applyState,
     required Future<void> Function(String semester) onSemesterReady,
+    required ValueChanged<List<SemesterOption>> onSemesterOptions,
     required Future<void> Function(String jsonStr) onPayloadReady,
     required ValueChanged<String> onAutofillStatus,
     required ValueChanged<LoginAutofillResult> onAutofillResult,
@@ -175,6 +178,7 @@ class LoginFetchCoordinator {
         }
         unawaited(onSemesterReady(semester));
       },
+      onSemesterOptions: onSemesterOptions,
       onSemesterSwitched: (semester) {
         _finishRequest(chunkState);
         unawaited(onSemesterReady(semester));
@@ -201,6 +205,7 @@ class LoginFetchCoordinator {
     required BuildContext context,
     required String jsonStr,
     required String? semester,
+    required bool persistLoginSession,
     required ValueChanged<LoginFetchUiStateUpdate> applyState,
   }) async {
     try {
@@ -208,7 +213,7 @@ class LoginFetchCoordinator {
         context: context,
         jsonStr: jsonStr,
         semester: semester,
-        captureCookieSnapshot: true,
+        persistLoginSession: persistLoginSession,
       );
 
       if (!context.mounted) return;

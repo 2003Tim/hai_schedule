@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:hai_schedule/models/login_fetch_models.dart';
+import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/utils/login_fetch_bridge_handler.dart';
 import 'package:hai_schedule/utils/login_fetch_payload_parser.dart';
 import 'package:hai_schedule/utils/login_fetch_url_policy.dart';
-import 'package:hai_schedule/services/app_repositories.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/schedule_login_script_builder.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
@@ -14,13 +14,9 @@ import 'package:hai_schedule/services/schedule_sync_result_service.dart';
 export '../models/login_fetch_models.dart';
 
 class ScheduleLoginFetchService {
-  ScheduleLoginFetchService({
-    ScheduleRepository? scheduleRepository,
-    ScheduleSyncResultService? syncResultService,
-  }) : _scheduleRepository = scheduleRepository ?? ScheduleRepository(),
-       _syncResultService = syncResultService ?? ScheduleSyncResultService();
+  ScheduleLoginFetchService({ScheduleSyncResultService? syncResultService})
+    : _syncResultService = syncResultService ?? ScheduleSyncResultService();
 
-  final ScheduleRepository _scheduleRepository;
   final ScheduleSyncResultService _syncResultService;
 
   static const targetUrl = LoginFetchUrlPolicy.targetUrl;
@@ -62,22 +58,21 @@ class ScheduleLoginFetchService {
     required String password,
     String? bridgeCall,
     bool autoSubmit = true,
+    bool enableTrustOption = true,
   }) => ScheduleLoginScriptBuilder.buildFillCredentialScript(
     username: username,
     password: password,
     bridgeCall: bridgeCall,
     autoSubmit: autoSubmit,
+    enableTrustOption: enableTrustOption,
   );
-
-  Future<void> saveSemesterCode(String semester) {
-    return _scheduleRepository.saveSemesterCode(semester);
-  }
 
   void handleBridgeMessage({
     required String message,
     required LoginFetchChunkState chunkState,
     required ValueChanged<String> onStatus,
     required ValueChanged<String> onSemesterDetected,
+    required ValueChanged<List<SemesterOption>> onSemesterOptions,
     required ValueChanged<String> onSemesterSwitched,
     required ValueChanged<String> onPayloadReady,
     required ValueChanged<String> onError,
@@ -88,6 +83,7 @@ class ScheduleLoginFetchService {
     chunkState: chunkState,
     onStatus: onStatus,
     onSemesterDetected: onSemesterDetected,
+    onSemesterOptions: onSemesterOptions,
     onSemesterSwitched: onSemesterSwitched,
     onPayloadReady: onPayloadReady,
     onError: onError,
@@ -99,7 +95,7 @@ class ScheduleLoginFetchService {
     required BuildContext context,
     required String jsonStr,
     String? semester,
-    bool captureCookieSnapshot = false,
+    bool persistLoginSession = false,
   }) async {
     final provider = context.read<ScheduleProvider>();
     final courses = LoginFetchPayloadParser.parseCourses(jsonStr);
@@ -113,7 +109,7 @@ class ScheduleLoginFetchService {
     );
 
     final cookieReady =
-        captureCookieSnapshot
+        persistLoginSession
             ? await AutoSyncService.captureCookieSnapshot()
             : false;
     await AutoSyncService.ensureBackgroundSchedule();

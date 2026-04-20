@@ -5,11 +5,9 @@ import 'package:provider/provider.dart';
 
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/class_reminder_service.dart';
-import 'package:hai_schedule/services/portal_relogin_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/utils/semester_code_formatter.dart';
 import 'package:hai_schedule/widgets/home_screen_sections.dart';
-import 'package:hai_schedule/screens/backup_restore_screen.dart';
 import 'package:hai_schedule/screens/import_screen.dart';
 import 'package:hai_schedule/screens/login_router.dart';
 import 'package:hai_schedule/screens/reminder_settings_screen.dart';
@@ -34,6 +32,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  static const _todayOutOfRangeMessage = '今日日期不在当前学期范围内，无法跳转。';
+
   AutoSyncSnapshot? _syncSnapshot;
   bool _isSyncing = false;
   _ScheduleViewMode _viewMode = _ScheduleViewMode.week;
@@ -106,34 +106,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _triggerAutoSyncIfNeeded({
     bool silent = false,
     bool force = false,
-    bool allowRelogin = true,
   }) async {
     if (!Platform.isAndroid || !mounted || _isSyncing) return;
 
     _isSyncing = true;
     try {
       final provider = context.read<ScheduleProvider>();
-      var result = await AutoSyncService.tryAutoSync(
+      final result = await AutoSyncService.tryAutoSync(
         provider,
         force: force,
         source: force ? 'manual' : 'foreground',
       );
-
-      if (result.requiresLogin && allowRelogin) {
-        if (!mounted) return;
-        final didRelogin = await PortalReloginService.tryRelogin(
-          context,
-          semesterCode: provider.currentSemesterCode,
-        );
-        if (didRelogin && mounted) {
-          final snapshot = await AutoSyncService.loadSnapshot();
-          result = AutoSyncResult.success(
-            provider.courses.length,
-            snapshot.message,
-            snapshot,
-          );
-        }
-      }
 
       await _refreshSyncSnapshot();
       if (!mounted) return;
@@ -202,6 +185,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _selectedDay = weekday);
   }
 
+  void _goToToday(ScheduleProvider provider) {
+    final result = provider.goToToday(DateTime.now());
+    if (result == ScheduleTodayNavigationResult.outOfRange) {
+      _showSnack(_todayOutOfRangeMessage, error: true);
+      return;
+    }
+
+    if (_viewMode != _ScheduleViewMode.day) {
+      return;
+    }
+
+    final targetDay =
+        provider.todayWeekday <= provider.displayDays
+            ? provider.todayWeekday
+            : 1;
+    if (_selectedDay == targetDay) {
+      return;
+    }
+    setState(() => _selectedDay = targetDay);
+  }
+
   Widget _wrapWindowsScheduleSemantics(Widget child, String label) {
     if (!Platform.isWindows) return child;
 
@@ -259,9 +263,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       case HomeMenuAction.themeSettings:
         await _pushPage(const ThemeSettingsScreen());
         break;
-      case HomeMenuAction.backupRestore:
-        await _pushPage(const BackupRestoreScreen());
-        break;
       case HomeMenuAction.toggleNonCurrent:
         provider.toggleShowNonCurrentWeek();
         break;
@@ -269,7 +270,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         provider.setDisplayDays(provider.displayDays == 7 ? 5 : 7);
         break;
       case HomeMenuAction.currentWeek:
-        provider.goToCurrentWeek();
+        _goToToday(provider);
         break;
       case HomeMenuAction.loginFetch:
         await _openLoginFetch(provider);
@@ -324,13 +325,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           tooltip: _viewMode == _ScheduleViewMode.week ? '切换到日视图' : '切换到周视图',
           onPressed: () => _toggleViewMode(provider),
         ),
-        title: HomeAppBarTitle(
-          key: const ValueKey('home.panel.overview'),
-          currentWeekText: _currentWeekText(provider),
-          semesterLabel:
-              provider.currentSemesterCode == null
-                  ? null
-                  : _formatSemesterCode(provider.currentSemesterCode!),
+        title: Tooltip(
+          message: '回到今天',
+          child: InkWell(
+            key: const ValueKey('home.panel.overview'),
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => _goToToday(provider),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: HomeAppBarTitle(
+                currentWeekText: _currentWeekText(provider),
+                semesterLabel:
+                    provider.currentSemesterCode == null
+                        ? null
+                        : _formatSemesterCode(provider.currentSemesterCode!),
+              ),
+            ),
+          ),
         ),
         actions: [
           if (widget.onToggleOverlay != null)

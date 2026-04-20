@@ -33,6 +33,16 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
 
+                "clearCookies" -> {
+                    val manager = CookieManager.getInstance()
+                    manager.setAcceptCookie(true)
+                    manager.removeSessionCookies(null)
+                    manager.removeAllCookies { _ ->
+                        manager.flush()
+                        result.success(true)
+                    }
+                }
+
                 "configureBackgroundSync" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: true
                     val frequency = call.argument<String>("frequency") ?: "daily"
@@ -195,5 +205,4 @@ class MainActivity : FlutterActivity() {
         }
     }
 }
-
 

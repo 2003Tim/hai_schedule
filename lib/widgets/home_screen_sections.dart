@@ -19,7 +19,6 @@ enum HomeMenuAction {
   schoolTimeSettings,
   scheduleOverrides,
   themeSettings,
-  backupRestore,
   toggleNonCurrent,
   toggleDays,
   currentWeek,
@@ -159,14 +158,6 @@ class HomeOverflowMenu extends StatelessWidget {
               title: '主题设置',
             ),
           ),
-          const PopupMenuItem<HomeMenuAction>(
-            value: HomeMenuAction.backupRestore,
-            child: _HomeMenuTile(
-              leading: Icon(Icons.backup_outlined, size: 20),
-              title: '备份与恢复',
-            ),
-          ),
-          const PopupMenuDivider(),
           PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.toggleNonCurrent,
             child: _HomeMenuTile(
@@ -190,7 +181,7 @@ class HomeOverflowMenu extends StatelessWidget {
             value: HomeMenuAction.currentWeek,
             child: _HomeMenuTile(
               leading: Icon(Icons.today_rounded, size: 20),
-              title: '回到本周',
+              title: '回到今天',
             ),
           ),
         ];

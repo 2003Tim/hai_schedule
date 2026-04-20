@@ -1,4 +1,5 @@
 import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 
 class ScheduleViewPreferences {
@@ -73,6 +74,12 @@ class StoredSemesterSchedule {
     required this.semesterCode,
     this.rawScheduleJson,
   });
+}
+
+class StoredSemesterCatalog {
+  final List<SemesterOption> options;
+
+  const StoredSemesterCatalog({required this.options});
 }
 
 class StoredScheduleOverrideRecord {

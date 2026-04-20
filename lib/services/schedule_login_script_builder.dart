@@ -37,10 +37,12 @@ class ScheduleLoginScriptBuilder {
     required String password,
     String? bridgeCall,
     bool autoSubmit = true,
+    bool enableTrustOption = true,
   }) => ScheduleLoginAutofillScript.build(
     username: username,
     password: password,
     bridgeCall: bridgeCall,
     autoSubmit: autoSubmit,
+    enableTrustOption: enableTrustOption,
   );
 }

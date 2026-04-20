@@ -40,6 +40,36 @@ void main() {
       );
     },
   );
+
+  test('goToToday jumps when date is inside the active semester', () async {
+    final provider = ScheduleProvider();
+    await provider.ready;
+
+    await provider.createSemester('20251');
+    provider.selectWeek(1);
+
+    final result = provider.goToToday(DateTime(2025, 9, 22));
+
+    expect(result, ScheduleTodayNavigationResult.success);
+    expect(provider.currentWeek, 4);
+    expect(provider.selectedWeek, 4);
+  });
+
+  test(
+    'goToToday keeps position when date is outside the active semester',
+    () async {
+      final provider = ScheduleProvider();
+      await provider.ready;
+
+      await provider.createSemester('20251');
+      provider.selectWeek(5);
+
+      final result = provider.goToToday(DateTime(2026, 2, 1));
+
+      expect(result, ScheduleTodayNavigationResult.outOfRange);
+      expect(provider.selectedWeek, 5);
+    },
+  );
 }
 
 Map<String, dynamic> _samplePayload() {

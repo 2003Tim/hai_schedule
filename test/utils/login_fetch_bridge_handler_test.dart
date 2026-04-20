@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hai_schedule/models/login_fetch_models.dart';
+import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/utils/login_fetch_bridge_handler.dart';
 
 void main() {
@@ -13,6 +14,7 @@ void main() {
         chunkState: LoginFetchChunkState(),
         onStatus: (_) {},
         onSemesterDetected: (_) {},
+        onSemesterOptions: (_) {},
         onSemesterSwitched: (_) {},
         onPayloadReady: (_) {},
         onError: (_) {},
@@ -35,6 +37,7 @@ void main() {
         chunkState: chunkState,
         onStatus: (_) {},
         onSemesterDetected: (_) {},
+        onSemesterOptions: (_) {},
         onSemesterSwitched: (_) {},
         onPayloadReady: (_) {},
         onError: errors.add,
@@ -45,6 +48,7 @@ void main() {
 
     test('ignores stale request messages and accepts active request only', () {
       final semesters = <String>[];
+      final semesterOptions = <List<SemesterOption>>[];
       final chunkState = LoginFetchChunkState()..arm('active');
 
       LoginFetchBridgeHandler.handle(
@@ -52,6 +56,7 @@ void main() {
         chunkState: chunkState,
         onStatus: (_) {},
         onSemesterDetected: semesters.add,
+        onSemesterOptions: semesterOptions.add,
         onSemesterSwitched: (_) {},
         onPayloadReady: (_) {},
         onError: (_) {},
@@ -61,12 +66,36 @@ void main() {
         chunkState: chunkState,
         onStatus: (_) {},
         onSemesterDetected: semesters.add,
+        onSemesterOptions: semesterOptions.add,
         onSemesterSwitched: (_) {},
         onPayloadReady: (_) {},
         onError: (_) {},
       );
 
       expect(semesters, ['20252']);
+      expect(semesterOptions, isEmpty);
+    });
+
+    test('parses semester option payloads for the active request', () {
+      final options = <List<SemesterOption>>[];
+      final chunkState = LoginFetchChunkState()..arm('req-options');
+
+      LoginFetchBridgeHandler.handle(
+        message:
+            'SEMESTER_OPTIONS:req-options:[{"code":"20252","name":"2025-2026学年 第二学期"}]',
+        chunkState: chunkState,
+        onStatus: (_) {},
+        onSemesterDetected: (_) {},
+        onSemesterOptions: options.add,
+        onSemesterSwitched: (_) {},
+        onPayloadReady: (_) {},
+        onError: (_) {},
+      );
+
+      expect(options, hasLength(1));
+      expect(options.single, [
+        const SemesterOption(code: '20252', name: '2025-2026学年 第二学期'),
+      ]);
     });
 
     test('rejects incomplete chunks for active request', () {
@@ -79,6 +108,7 @@ void main() {
         chunkState: chunkState,
         onStatus: (_) {},
         onSemesterDetected: (_) {},
+        onSemesterOptions: (_) {},
         onSemesterSwitched: (_) {},
         onPayloadReady: payloads.add,
         onError: errors.add,
@@ -88,6 +118,7 @@ void main() {
         chunkState: chunkState,
         onStatus: (_) {},
         onSemesterDetected: (_) {},
+        onSemesterOptions: (_) {},
         onSemesterSwitched: (_) {},
         onPayloadReady: payloads.add,
         onError: errors.add,
@@ -97,6 +128,7 @@ void main() {
         chunkState: chunkState,
         onStatus: (_) {},
         onSemesterDetected: (_) {},
+        onSemesterOptions: (_) {},
         onSemesterSwitched: (_) {},
         onPayloadReady: payloads.add,
         onError: errors.add,

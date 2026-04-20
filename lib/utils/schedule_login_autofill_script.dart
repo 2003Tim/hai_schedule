@@ -6,12 +6,14 @@ class ScheduleLoginAutofillScript {
     required String password,
     String? bridgeCall,
     bool autoSubmit = true,
+    bool enableTrustOption = true,
   }) {
     final usernameLiteral = jsonEncode(username);
     final passwordLiteral = jsonEncode(password);
     final hasBridge = bridgeCall != null ? 'true' : 'false';
     final bridgePoster = bridgeCall == null ? '' : '$bridgeCall(message);';
     final autoSubmitLiteral = autoSubmit ? 'true' : 'false';
+    final enableTrustOptionLiteral = enableTrustOption ? 'true' : 'false';
 
     return [
       _partOne(hasBridge: hasBridge, bridgePoster: bridgePoster),
@@ -21,6 +23,7 @@ class ScheduleLoginAutofillScript {
         usernameLiteral: usernameLiteral,
         passwordLiteral: passwordLiteral,
         autoSubmitLiteral: autoSubmitLiteral,
+        enableTrustOptionLiteral: enableTrustOptionLiteral,
       ),
     ].join();
   }
@@ -585,6 +588,7 @@ class ScheduleLoginAutofillScript {
     required String usernameLiteral,
     required String passwordLiteral,
     required String autoSubmitLiteral,
+    required String enableTrustOptionLiteral,
   }) {
     return '''
         function attempt(autoSubmit) {
@@ -624,7 +628,7 @@ class ScheduleLoginAutofillScript {
 
           var usernameOk = applyValue(usernameNode, $usernameLiteral);
           var passwordOk = applyValue(passwordNode, $passwordLiteral);
-          var trustEnabled = enableTrustOption();
+          var trustEnabled = $enableTrustOptionLiteral ? enableTrustOption() : false;
           var trustExpected = hasTrustOptionHint();
 
           if (usernameOk || passwordOk) {
@@ -638,7 +642,7 @@ class ScheduleLoginAutofillScript {
           } else if (usernameOk || passwordOk) {
             post('AUTOFILL_STATUS:PARTIAL_CREDENTIALS');
           }
-          if (trustExpected && !trustEnabled) {
+          if ($enableTrustOptionLiteral && trustExpected && !trustEnabled) {
             post('AUTOFILL_STATUS:WAITING_TRUST_OPTION');
             return;
           }

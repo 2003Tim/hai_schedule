@@ -7,6 +7,7 @@ import 'package:hai_schedule/screens/home_screen.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/services/theme_provider.dart';
+import 'package:hai_schedule/utils/week_calculator.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -52,33 +53,117 @@ void main() {
     );
     expect(find.text('更多设置'), findsOneWidget);
   });
+
+  testWidgets(
+    'home title tap returns to today when current semester covers today',
+    (tester) async {
+      final scheduleProvider = ScheduleProvider();
+      await scheduleProvider.ready;
+      await scheduleProvider.createSemester(
+        _semesterCoveringDate(DateTime.now()),
+      );
+      scheduleProvider.selectWeek(1);
+
+      final currentWeek = scheduleProvider.currentWeek;
+      if (currentWeek == 1) {
+        scheduleProvider.selectWeek(2);
+      }
+
+      await _pumpHome(
+        tester,
+        const Size(390, 844),
+        scheduleProvider: scheduleProvider,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('home.panel.overview')));
+      await tester.pumpAndSettle();
+
+      expect(scheduleProvider.selectedWeek, scheduleProvider.currentWeek);
+    },
+  );
+
+  testWidgets(
+    'home title tap shows snack when today is outside active semester',
+    (tester) async {
+      final scheduleProvider = ScheduleProvider();
+      await scheduleProvider.ready;
+      await scheduleProvider.createSemester('${DateTime.now().year + 2}1');
+      scheduleProvider.selectWeek(3);
+
+      await _pumpHome(
+        tester,
+        const Size(390, 844),
+        scheduleProvider: scheduleProvider,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('home.panel.overview')));
+      await tester.pump();
+
+      expect(find.text('今日日期不在当前学期范围内，无法跳转。'), findsOneWidget);
+      expect(scheduleProvider.selectedWeek, 3);
+    },
+  );
 }
 
-Future<void> _pumpHome(WidgetTester tester, Size logicalSize) async {
+Future<void> _pumpHome(
+  WidgetTester tester,
+  Size logicalSize, {
+  ScheduleProvider? scheduleProvider,
+  ThemeProvider? themeProvider,
+}) async {
   tester.view.devicePixelRatio = 1.0;
   tester.view.physicalSize = logicalSize;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 
-  final scheduleProvider = ScheduleProvider();
-  await scheduleProvider.ready;
+  final resolvedScheduleProvider = scheduleProvider ?? ScheduleProvider();
+  if (scheduleProvider == null) {
+    await resolvedScheduleProvider.ready;
+  }
 
-  final themeProvider = ThemeProvider();
-  await themeProvider.ready;
+  final resolvedThemeProvider = themeProvider ?? ThemeProvider();
+  if (themeProvider == null) {
+    await resolvedThemeProvider.ready;
+  }
 
   await tester.pumpWidget(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider<ScheduleProvider>.value(value: scheduleProvider),
-        ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
+        ChangeNotifierProvider<ScheduleProvider>.value(
+          value: resolvedScheduleProvider,
+        ),
+        ChangeNotifierProvider<ThemeProvider>.value(
+          value: resolvedThemeProvider,
+        ),
       ],
       child: MaterialApp(
-        theme: themeProvider.themeData,
-        darkTheme: themeProvider.darkThemeData,
+        theme: resolvedThemeProvider.themeData,
+        darkTheme: resolvedThemeProvider.darkThemeData,
         home: const HomeScreen(),
       ),
     ),
   );
 
   await tester.pumpAndSettle();
+}
+
+String _semesterCoveringDate(DateTime target) {
+  final year = target.year;
+  final candidates = <String>[
+    '${year - 1}1',
+    '${year - 1}2',
+    '${year}1',
+    '${year}2',
+    '${year + 1}1',
+  ];
+
+  for (final code in candidates) {
+    final calculator = WeekCalculator.hainanuSemester(code);
+    final week = calculator.getWeekNumber(target);
+    if (week >= 1 && week <= calculator.totalWeeks) {
+      return code;
+    }
+  }
+
+  return WeekCalculator.inferSemesterCode(target);
 }

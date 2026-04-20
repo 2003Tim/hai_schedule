@@ -20,6 +20,7 @@ class AppStorageSchema {
   static const legacySemesterKey = 'current_semester';
   static const activeSemesterKey = 'active_semester_code';
   static const scheduleArchiveKey = 'schedule_archive_by_semester';
+  static const semesterCatalogKey = 'known_semester_catalog';
   static const scheduleOverridesKey = 'schedule_overrides';
   static const schoolTimeConfigKey = 'school_time_config';
   static const schoolTimeGeneratorSettingsKey =
@@ -27,6 +28,8 @@ class AppStorageSchema {
   static const lastScheduleJsonKey = 'last_schedule_json';
 
   static const cookieSnapshotKey = 'last_auto_sync_cookie';
+  static const cookieSnapshotInvalidatedKey =
+      'last_auto_sync_cookie_invalidated';
   static const studentIdKey = 'last_student_id';
 
   static const reminderLeadTimeKey = 'class_reminder_lead_minutes';
@@ -39,8 +42,7 @@ class AppStorageSchema {
   static const classSilenceEnabledKey = 'class_silence_enabled';
   static const classSilenceLastBuildTimeKey = 'class_silence_last_build_time';
   static const classSilenceHorizonEndKey = 'class_silence_horizon_end';
-  static const classSilenceScheduledCountKey =
-      'class_silence_scheduled_count';
+  static const classSilenceScheduledCountKey = 'class_silence_scheduled_count';
 
   static const themeIdKey = 'theme_id';
   static const customBgPathKey = 'custom_bg_path';
@@ -63,6 +65,7 @@ class AppStorageSchema {
     legacySemesterKey,
     activeSemesterKey,
     scheduleArchiveKey,
+    semesterCatalogKey,
     scheduleOverridesKey,
     schoolTimeConfigKey,
     schoolTimeGeneratorSettingsKey,
@@ -92,6 +95,7 @@ class AppStorageSchema {
     nextSyncTimeKey,
     lastScheduleJsonKey,
     cookieSnapshotKey,
+    cookieSnapshotInvalidatedKey,
     studentIdKey,
     reminderLastBuildTimeKey,
     reminderHorizonEndKey,
@@ -104,6 +108,7 @@ class AppStorageSchema {
 
   static const semesterRelatedKeys = <String>[
     scheduleArchiveKey,
+    semesterCatalogKey,
     activeSemesterKey,
   ];
 

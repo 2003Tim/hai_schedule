@@ -1,4 +1,5 @@
 import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/school_time.dart';
 import 'package:hai_schedule/utils/class_silence_store.dart';
@@ -17,7 +18,8 @@ class ScheduleCache {
 }
 
 class ScheduleRepository {
-  ScheduleRepository({AppStorage? storage}) : _storage = storage ?? AppStorage.instance;
+  ScheduleRepository({AppStorage? storage})
+    : _storage = storage ?? AppStorage.instance;
 
   final AppStorage _storage;
 
@@ -43,15 +45,13 @@ class ScheduleRepository {
 
   Future<List<Course>> loadCourses() => _storage.loadCourses();
 
-  Future<void> saveCourses(List<Course> courses) => _storage.saveCourses(courses);
+  Future<void> saveCourses(List<Course> courses) =>
+      _storage.saveCourses(courses);
 
   Future<String?> loadRawScheduleJson() => _storage.loadRawScheduleJson();
 
-  Future<void> saveRawScheduleJson(String json) => _storage.saveRawScheduleJson(json);
-
-  Future<String?> loadSemesterCode() => _storage.loadSemesterCode();
-
-  Future<void> saveSemesterCode(String semester) => _storage.saveSemesterCode(semester);
+  Future<void> saveRawScheduleJson(String json) =>
+      _storage.saveRawScheduleJson(json);
 
   Future<String?> loadActiveSemesterCode() => _storage.loadActiveSemesterCode();
 
@@ -60,6 +60,12 @@ class ScheduleRepository {
 
   Future<List<String>> loadAvailableSemesterCodes() =>
       _storage.loadAvailableSemesterCodes();
+
+  Future<List<SemesterOption>> loadKnownSemesterOptions() =>
+      _storage.loadKnownSemesterOptions();
+
+  Future<void> saveKnownSemesterOptions(List<SemesterOption> options) =>
+      _storage.saveKnownSemesterOptions(options);
 
   Future<void> saveImportedSchedule({
     required String rawScheduleJson,
@@ -105,11 +111,13 @@ class ScheduleRepository {
 }
 
 class SchedulePreferencesRepository {
-  SchedulePreferencesRepository({AppStorage? storage}) : _storage = storage ?? AppStorage.instance;
+  SchedulePreferencesRepository({AppStorage? storage})
+    : _storage = storage ?? AppStorage.instance;
 
   final AppStorage _storage;
 
-  Future<ScheduleViewPreferences> load() => _storage.loadScheduleViewPreferences();
+  Future<ScheduleViewPreferences> load() =>
+      _storage.loadScheduleViewPreferences();
 
   Future<void> save({
     required int displayDays,
@@ -123,13 +131,15 @@ class SchedulePreferencesRepository {
 }
 
 class SchoolTimeRepository {
-  SchoolTimeRepository({AppStorage? storage}) : _storage = storage ?? AppStorage.instance;
+  SchoolTimeRepository({AppStorage? storage})
+    : _storage = storage ?? AppStorage.instance;
 
   final AppStorage _storage;
 
   Future<SchoolTimeConfig> load() => _storage.loadSchoolTimeConfig();
 
-  Future<void> save(SchoolTimeConfig config) => _storage.saveSchoolTimeConfig(config);
+  Future<void> save(SchoolTimeConfig config) =>
+      _storage.saveSchoolTimeConfig(config);
 
   Future<SchoolTimeGeneratorSettings> loadGeneratorSettings() =>
       _storage.loadSchoolTimeGeneratorSettings();
@@ -141,19 +151,18 @@ class SchoolTimeRepository {
 }
 
 class SyncRepository {
-  SyncRepository({AppStorage? storage}) : _storage = storage ?? AppStorage.instance;
+  SyncRepository({AppStorage? storage})
+    : _storage = storage ?? AppStorage.instance;
 
   final AppStorage _storage;
 
   Future<StoredAutoSyncRecord> loadRecord() => _storage.loadAutoSyncRecord();
 
-  Future<void> saveFrequency(
-    String frequency, {
-    int? customIntervalMinutes,
-  }) => _storage.saveAutoSyncSettings(
-    frequency,
-    customIntervalMinutes: customIntervalMinutes,
-  );
+  Future<void> saveFrequency(String frequency, {int? customIntervalMinutes}) =>
+      _storage.saveAutoSyncSettings(
+        frequency,
+        customIntervalMinutes: customIntervalMinutes,
+      );
 
   Future<void> saveStatus({
     String? state,
@@ -185,25 +194,30 @@ class SyncRepository {
     );
   }
 
-  Future<void> saveCookieSnapshot(String cookie) => _storage.saveCookieSnapshot(cookie);
+  Future<void> saveCookieSnapshot(String cookie) =>
+      _storage.saveCookieSnapshot(cookie);
 
   Future<String?> loadCookieSnapshot() => _storage.loadCookieSnapshot();
 
-  Future<void> saveStudentId(String studentId) => _storage.saveStudentId(studentId);
+  Future<void> saveStudentId(String studentId) =>
+      _storage.saveStudentId(studentId);
 
   Future<String?> loadStudentId() => _storage.loadStudentId();
 
-  Future<void> saveLastFetchTime(DateTime time) => _storage.saveLastFetchTime(time);
+  Future<void> saveLastFetchTime(DateTime time) =>
+      _storage.saveLastFetchTime(time);
 }
 
 class ReminderRepository {
-  ReminderRepository({AppStorage? storage}) : _storage = storage ?? AppStorage.instance;
+  ReminderRepository({AppStorage? storage})
+    : _storage = storage ?? AppStorage.instance;
 
   final AppStorage _storage;
 
   Future<StoredReminderRecord> loadRecord() => _storage.loadReminderRecord();
 
-  Future<void> saveLeadMinutes(int leadMinutes) => _storage.saveReminderLeadMinutes(leadMinutes);
+  Future<void> saveLeadMinutes(int leadMinutes) =>
+      _storage.saveReminderLeadMinutes(leadMinutes);
 
   Future<void> saveState({
     int? scheduledCount,
@@ -227,7 +241,8 @@ class ReminderRepository {
 class ClassSilenceRepository {
   Future<ClassSilenceStoredState> loadState() => ClassSilenceStore.load();
 
-  Future<void> saveEnabled(bool enabled) => ClassSilenceStore.saveEnabled(enabled);
+  Future<void> saveEnabled(bool enabled) =>
+      ClassSilenceStore.saveEnabled(enabled);
 
   Future<void> saveState({
     int? scheduledCount,
@@ -247,7 +262,8 @@ class ClassSilenceRepository {
 }
 
 class ScheduleOverrideRepository {
-  ScheduleOverrideRepository({AppStorage? storage}) : _storage = storage ?? AppStorage.instance;
+  ScheduleOverrideRepository({AppStorage? storage})
+    : _storage = storage ?? AppStorage.instance;
 
   final AppStorage _storage;
 

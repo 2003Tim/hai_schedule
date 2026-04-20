@@ -110,7 +110,7 @@ lib/
 │   ├── schedule_login_script_builder.dart# JS 脚本构建
 │   ├── login_fetch_coordinator.dart      # 多步抓取状态机
 │   ├── portal_relogin_service.dart       # 会话过期恢复登录
-│   ├── desktop_portal_login_service.dart # Windows 端门户直连登录
+│   ├── course_repository.dart    # 课表抓取仓库（含静默续登）
 │   ├── api_service.dart           # HTTP 课表接口调用
 │   └── app_backup_service.dart    # 备份与恢复（含回滚）
 │

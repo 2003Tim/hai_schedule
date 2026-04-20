@@ -1,6 +1,8 @@
 ﻿package com.hainanu.hai_schedule
 
 import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -9,6 +11,8 @@ import android.content.SharedPreferences
 import android.os.Build
 import android.util.Log
 import android.webkit.CookieManager
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.OutputStreamWriter
@@ -54,6 +58,11 @@ class AutoSyncScheduler : BroadcastReceiver() {
     companion object {
         private const val TAG = "HaiAutoSync"
         private const val ACTION_RUN = "com.hainanu.hai_schedule.AUTO_SYNC_RUN"
+        private const val CHANNEL_ID = "hai_schedule_auto_sync_status"
+        private const val CHANNEL_NAME = "课表自动同步"
+        private const val CHANNEL_DESCRIPTION = "后台自动同步结果通知"
+        private const val RESULT_NOTIFICATION_ID = 9311
+        private const val DEFAULT_LOGIN_EXPIRED_MESSAGE = "登录已失效，请点击下方“登录并刷新课表”重连"
 
         @Suppress("NOTHING_TO_INLINE")
         private inline fun logd(msg: String) {
@@ -64,7 +73,6 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private const val BASE_URL = "https://ehall.hainanu.edu.cn"
         private const val INDEX_URL = "https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/*default/index.do"
         private const val API_URL = "https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/modules/xskcb/xsjxrwcx.do"
-        private const val AUTH_BASE_URL = "https://authserver.hainanu.edu.cn"
         private const val WEBVIEW_USER_AGENT = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
 
         private const val PREFS_FLUTTER = "FlutterSharedPreferences"
@@ -83,6 +91,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private const val KEY_ACTIVE_SEMESTER = "active_semester_code"
         private const val KEY_NEXT_SYNC = "next_background_sync_time"
         private const val KEY_COOKIE_SNAPSHOT = "last_auto_sync_cookie"
+        private const val KEY_COOKIE_SNAPSHOT_INVALIDATED = "last_auto_sync_cookie_invalidated"
         private const val KEY_SCHEDULE_ARCHIVE = "schedule_archive_by_semester"
         private const val KEY_SCHEDULE_OVERRIDES = "schedule_overrides"
         private const val KEY_SCHOOL_TIME_CONFIG = "school_time_config"
@@ -265,6 +274,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     return performSync(context, retryDepth = retryDepth + 1)
                 }
                 logd("后台续登失败，无法继续同步")
+                clearPersistedCookieSnapshot(context, prefs)
                 writeState(
                     context,
                     state = "login_required",
@@ -298,10 +308,11 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     }
                 }
                 logd("后台同步失败: 登录态仍无效")
+                clearPersistedCookieSnapshot(context, prefs)
                 writeState(
                     context,
                     state = "login_required",
-                    message = "登录态可能已失效，请重新登录后再自动同步",
+                    message = DEFAULT_LOGIN_EXPIRED_MESSAGE,
                     error = "code=$code",
                 )
                 return false
@@ -345,6 +356,12 @@ class AutoSyncScheduler : BroadcastReceiver() {
             ClassSilenceScheduler.rebuildFromStoredProjection(context)
             TodayScheduleWidgetProvider.refreshAll(context)
             WidgetRefreshScheduler.start(context)
+            notifyBackgroundSyncResult(
+                context = context,
+                title = "自动同步成功",
+                body = message,
+                highPriority = false,
+            )
             return true
         }
 
@@ -368,6 +385,20 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 editor.putString(flutterKey(KEY_LAST_ERROR), error)
             }
             editor.apply()
+
+            if (state == "login_required") {
+                notifyBackgroundSyncResult(
+                    context = context,
+                    title =
+                        if (message == DEFAULT_LOGIN_EXPIRED_MESSAGE) {
+                            "登录失效，请手动处理"
+                        } else {
+                            "自动同步需要处理"
+                        },
+                    body = message,
+                    highPriority = true,
+                )
+            }
         }
 
         private fun persistCookieSnapshot(
@@ -376,7 +407,21 @@ class AutoSyncScheduler : BroadcastReceiver() {
             cookie: String,
         ) {
             NativeCredentialStore.saveCookieSnapshot(context, cookie)
-            prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT)).apply()
+            prefs.edit()
+                .remove(flutterKey(KEY_COOKIE_SNAPSHOT))
+                .remove(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED))
+                .apply()
+        }
+
+        private fun clearPersistedCookieSnapshot(
+            context: Context,
+            prefs: SharedPreferences,
+        ) {
+            NativeCredentialStore.clearCookieSnapshot(context)
+            prefs.edit()
+                .remove(flutterKey(KEY_COOKIE_SNAPSHOT))
+                .putBoolean(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED), true)
+                .apply()
         }
 
         private fun loadStoredCookieSnapshot(
@@ -488,6 +533,11 @@ class AutoSyncScheduler : BroadcastReceiver() {
 
         private data class LoginPage(
             val url: String,
+            val body: String,
+        )
+
+        private data class ScheduleHttpResponse(
+            val statusCode: Int,
             val body: String,
         )
 
@@ -649,13 +699,27 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private fun fetchSchedulePayload(cookie: String, semester: String): JSONObject {
             var mergedRoot: JSONObject? = null
             for (pageNumber in 1..MAX_PAGES) {
-                val responseText = postScheduleRequest(
+                val response = postScheduleRequest(
                     cookie = cookie,
                     semester = semester,
                     pageNumber = pageNumber,
                     pageSize = PAGE_SIZE,
                 )
-                val pageJson = JSONObject(responseText)
+                if (isLoginExpiredResponse(response.statusCode, response.body)) {
+                    return JSONObject().apply {
+                        put("code", "401")
+                        put("message", "Not login!")
+                    }
+                }
+                if (response.statusCode != 200) {
+                    throw IllegalStateException("HTTP ${response.statusCode}")
+                }
+
+                val pageJson = try {
+                    JSONObject(response.body)
+                } catch (_: Throwable) {
+                    throw IllegalStateException("课表接口返回非 JSON 响应")
+                }
                 val code = pageJson.optString("code")
                 if (code != "0") {
                     if (pageNumber == 1) {
@@ -687,7 +751,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
             semester: String,
             pageNumber: Int,
             pageSize: Int,
-        ): String {
+        ): ScheduleHttpResponse {
             val requestUrl = "$API_URL?_=${System.currentTimeMillis()}"
             val connection = (URL(requestUrl).openConnection() as HttpsURLConnection).apply {
                 requestMethod = "POST"
@@ -725,11 +789,85 @@ class AutoSyncScheduler : BroadcastReceiver() {
             val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
             connection.disconnect()
 
-            if (code != 200) {
-                throw IllegalStateException("HTTP $code: $text")
+            return ScheduleHttpResponse(
+                statusCode = code,
+                body = text,
+            )
+        }
+
+        private fun isLoginExpiredResponse(statusCode: Int, body: String): Boolean {
+            if (statusCode == 401 || statusCode == 403) {
+                return true
             }
 
-            return text
+            val lower = body.lowercase(Locale.ROOT)
+            return lower.contains("not login!") || lower.contains("not login")
+        }
+
+        private fun notifyBackgroundSyncResult(
+            context: Context,
+            title: String,
+            body: String,
+            highPriority: Boolean,
+        ) {
+            if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+            ensureNotificationChannel(context)
+
+            val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setAutoCancel(true)
+                .setContentIntent(createLaunchIntent(context))
+                .setPriority(
+                    if (highPriority) {
+                        NotificationCompat.PRIORITY_HIGH
+                    } else {
+                        NotificationCompat.PRIORITY_DEFAULT
+                    },
+                )
+
+            try {
+                NotificationManagerCompat.from(context).notify(
+                    RESULT_NOTIFICATION_ID,
+                    builder.build(),
+                )
+            } catch (error: SecurityException) {
+                Log.w(TAG, "Notification permission denied while dispatching auto sync status", error)
+            }
+        }
+
+        private fun createLaunchIntent(context: Context): PendingIntent? {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                ?: return null
+            launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            return PendingIntent.getActivity(
+                context,
+                RESULT_NOTIFICATION_ID,
+                launchIntent,
+                pendingIntentFlags(),
+            )
+        }
+
+        private fun ensureNotificationChannel(context: Context) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (manager.getNotificationChannel(CHANNEL_ID) != null) return
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_DEFAULT)
+                    .apply {
+                        description = CHANNEL_DESCRIPTION
+                    },
+            )
+        }
+
+        private fun pendingIntentFlags(): Int {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
         }
 
         private fun persistScheduleArchive(

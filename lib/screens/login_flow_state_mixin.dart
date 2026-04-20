@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/services/auth_credentials_service.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/login_fetch_coordinator.dart';
@@ -32,6 +33,8 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   String? _lastDetectedSemester;
   String? _selectedSemesterCode;
   SavedPortalCredential? _savedCredential;
+  SavedPortalCredential? _activeCredential;
+  List<SemesterOption> _semesterOptions = const [];
 
   LoginWebviewAdapter createWebviewAdapter();
 
@@ -51,6 +54,8 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     _statusText = initialStatusText;
     _selectedSemesterCode = initialSemesterCode;
     _suspendLoginAutomation = shouldOpenCredentialEditor;
+    _semesterOptions =
+        context.read<ScheduleProvider>().availableSemesterOptions;
     _loadSavedCredential();
     unawaited(_initWebview());
   }
@@ -65,6 +70,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     if (!mounted) return;
     setState(() {
       _savedCredential = credential;
+      _activeCredential = credential;
       _rememberPassword = credential != null;
     });
     _maybeOpenCredentialEditor(force: credential == null);
@@ -121,11 +127,12 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     if (loginFetchService.isLoginUrl(url) && mounted) {
       setState(() {
         _statusText =
-            (_savedCredential == null || !_rememberPassword)
+            _activeCredential == null
                 ? LoginFlowText.manualLoginPrompt
                 : LoginFlowText.tryingSavedCredentialLogin;
       });
-      if (!_suspendLoginAutomation || _autofillController.pendingAutofill) {
+      if (_activeCredential != null &&
+          (!_suspendLoginAutomation || _autofillController.pendingAutofill)) {
         _scheduleAutofillBurst();
       }
       return;
@@ -150,9 +157,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   void _scheduleAutofillBurst() {
-    if (_savedCredential == null ||
-        !_rememberPassword ||
-        _autofillController.loopActive) {
+    if (_activeCredential == null || _autofillController.loopActive) {
       return;
     }
     _autofillController.start(_runAutofillAttempt);
@@ -198,8 +203,8 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _autofillSavedCredential({required bool autoSubmit}) async {
-    final credential = _savedCredential;
-    if (!_rememberPassword || credential == null || !_isWebviewReady) {
+    final credential = _activeCredential;
+    if (credential == null || !_isWebviewReady) {
       _autofillController.stop(clearPending: true);
       return;
     }
@@ -210,6 +215,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
           password: credential.password,
           bridgeCall: bridgeCall,
           autoSubmit: autoSubmit,
+          enableTrustOption: _rememberPassword,
         ),
       );
       if (mounted) {
@@ -254,6 +260,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     if (!mounted) return;
     setState(() {
       _savedCredential = null;
+      _activeCredential = null;
       _rememberPassword = false;
       _suspendLoginAutomation = false;
       _statusText = LoginFlowText.savedCredentialCleared;
@@ -267,50 +274,55 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _openCredentialEditor({bool force = false}) async {
-    final previousUsername = _savedCredential?.username.trim();
     final result = await showLoginCredentialEditorDialog(
       context: context,
-      savedCredential: _savedCredential,
+      currentCredential: _activeCredential ?? _savedCredential,
       rememberPassword: _rememberPassword,
       force: force,
     );
 
     if (result == null || !mounted) return;
-    if (!result.rememberPassword) {
-      await _clearSavedCredential(showToast: !force);
-      return;
-    }
-
     final username = result.username.trim();
     final password = result.password;
-    await AuthCredentialsService.instance.save(
+    final credential = SavedPortalCredential(
       username: username,
       password: password,
     );
-    if (!mounted) return;
-    setState(() {
-      _savedCredential = SavedPortalCredential(
+    if (result.rememberPassword) {
+      await AuthCredentialsService.instance.save(
         username: username,
         password: password,
       );
-      _rememberPassword = true;
+    } else {
+      await AuthCredentialsService.instance.clear();
+      await AutoSyncService.handleCredentialCleared();
+    }
+    if (!mounted) return;
+    setState(() {
+      _savedCredential = result.rememberPassword ? credential : null;
+      _activeCredential = credential;
+      _rememberPassword = result.rememberPassword;
       _autofillController.setPending(true);
       _suspendLoginAutomation = false;
       _statusText =
-          previousUsername == username
-              ? LoginFlowText.savedCredentialUpdated
-              : LoginFlowText.switchingSavedCredentialSession;
+          result.rememberPassword
+              ? LoginFlowText.switchingSavedCredentialSession
+              : LoginFlowText.temporaryCredentialLogin;
     });
-    if (previousUsername != null && previousUsername == username) {
-      _scheduleAutofillBurst();
-    } else {
-      await _resetLoginSession();
-    }
+    await _resetLoginSession(autofillAfterReload: false);
+    if (!mounted) return;
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    await _autofillSavedCredential(autoSubmit: true);
+    _scheduleAutofillBurst();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          LoginFlowText.savedCredentialStored(_savedCredential!.maskedUsername),
+          result.rememberPassword
+              ? LoginFlowText.savedCredentialStored(credential.maskedUsername)
+              : LoginFlowText.temporaryCredentialUsed(
+                credential.maskedUsername,
+              ),
         ),
       ),
     );
@@ -330,8 +342,9 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _fetchWithSemester(String semester) async {
+    final targetSemester = _selectedSemesterCode ?? semester;
     await _loginFlowCoordinator.fetchWithSemester(
-      semester: semester,
+      semester: targetSemester,
       chunkState: _chunkState,
       bridgeCall: bridgeCall,
       executeScript: _webviewAdapter.executeScript,
@@ -341,23 +354,41 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _pickTargetSemester() async {
-    final provider = context.read<ScheduleProvider>();
-    final codes = {...provider.availableSemesterCodes};
-    if (provider.currentSemesterCode != null &&
-        provider.currentSemesterCode!.isNotEmpty) {
-      codes.add(provider.currentSemesterCode!);
-    }
-    final sortedCodes = codes.toList()..sort((a, b) => b.compareTo(a));
-
     final selection = await showLoginSemesterPicker(
       context: context,
       selectedSemesterCode: _selectedSemesterCode,
-      sortedCodes: sortedCodes,
-      formatSemesterCode: _loginFlowCoordinator.formatSemesterCode,
-      looksLikeSemesterCode: _loginFlowCoordinator.looksLikeSemesterCode,
+      optionLabels:
+          _semesterOptions
+              .map(
+                (option) =>
+                    option.normalizedName.isNotEmpty
+                        ? option.normalizedName
+                        : _loginFlowCoordinator.formatSemesterCode(option.code),
+              )
+              .toList(),
+      optionCodes: _semesterOptions.map((option) => option.code).toList(),
     );
     if (selection == null || !mounted) return;
     setState(() => _selectedSemesterCode = selection.semesterCode);
+  }
+
+  void _cacheSemesterOptions(List<SemesterOption> options) {
+    if (!mounted || options.isEmpty) return;
+    setState(() {
+      _semesterOptions = options;
+      _selectedSemesterCode ??= options.first.code;
+    });
+  }
+
+  Future<void> _handleSemesterOptions(List<SemesterOption> options) async {
+    if (options.isEmpty) return;
+    _cacheSemesterOptions(options);
+    final provider = context.read<ScheduleProvider>();
+    await provider.mergeKnownSemesterOptions(options);
+    if (!mounted) return;
+    setState(() {
+      _semesterOptions = provider.availableSemesterOptions;
+    });
   }
 
   void _handleMessage(String message) {
@@ -366,6 +397,9 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       chunkState: _chunkState,
       applyState: _applyState,
       onSemesterReady: _fetchWithSemester,
+      onSemesterOptions: (options) {
+        unawaited(_handleSemesterOptions(options));
+      },
       onPayloadReady: _processData,
       onAutofillStatus: _handleAutofillStatus,
       onAutofillResult: _handleAutofillResult,
@@ -378,6 +412,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       context: context,
       jsonStr: jsonStr,
       semester: _lastDetectedSemester,
+      persistLoginSession: _rememberPassword,
       applyState: _applyState,
     );
   }
@@ -387,12 +422,29 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     Color? idleBackgroundColor,
     TextStyle? statusTextStyle,
   }) {
+    final selectedSemesterLabel =
+        _selectedSemesterCode == null
+            ? null
+            : _semesterOptions
+                .where((option) => option.code == _selectedSemesterCode)
+                .map((option) => option.normalizedName)
+                .where((name) => name.isNotEmpty)
+                .cast<String?>()
+                .firstWhere(
+                  (value) => value != null && value.isNotEmpty,
+                  orElse:
+                      () => _loginFlowCoordinator.formatSemesterCode(
+                        _selectedSemesterCode!,
+                      ),
+                );
     return LoginFlowScaffold(
       isFetching: _isFetching,
       canManualFetch: _isWebviewReady,
       rememberPassword: _rememberPassword,
-      savedCredential: _savedCredential,
+      activeCredential: _activeCredential,
+      hasSavedCredential: _savedCredential != null,
       selectedSemesterCode: _selectedSemesterCode,
+      selectedSemesterLabel: selectedSemesterLabel,
       statusText: _statusText,
       onOpenCredentialEditor: _openCredentialEditor,
       onClearSavedCredential: _clearSavedCredential,

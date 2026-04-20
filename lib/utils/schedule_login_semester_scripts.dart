@@ -13,16 +13,62 @@ class ScheduleLoginSemesterScripts {
       (function() {
         var semester = '';
         var requestId = $requestIdLiteral;
+        var semesterOptions = [];
 
         function postSemester(value) {
           $bridgeCall('SEMESTER:' + requestId + ':' + (value || ''));
         }
 
+        function postSemesterOptions(items) {
+          try {
+            $bridgeCall('SEMESTER_OPTIONS:' + requestId + ':' + JSON.stringify(items || []));
+          } catch (_) {}
+        }
+
+        function normalize(value) {
+          return (value || '').toString().trim();
+        }
+
+        function collectSemesterOptions() {
+          var seen = {};
+          var items = [];
+          var selects = Array.prototype.slice.call(document.querySelectorAll('select'));
+
+          selects.forEach(function(select) {
+            var options = Array.prototype.slice.call(select.options || []);
+            options.forEach(function(option) {
+              var code = normalize(option.value);
+              if (!/^\\d{5}\$/.test(code) || seen[code]) {
+                return;
+              }
+              seen[code] = true;
+              items.push({
+                code: code,
+                name: normalize(option.text || option.label || '')
+              });
+            });
+          });
+
+          items.sort(function(left, right) {
+            return String(right.code || '').localeCompare(String(left.code || ''));
+          });
+          return items;
+        }
+
+        semesterOptions = collectSemesterOptions();
+        postSemesterOptions(semesterOptions);
+
+        if (semesterOptions.length > 0) {
+          semester = semesterOptions[0].code || '';
+        }
+
         var selects = document.querySelectorAll('select');
         for (var i = 0; i < selects.length; i++) {
-          var val = selects[i].value;
+          var val = normalize(selects[i].value);
           if (val && /^\\d{4,5}\$/.test(val)) {
-            semester = val;
+            if (!semester) {
+              semester = val;
+            }
             break;
           }
         }

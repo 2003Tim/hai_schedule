@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 
 import 'package:hai_schedule/services/auth_credentials_service.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
-import 'package:hai_schedule/services/portal_relogin_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/widgets/sync_center_sections.dart';
 import 'package:hai_schedule/screens/import_screen.dart';
@@ -47,14 +46,9 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
     if (_isSyncing) return;
 
     final last = _lastManualSyncTime;
-    if (last != null &&
-        DateTime.now().difference(last) < _manualSyncCooldown) {
-      final remaining =
-          _manualSyncCooldown - DateTime.now().difference(last);
-      _showSnack(
-        '操作太频繁，请 ${remaining.inSeconds + 1} 秒后再试',
-        error: true,
-      );
+    if (last != null && DateTime.now().difference(last) < _manualSyncCooldown) {
+      final remaining = _manualSyncCooldown - DateTime.now().difference(last);
+      _showSnack('操作太频繁，请 ${remaining.inSeconds + 1} 秒后再试', error: true);
       return;
     }
     _lastManualSyncTime = DateTime.now();
@@ -69,27 +63,11 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
 
     setState(() => _isSyncing = true);
     final provider = context.read<ScheduleProvider>();
-    var result = await AutoSyncService.tryAutoSync(
+    final result = await AutoSyncService.tryAutoSync(
       provider,
       force: true,
       source: 'manual',
     );
-
-    if (result.requiresLogin) {
-      if (!mounted) return;
-      final didRelogin = await PortalReloginService.tryRelogin(
-        context,
-        semesterCode: provider.currentSemesterCode,
-      );
-      if (didRelogin && mounted) {
-        final snapshot = await AutoSyncService.loadSnapshot();
-        result = AutoSyncResult.success(
-          provider.courses.length,
-          snapshot.message,
-          snapshot,
-        );
-      }
-    }
 
     await _refresh();
     if (!mounted) return;

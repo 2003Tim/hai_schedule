@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'package:hai_schedule/services/auth_credentials_service.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
+import 'package:hai_schedule/services/login_expired_exception.dart';
 import 'package:hai_schedule/services/theme_provider.dart';
 
 class SyncCenterStatusCard extends StatelessWidget {
@@ -52,11 +53,7 @@ class SyncCenterStatusCard extends StatelessWidget {
                   color: statusColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(
-                  Icons.sync_rounded,
-                  color: statusColor,
-                  size: 24,
-                ),
+                child: Icon(Icons.sync_rounded, color: statusColor, size: 24),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -65,7 +62,10 @@ class SyncCenterStatusCard extends StatelessWidget {
                   children: [
                     const Text(
                       '同步状态',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -129,12 +129,20 @@ class SyncCenterStatusCard extends StatelessWidget {
             children: [
               _InfoChip(
                 icon: Icons.history_rounded,
-                label: '上次更新 ${AutoSyncService.formatDateTime(snapshot.lastFetchTime)}',
+                label:
+                    '上次更新 ${AutoSyncService.formatDateTime(snapshot.lastFetchTime)}',
               ),
               _InfoChip(
                 icon: Icons.schedule_rounded,
                 label: _scheduleLabel(snapshot, isDesktop: isDesktop),
               ),
+              if (snapshot.state == AutoSyncState.failed ||
+                  snapshot.state == AutoSyncState.loginRequired)
+                _InfoChip(
+                  icon: Icons.error_outline_rounded,
+                  label:
+                      '上次失败 ${AutoSyncService.formatDateTime(snapshot.lastAttemptTime)}',
+                ),
               _InfoChip(
                 icon: _credentialInfoIcon(snapshot),
                 label: _credentialInfoLabel(snapshot, savedCredential),
@@ -432,18 +440,9 @@ class SyncCenterDesktopFlowCard extends StatelessWidget {
           ),
           SizedBox(height: 10),
           _FlowStep(step: '1', text: '先保存账号密码，后续 Windows 登录页就能自动填充。'),
-          _FlowStep(
-            step: '2',
-            text: '执行一次“登录并刷新课表”，把当前学期和最新课表一起同步下来。',
-          ),
-          _FlowStep(
-            step: '3',
-            text: '启用自动同步频率后，Windows 会在应用启动或回到前台时自动检查是否到点。',
-          ),
-          _FlowStep(
-            step: '4',
-            text: '同步成功后，课前提醒、作息时间和临时安排会立刻复用这套最新课表数据。',
-          ),
+          _FlowStep(step: '2', text: '执行一次“登录并刷新课表”，把当前学期和最新课表一起同步下来。'),
+          _FlowStep(step: '3', text: '启用自动同步频率后，Windows 会在应用启动或回到前台时自动检查是否到点。'),
+          _FlowStep(step: '4', text: '同步成功后，课前提醒、作息时间和临时安排会立刻复用这套最新课表数据。'),
         ],
       ),
     );
@@ -451,10 +450,7 @@ class SyncCenterDesktopFlowCard extends StatelessWidget {
 }
 
 class SyncCenterDescriptionCard extends StatelessWidget {
-  const SyncCenterDescriptionCard({
-    super.key,
-    required this.isDesktop,
-  });
+  const SyncCenterDescriptionCard({super.key, required this.isDesktop});
 
   final bool isDesktop;
 
@@ -560,10 +556,7 @@ class _SyncCenterGlassCard extends StatelessWidget {
 }
 
 class _FlowStep extends StatelessWidget {
-  const _FlowStep({
-    required this.step,
-    required this.text,
-  });
+  const _FlowStep({required this.step, required this.text});
 
   final String step;
   final String text;
@@ -646,7 +639,9 @@ String _statusLabel(AutoSyncSnapshot snapshot, {required bool isSyncing}) {
     case AutoSyncState.loginRequired:
       return '需登录';
     case AutoSyncState.idle:
-      return snapshot.settings.frequency == AutoSyncFrequency.manual ? '手动' : '待机';
+      return snapshot.settings.frequency == AutoSyncFrequency.manual
+          ? '手动'
+          : '待机';
     case AutoSyncState.syncing:
       return '同步中';
   }
@@ -671,9 +666,10 @@ String _bodyText(
           : '当前桌面端处于仅手动同步模式。你可以随时点击“立即同步”手动登录并刷新课表。';
     }
     if (snapshot.requiresLogin) {
+      final base = LoginExpiredException.defaultMessage;
       return savedCredential != null
-          ? '当前桌面端保存的登录态可能已经失效，但你已经保存了账号密码。下次应用启动、回到前台或手动点“立即同步”时，系统会优先尝试自动填充并重新抓课。'
-          : '当前桌面端保存的登录态可能已经失效。重新打开登录页并刷新一次课表，就能恢复前台自动同步能力。';
+          ? '$base。当前桌面端已保存账号密码；下次应用启动、回到前台或手动点“立即同步”时，系统会优先尝试自动填充并重新抓课。'
+          : '$base。重新打开登录页并刷新一次课表，就能恢复前台自动同步能力。';
     }
     if (snapshot.state == AutoSyncState.success) {
       return savedCredential != null
@@ -695,10 +691,11 @@ String _bodyText(
     return '后台自动同步需要先完成一次“登录并刷新课表”。登录成功后，系统会保存当前有效的登录态；如果同时保存了账号密码，下次打开 app 时也能更顺畅地自动续登。';
   }
   if (snapshot.requiresLogin) {
+    final base = LoginExpiredException.defaultMessage;
     if (savedCredential != null) {
-      return '之前保存的登录态快照已经失效，但当前已保存账号密码。下次打开 app 或手动同步时，系统会优先尝试自动续登；如果续登仍失败，再手动重新登录即可。';
+      return '$base。当前已保存账号密码；下次打开 app 或手动同步时，系统会优先尝试自动续登；如果续登仍失败，再手动重新登录即可。';
     }
-    return '之前保存的登录态快照已经失效。通常是 Cookie 过期或会话失效，重新执行一次“登录并刷新课表”即可恢复自动同步。';
+    return '$base。通常是 Cookie 过期或会话失效，重新执行一次“登录并刷新课表”即可恢复自动同步。';
   }
   if (snapshot.state == AutoSyncState.success) {
     return savedCredential != null
@@ -729,8 +726,7 @@ String _frequencyHelpText(
       return isDesktop ? '检查频率最低，适合几乎不变的课表' : '最省电，但可能错过临时调课';
     case AutoSyncFrequency.custom:
       final minutes =
-          customIntervalMinutes ??
-          AutoSyncService.defaultCustomIntervalMinutes;
+          customIntervalMinutes ?? AutoSyncService.defaultCustomIntervalMinutes;
       return isDesktop
           ? '应用在前台运行、启动或恢复时，按 ${AutoSyncService.formatIntervalMinutes(minutes)} 检查一次'
           : '当前间隔 ${AutoSyncService.formatIntervalMinutes(minutes)}，可改成 1 到 720 小时';

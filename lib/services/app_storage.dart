@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/school_time.dart';
 import 'package:hai_schedule/models/storage_records.dart';
@@ -30,8 +31,7 @@ class AppStorage {
       AppStorageSchema.showNonCurrentWeekKey;
 
   static const String _lastFetchTimeKey = AppStorageSchema.lastFetchTimeKey;
-  static const String _lastAttemptTimeKey =
-      AppStorageSchema.lastAttemptTimeKey;
+  static const String _lastAttemptTimeKey = AppStorageSchema.lastAttemptTimeKey;
   static const String _lastErrorKey = AppStorageSchema.lastErrorKey;
   static const String _lastMessageKey = AppStorageSchema.lastMessageKey;
   static const String _lastStateKey = AppStorageSchema.lastStateKey;
@@ -45,16 +45,21 @@ class AppStorage {
   static const String _legacySemesterKey = AppStorageSchema.legacySemesterKey;
   static const String _activeSemesterKey = AppStorageSchema.activeSemesterKey;
   static const String _scheduleArchiveKey = AppStorageSchema.scheduleArchiveKey;
+  static const String _semesterCatalogKey = AppStorageSchema.semesterCatalogKey;
   static const String _scheduleOverridesKey =
       AppStorageSchema.scheduleOverridesKey;
   static const String _schoolTimeConfigKey =
       AppStorageSchema.schoolTimeConfigKey;
   static const String _schoolTimeGeneratorSettingsKey =
       AppStorageSchema.schoolTimeGeneratorSettingsKey;
-  static const String _lastScheduleJsonKey = AppStorageSchema.lastScheduleJsonKey;
+  static const String _lastScheduleJsonKey =
+      AppStorageSchema.lastScheduleJsonKey;
   static const String _cookieSnapshotKey = AppStorageSchema.cookieSnapshotKey;
+  static const String _cookieSnapshotInvalidatedKey =
+      AppStorageSchema.cookieSnapshotInvalidatedKey;
   static const String _studentIdKey = AppStorageSchema.studentIdKey;
-  static const String _reminderLeadTimeKey = AppStorageSchema.reminderLeadTimeKey;
+  static const String _reminderLeadTimeKey =
+      AppStorageSchema.reminderLeadTimeKey;
   static const String _reminderLastBuildTimeKey =
       AppStorageSchema.reminderLastBuildTimeKey;
   static const String _reminderHorizonEndKey =
@@ -128,21 +133,9 @@ class AppStorage {
     }
   }
 
-  Future<String?> loadSemesterCode() async {
-    final prefs = await _reloadedPrefs();
-    return _readSemesterCode(prefs);
-  }
-
   Future<String?> loadActiveSemesterCode() async {
     final prefs = await _reloadedPrefs();
     return _readActiveSemesterCode(prefs);
-  }
-
-  Future<void> saveSemesterCode(String semester) async {
-    final prefs = await _reloadedPrefs();
-    await prefs.setString(_semesterKey, semester);
-    await prefs.setString(_legacySemesterKey, semester);
-    await prefs.setString(_activeSemesterKey, semester);
   }
 
   Future<void> saveActiveSemesterCode(String semester) async {
@@ -172,6 +165,40 @@ class AppStorage {
       return legacy == null || legacy.isEmpty ? const [] : <String>[legacy];
     }
     return codes;
+  }
+
+  Future<List<SemesterOption>> loadKnownSemesterOptions() async {
+    final prefs = await _reloadedPrefs();
+    final raw = prefs.getString(_semesterCatalogKey);
+    if (raw == null || raw.isEmpty) {
+      return const <SemesterOption>[];
+    }
+
+    try {
+      final decoded = json.decode(raw);
+      if (decoded is! List) {
+        return const <SemesterOption>[];
+      }
+      return decoded
+          .whereType<Map>()
+          .map(
+            (item) => SemesterOption.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .where((item) => item.isValid)
+          .toList();
+    } catch (_) {
+      return const <SemesterOption>[];
+    }
+  }
+
+  Future<void> saveKnownSemesterOptions(List<SemesterOption> options) async {
+    final prefs = await _prefs;
+    final normalized =
+        options
+            .where((item) => item.isValid)
+            .map((item) => item.toJson())
+            .toList();
+    await prefs.setString(_semesterCatalogKey, json.encode(normalized));
   }
 
   Future<StoredSemesterSchedule?> loadSemesterArchive(
@@ -463,27 +490,37 @@ class AppStorage {
   }
 
   Future<String?> loadCookieSnapshot() async {
+    final prefs = await _prefs;
+    final invalidated = prefs.getBool(_cookieSnapshotInvalidatedKey) ?? false;
+    if (invalidated) {
+      await _clearCookieSnapshotFromNative();
+      await _secureStorage.delete(key: _cookieSnapshotKey);
+      await prefs.remove(_cookieSnapshotKey);
+      await prefs.remove(_cookieSnapshotInvalidatedKey);
+      return null;
+    }
+
     final native = await _loadCookieSnapshotFromNative();
     if (native != null && native.isNotEmpty) {
       await _secureStorage.write(key: _cookieSnapshotKey, value: native);
-      final prefs = await _prefs;
       await prefs.remove(_cookieSnapshotKey);
+      await prefs.remove(_cookieSnapshotInvalidatedKey);
       return native;
     }
 
     final secure = await _secureStorage.read(key: _cookieSnapshotKey);
     if (secure != null && secure.isNotEmpty) {
       await _saveCookieSnapshotToNative(secure);
-      final prefs = await _prefs;
       await prefs.remove(_cookieSnapshotKey);
+      await prefs.remove(_cookieSnapshotInvalidatedKey);
       return secure;
     }
 
-    final prefs = await _prefs;
     final legacy = prefs.getString(_cookieSnapshotKey);
     if (legacy != null && legacy.isNotEmpty) {
       await _persistCookieSnapshot(legacy);
       await prefs.remove(_cookieSnapshotKey);
+      await prefs.remove(_cookieSnapshotInvalidatedKey);
       return legacy;
     }
     return null;
@@ -494,6 +531,7 @@ class AppStorage {
     await _secureStorage.delete(key: _cookieSnapshotKey);
     final prefs = await _prefs;
     await prefs.remove(_cookieSnapshotKey);
+    await prefs.remove(_cookieSnapshotInvalidatedKey);
   }
 
   Future<void> saveStudentId(String studentId) async {
@@ -625,6 +663,8 @@ class AppStorage {
   Future<void> _persistCookieSnapshot(String cookie) async {
     await _saveCookieSnapshotToNative(cookie);
     await _secureStorage.write(key: _cookieSnapshotKey, value: cookie);
+    final prefs = await _prefs;
+    await prefs.remove(_cookieSnapshotInvalidatedKey);
   }
 
   Future<bool> _saveCookieSnapshotToNative(String cookie) async {

@@ -30,14 +30,16 @@ class LoginRememberPasswordTile extends StatelessWidget {
     super.key,
     required this.isFetching,
     required this.rememberPassword,
-    required this.savedCredential,
+    required this.activeCredential,
+    required this.hasSavedCredential,
     required this.onRememberPasswordChanged,
     required this.onManageCredential,
   });
 
   final bool isFetching;
   final bool rememberPassword;
-  final SavedPortalCredential? savedCredential;
+  final SavedPortalCredential? activeCredential;
+  final bool hasSavedCredential;
   final AsyncBoolCallback onRememberPasswordChanged;
   final AsyncVoidCallback onManageCredential;
 
@@ -61,9 +63,11 @@ class LoginRememberPasswordTile extends StatelessWidget {
         ),
         title: const Text('记住密码'),
         subtitle: Text(
-          savedCredential == null
-              ? '保存后可自动填充登录页，也更方便切换账号'
-              : '当前账号：${savedCredential!.maskedUsername}',
+          activeCredential == null
+              ? '输入账号后可直接登录并同步；勾选后会安全保存到本机'
+              : hasSavedCredential
+              ? '当前已保存账号：${activeCredential!.maskedUsername}'
+              : '当前临时账号：${activeCredential!.maskedUsername}（仅本次会话有效）',
           style: TextStyle(
             fontSize: 12,
             color: Theme.of(
@@ -73,7 +77,7 @@ class LoginRememberPasswordTile extends StatelessWidget {
         ),
         trailing: TextButton(
           onPressed: isFetching ? null : () => unawaited(onManageCredential()),
-          child: Text(savedCredential == null ? '填写账号' : '切换账号'),
+          child: Text(activeCredential == null ? '输入账号' : '更换账号'),
         ),
       ),
     );
@@ -86,6 +90,7 @@ class LoginStatusBanner extends StatelessWidget {
     required this.isFetching,
     required this.statusText,
     required this.selectedSemesterCode,
+    required this.selectedSemesterLabel,
     this.activeBackgroundColor,
     this.idleBackgroundColor,
     this.textStyle,
@@ -94,6 +99,7 @@ class LoginStatusBanner extends StatelessWidget {
   final bool isFetching;
   final String statusText;
   final String? selectedSemesterCode;
+  final String? selectedSemesterLabel;
   final Color? activeBackgroundColor;
   final Color? idleBackgroundColor;
   final TextStyle? textStyle;
@@ -123,7 +129,7 @@ class LoginStatusBanner extends StatelessWidget {
             child: Text(
               selectedSemesterCode == null
                   ? statusText
-                  : '目标学期 $selectedSemesterCode · $statusText',
+                  : '目标学期 ${selectedSemesterLabel ?? selectedSemesterCode} · $statusText',
               style:
                   textStyle ??
                   TextStyle(
@@ -146,8 +152,10 @@ class LoginFlowScaffold extends StatelessWidget {
     required this.isFetching,
     required this.canManualFetch,
     required this.rememberPassword,
-    required this.savedCredential,
+    required this.activeCredential,
+    required this.hasSavedCredential,
     required this.selectedSemesterCode,
+    required this.selectedSemesterLabel,
     required this.statusText,
     required this.onOpenCredentialEditor,
     required this.onClearSavedCredential,
@@ -163,8 +171,10 @@ class LoginFlowScaffold extends StatelessWidget {
   final bool isFetching;
   final bool canManualFetch;
   final bool rememberPassword;
-  final SavedPortalCredential? savedCredential;
+  final SavedPortalCredential? activeCredential;
+  final bool hasSavedCredential;
   final String? selectedSemesterCode;
+  final String? selectedSemesterLabel;
   final String statusText;
   final AsyncVoidCallback onOpenCredentialEditor;
   final AsyncVoidCallback onClearSavedCredential;
@@ -184,13 +194,13 @@ class LoginFlowScaffold extends StatelessWidget {
         actions: [
           if (!isFetching)
             IconButton(
-              tooltip: '账号与密码',
+              tooltip: '输入账号',
               onPressed: () => unawaited(onOpenCredentialEditor()),
               icon: const Icon(Icons.manage_accounts_outlined),
             ),
-          if (!isFetching && savedCredential != null)
+          if (!isFetching && activeCredential != null)
             IconButton(
-              tooltip: '清除已保存账号',
+              tooltip: '清除凭据',
               onPressed: () => unawaited(onClearSavedCredential()),
               icon: const Icon(Icons.logout_rounded),
             ),
@@ -199,7 +209,9 @@ class LoginFlowScaffold extends StatelessWidget {
               onPressed: () => unawaited(onPickTargetSemester()),
               icon: const Icon(Icons.school_outlined, size: 18),
               label: Text(
-                selectedSemesterCode == null ? '自动学期' : selectedSemesterCode!,
+                selectedSemesterCode == null
+                    ? '自动学期'
+                    : (selectedSemesterLabel ?? selectedSemesterCode!),
               ),
             ),
           if (canManualFetch && !isFetching)
@@ -215,7 +227,8 @@ class LoginFlowScaffold extends StatelessWidget {
           LoginRememberPasswordTile(
             isFetching: isFetching,
             rememberPassword: rememberPassword,
-            savedCredential: savedCredential,
+            activeCredential: activeCredential,
+            hasSavedCredential: hasSavedCredential,
             onRememberPasswordChanged: onRememberPasswordChanged,
             onManageCredential: onOpenCredentialEditor,
           ),
@@ -223,6 +236,7 @@ class LoginFlowScaffold extends StatelessWidget {
             isFetching: isFetching,
             statusText: statusText,
             selectedSemesterCode: selectedSemesterCode,
+            selectedSemesterLabel: selectedSemesterLabel,
             activeBackgroundColor: activeBackgroundColor,
             idleBackgroundColor: idleBackgroundColor,
             textStyle: statusTextStyle,
@@ -236,15 +250,15 @@ class LoginFlowScaffold extends StatelessWidget {
 
 Future<LoginCredentialDialogResult?> showLoginCredentialEditorDialog({
   required BuildContext context,
-  required SavedPortalCredential? savedCredential,
+  required SavedPortalCredential? currentCredential,
   required bool rememberPassword,
   bool force = false,
 }) async {
   final usernameController = TextEditingController(
-    text: savedCredential?.username ?? '',
+    text: currentCredential?.username ?? '',
   );
   final passwordController = TextEditingController(
-    text: savedCredential?.password ?? '',
+    text: currentCredential?.password ?? '',
   );
   bool remember = rememberPassword || force;
   bool obscure = true;
@@ -257,7 +271,7 @@ Future<LoginCredentialDialogResult?> showLoginCredentialEditorDialog({
       return StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: Text(force ? '保存登录账号' : '账号与密码'),
+            title: Text(force ? '输入登录账号' : '登录账号'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -290,7 +304,7 @@ Future<LoginCredentialDialogResult?> showLoginCredentialEditorDialog({
                   contentPadding: EdgeInsets.zero,
                   value: remember,
                   title: const Text('记住密码'),
-                  subtitle: const Text('用于自动填充登录页和后续切换账号'),
+                  subtitle: const Text('勾选后会安全保存到本机，下次可自动续登'),
                   onChanged: (value) => setState(() => remember = value),
                 ),
               ],
@@ -305,7 +319,7 @@ Future<LoginCredentialDialogResult?> showLoginCredentialEditorDialog({
                 onPressed: () {
                   final username = usernameController.text.trim();
                   final password = passwordController.text;
-                  if (remember && (username.isEmpty || password.isEmpty)) {
+                  if (username.isEmpty || password.isEmpty) {
                     setState(() => errorText = '请输入完整账号和密码');
                     return;
                   }
@@ -317,7 +331,7 @@ Future<LoginCredentialDialogResult?> showLoginCredentialEditorDialog({
                     ),
                   );
                 },
-                child: Text(remember ? '保存并填充' : '仅关闭记住密码'),
+                child: Text(remember ? '保存并登录' : '登录并同步'),
               ),
             ],
           );
@@ -327,14 +341,11 @@ Future<LoginCredentialDialogResult?> showLoginCredentialEditorDialog({
   );
 }
 
-const _manualSemesterEntry = Object();
-
 Future<LoginSemesterSelection?> showLoginSemesterPicker({
   required BuildContext context,
   required String? selectedSemesterCode,
-  required List<String> sortedCodes,
-  required String Function(String code) formatSemesterCode,
-  required bool Function(String value) looksLikeSemesterCode,
+  required List<String> optionLabels,
+  required List<String> optionCodes,
 }) async {
   final selection = await showModalBottomSheet<Object?>(
     context: context,
@@ -349,7 +360,7 @@ Future<LoginSemesterSelection?> showLoginSemesterPicker({
                 '目标学期',
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
-              subtitle: Text('不选择时，将自动检测教务页面当前学期'),
+              subtitle: Text('默认会自动选择教务系统里最新的学期'),
             ),
             RadioGroup<String?>(
               groupValue: selectedSemesterCode,
@@ -360,23 +371,17 @@ Future<LoginSemesterSelection?> showLoginSemesterPicker({
                 children: [
                   const RadioListTile<String?>(
                     value: null,
-                    title: Text('自动检测当前学期'),
+                    title: Text('自动选择最新学期'),
                   ),
-                  ...sortedCodes.map(
-                    (code) => RadioListTile<String?>(
-                      value: code,
-                      title: Text(formatSemesterCode(code)),
-                      subtitle: Text(code),
+                  ...optionCodes.asMap().entries.map(
+                    (entry) => RadioListTile<String?>(
+                      value: entry.value,
+                      title: Text(optionLabels[entry.key]),
+                      subtitle: Text(entry.value),
                     ),
                   ),
                 ],
               ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('手动输入学期代码'),
-              subtitle: const Text('例如：20251 或 20252'),
-              onTap: () => Navigator.of(sheetContext).pop(_manualSemesterEntry),
             ),
           ],
         ),
@@ -385,63 +390,5 @@ Future<LoginSemesterSelection?> showLoginSemesterPicker({
   );
 
   if (selection == null) return null;
-  if (identical(selection, _manualSemesterEntry)) {
-    if (!context.mounted) return null;
-    final customCode = await showCustomSemesterCodeDialog(
-      context: context,
-      initialValue: selectedSemesterCode,
-      looksLikeSemesterCode: looksLikeSemesterCode,
-    );
-    if (customCode == null) return null;
-    return LoginSemesterSelection(customCode);
-  }
-
   return LoginSemesterSelection(selection as String?);
-}
-
-Future<String?> showCustomSemesterCodeDialog({
-  required BuildContext context,
-  required String? initialValue,
-  required bool Function(String value) looksLikeSemesterCode,
-}) async {
-  final controller = TextEditingController(text: initialValue ?? '');
-  return showDialog<String>(
-    context: context,
-    builder: (dialogContext) {
-      String? errorText;
-      return StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('手动输入学期代码'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: '学期代码',
-                hintText: '例如：20251',
-                errorText: errorText,
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final text = controller.text.trim();
-                  if (!looksLikeSemesterCode(text)) {
-                    setState(() => errorText = '请输入 5 位学期代码，例如 20251');
-                    return;
-                  }
-                  Navigator.of(dialogContext).pop(text);
-                },
-                child: const Text('确定'),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
 }

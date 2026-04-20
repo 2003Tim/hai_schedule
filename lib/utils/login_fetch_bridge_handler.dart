@@ -1,11 +1,14 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:hai_schedule/models/login_fetch_models.dart';
+import 'package:hai_schedule/models/semester_option.dart';
+import 'package:hai_schedule/services/semester_catalog_parser.dart';
 
 class LoginFetchBridgeHandler {
   static const _autofillStatusPrefix = 'AUTOFILL_STATUS:';
   static const _autofillResultPrefix = 'AUTOFILL_RESULT:';
   static const _semesterPrefix = 'SEMESTER:';
+  static const _semesterOptionsPrefix = 'SEMESTER_OPTIONS:';
   static const _semesterSwitchedPrefix = 'SEMESTER_SWITCHED:';
   static const _semesterSwitchErrorPrefix = 'SEMESTER_SWITCH_ERR:';
   static const _chunkStartPrefix = 'CHUNK_START:';
@@ -18,6 +21,7 @@ class LoginFetchBridgeHandler {
     _autofillStatusPrefix,
     _autofillResultPrefix,
     _semesterPrefix,
+    _semesterOptionsPrefix,
     _semesterSwitchedPrefix,
     _semesterSwitchErrorPrefix,
     _chunkStartPrefix,
@@ -34,6 +38,7 @@ class LoginFetchBridgeHandler {
     required LoginFetchChunkState chunkState,
     required ValueChanged<String> onStatus,
     required ValueChanged<String> onSemesterDetected,
+    required ValueChanged<List<SemesterOption>> onSemesterOptions,
     required ValueChanged<String> onSemesterSwitched,
     required ValueChanged<String> onPayloadReady,
     required ValueChanged<String> onError,
@@ -66,6 +71,22 @@ class LoginFetchBridgeHandler {
     if (semester != null) {
       if (!_matchesActiveRequest(chunkState, semester.$1)) return;
       onSemesterDetected(semester.$2.trim());
+      return;
+    }
+
+    final semesterOptions = _parseRequestMessage(
+      message,
+      _semesterOptionsPrefix,
+    );
+    if (semesterOptions != null) {
+      if (!_matchesActiveRequest(chunkState, semesterOptions.$1)) return;
+      try {
+        onSemesterOptions(
+          SemesterCatalogParser.parseBridgePayload(semesterOptions.$2),
+        );
+      } catch (_) {
+        // Ignore malformed semester metadata from the page.
+      }
       return;
     }
 

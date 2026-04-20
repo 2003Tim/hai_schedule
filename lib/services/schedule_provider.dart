@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:hai_schedule/models/course.dart';
 import 'package:hai_schedule/models/display_schedule_slot.dart';
+import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/schedule_parser.dart';
 import 'package:hai_schedule/models/school_time.dart';
@@ -16,6 +17,8 @@ import 'package:hai_schedule/services/schedule_derived_output_coordinator.dart';
 import 'package:hai_schedule/services/schedule_state_loader.dart';
 
 export '../models/display_schedule_slot.dart';
+
+enum ScheduleTodayNavigationResult { success, outOfRange }
 
 class ScheduleProvider extends ChangeNotifier {
   final ScheduleRepository _scheduleRepository = ScheduleRepository();
@@ -37,6 +40,7 @@ class ScheduleProvider extends ChangeNotifier {
   late SchoolTimeConfig _timeConfig;
   String? _currentSemesterCode;
   List<String> _availableSemesterCodes = const [];
+  List<SemesterOption> _availableSemesterOptions = const [];
   late final Future<void> ready = _bootstrap();
 
   int _displayDays = 7;
@@ -52,6 +56,8 @@ class ScheduleProvider extends ChangeNotifier {
   int get todayWeekday => _weekCalc.getTodayWeekday();
   String? get currentSemesterCode => _currentSemesterCode;
   List<String> get availableSemesterCodes => _availableSemesterCodes;
+  List<SemesterOption> get availableSemesterOptions =>
+      _availableSemesterOptions;
   int get displayDays => _displayDays;
   bool get showNonCurrentWeek => _showNonCurrentWeek;
 
@@ -73,10 +79,20 @@ class ScheduleProvider extends ChangeNotifier {
     }
   }
 
-  void goToCurrentWeek() {
-    _currentWeek = _weekCalc.getWeekNumber();
+  ScheduleTodayNavigationResult goToToday([DateTime? date]) {
+    final targetDate = DateUtils.dateOnly(date ?? DateTime.now());
+    if (!isDateWithinActiveSemester(targetDate)) {
+      return ScheduleTodayNavigationResult.outOfRange;
+    }
+
+    _currentWeek = _weekCalc.getWeekNumber(targetDate);
     _selectedWeek = _currentWeek.clamp(1, _weekCalc.totalWeeks);
     notifyListeners();
+    return ScheduleTodayNavigationResult.success;
+  }
+
+  ScheduleTodayNavigationResult goToCurrentWeek([DateTime? date]) {
+    return goToToday(date);
   }
 
   void setDisplayDays(int days) {
@@ -116,6 +132,51 @@ class ScheduleProvider extends ChangeNotifier {
 
   Future<void> reloadFromStorage() async {
     await _restorePersistedState();
+  }
+
+  Future<void> mergeKnownSemesterOptions(List<SemesterOption> options) async {
+    final currentOptions = await _scheduleRepository.loadKnownSemesterOptions();
+    final merged = <String, SemesterOption>{};
+
+    for (final option in currentOptions) {
+      if (!option.isValid) continue;
+      merged[option.normalizedCode] = SemesterOption(
+        code: option.normalizedCode,
+        name: option.normalizedName,
+      );
+    }
+
+    for (final option in options) {
+      if (!option.isValid) continue;
+      final existing = merged[option.normalizedCode];
+      final normalized = SemesterOption(
+        code: option.normalizedCode,
+        name: option.normalizedName,
+      );
+      merged[option.normalizedCode] =
+          normalized.normalizedName.isNotEmpty
+              ? normalized
+              : (existing ?? normalized);
+    }
+
+    final nextOptions =
+        merged.values.toList()..sort(
+          (left, right) => right.normalizedCode.compareTo(left.normalizedCode),
+        );
+    if (_availableSemesterOptions.length == nextOptions.length &&
+        _availableSemesterOptions.every(nextOptions.contains)) {
+      return;
+    }
+
+    await _scheduleRepository.saveKnownSemesterOptions(nextOptions);
+    _availableSemesterOptions = nextOptions;
+    _availableSemesterCodes =
+        {
+            ..._availableSemesterCodes,
+            ...nextOptions.map((item) => item.normalizedCode),
+          }.toList()
+          ..sort((a, b) => b.compareTo(a));
+    notifyListeners();
   }
 
   Future<void> updateTimeConfig(SchoolTimeConfig config) async {
@@ -173,6 +234,16 @@ class ScheduleProvider extends ChangeNotifier {
 
   DateTime getDateForSlot(int week, int weekday) =>
       _weekCalc.getDate(week, weekday);
+
+  bool isDateWithinActiveSemester(DateTime date) {
+    final targetDate = DateUtils.dateOnly(date);
+    final semesterStart = DateUtils.dateOnly(_weekCalc.semesterStart);
+    final semesterEnd = semesterStart.add(
+      Duration(days: (_weekCalc.totalWeeks * 7) - 1),
+    );
+    return !targetDate.isBefore(semesterStart) &&
+        !targetDate.isAfter(semesterEnd);
+  }
 
   ScheduleOverride? getOverrideForDateSlot(
     DateTime date,
@@ -283,6 +354,8 @@ class ScheduleProvider extends ChangeNotifier {
       _availableSemesterCodes = await _stateLoader.loadAvailableSemesterCodes(
         additional: resolvedSemester,
       );
+      _availableSemesterOptions = await _stateLoader
+          .loadAvailableSemesterOptions(additional: resolvedSemester);
       _applySemesterContext(
         resolvedSemester,
         semesterStartOverride: semesterStart,
@@ -368,6 +441,7 @@ class ScheduleProvider extends ChangeNotifier {
     _timeConfig = state.timeConfig;
     _currentSemesterCode = state.currentSemesterCode;
     _availableSemesterCodes = state.availableSemesterCodes;
+    _availableSemesterOptions = state.availableSemesterOptions;
     _displayDays = state.displayDays;
     _showNonCurrentWeek = state.showNonCurrentWeek;
     _applySemesterContext(

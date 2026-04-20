@@ -7,7 +7,6 @@ import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/utils/semester_code_formatter.dart';
 import 'package:hai_schedule/widgets/windows_desktop_shell_sections.dart';
-import 'package:hai_schedule/screens/backup_restore_screen.dart';
 import 'package:hai_schedule/screens/home_screen.dart';
 import 'package:hai_schedule/screens/import_screen.dart';
 import 'package:hai_schedule/screens/login_router.dart';
@@ -30,6 +29,8 @@ class WindowsDesktopShellScreen extends StatefulWidget {
 
 class _WindowsDesktopShellScreenState extends State<WindowsDesktopShellScreen>
     with WidgetsBindingObserver {
+  static const _todayOutOfRangeMessage = '今日日期不在当前学期范围内，无法跳转。';
+
   int _selectedIndex = 0;
   bool _isDesktopForegroundSyncRunning = false;
 
@@ -140,8 +141,23 @@ class _WindowsDesktopShellScreenState extends State<WindowsDesktopShellScreen>
     provider.toggleShowNonCurrentWeek();
   }
 
+  void _showSnack(String text, {bool error = false}) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(text),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: error ? Colors.redAccent : Colors.green,
+      ),
+    );
+  }
+
   void _goToCurrentWeek() {
-    context.read<ScheduleProvider>().goToCurrentWeek();
+    final result = context.read<ScheduleProvider>().goToToday(DateTime.now());
+    if (result == ScheduleTodayNavigationResult.outOfRange) {
+      _showSnack(_todayOutOfRangeMessage, error: true);
+    }
   }
 
   void _selectDestination(int index) {
@@ -239,13 +255,6 @@ class _WindowsDesktopShellScreenState extends State<WindowsDesktopShellScreen>
         icon: Icons.palette_rounded,
         page: ThemeSettingsScreen(
           key: PageStorageKey('windows_theme_settings'),
-        ),
-      ),
-      const _DesktopDestination(
-        label: '备份恢复',
-        icon: Icons.backup_rounded,
-        page: BackupRestoreScreen(
-          key: PageStorageKey('windows_backup_restore'),
         ),
       ),
     ];

@@ -61,6 +61,7 @@ class AutoSyncText {
     return lower.contains('重新登录') ||
         lower.contains('登录态') ||
         lower.contains('cookie') ||
+        lower.contains('not login') ||
         lower.contains('code=') ||
         lower.contains('401') ||
         lower.contains('403');

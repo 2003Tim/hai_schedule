@@ -34,6 +34,7 @@ void main() {
 
       expect(script, contains('FlutterBridge.postMessage'));
       expect(script, contains('SEMESTER:'));
+      expect(script, contains('SEMESTER_OPTIONS:'));
       expect(script, contains('req-1'));
       expect(script, contains("querySelectorAll('select')"));
     });
@@ -92,6 +93,7 @@ void main() {
           chunkState: chunkState,
           onStatus: statuses.add,
           onSemesterDetected: detectedSemesters.add,
+          onSemesterOptions: (_) {},
           onSemesterSwitched: (_) {},
           onPayloadReady: payloads.add,
           onError: errors.add,
@@ -121,6 +123,7 @@ void main() {
         chunkState: chunkState,
         onStatus: (_) {},
         onSemesterDetected: (_) {},
+        onSemesterOptions: (_) {},
         onSemesterSwitched: (_) {},
         onPayloadReady: (_) {},
         onError: errors.add,

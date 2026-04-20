@@ -1,9 +1,81 @@
 import 'package:flutter/material.dart';
 
+import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
-import 'package:hai_schedule/utils/semester_code_formatter.dart' as semester_formatter;
+import 'package:hai_schedule/utils/semester_code_formatter.dart'
+    as semester_formatter;
 
-Future<String?> showCreateSemesterDialog(BuildContext context) async {
+Future<String?> showCreateSemesterDialog(
+  BuildContext context, {
+  required List<SemesterOption> knownSemesters,
+  required Set<String> existingCodes,
+}) async {
+  final candidates =
+      knownSemesters
+          .where((item) => !existingCodes.contains(item.code))
+          .toList()
+        ..sort((left, right) => right.code.compareTo(left.code));
+
+  if (candidates.isNotEmpty) {
+    var selectedCode = candidates.first.code;
+    return await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('新建学期'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedCode,
+                    decoration: const InputDecoration(labelText: '选择学期'),
+                    items:
+                        candidates
+                            .map(
+                              (option) => DropdownMenuItem<String>(
+                                value: option.code,
+                                child: Text(_optionLabel(option)),
+                              ),
+                            )
+                            .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => selectedCode = value);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '登录后解析出的教务学期会自动出现在这里，直接选择即可创建学期容器。',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.68),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed:
+                      () => Navigator.of(dialogContext).pop(selectedCode),
+                  child: const Text('创建'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   final controller = TextEditingController();
   try {
     return await showDialog<String>(
@@ -18,6 +90,19 @@ Future<String?> showCreateSemesterDialog(BuildContext context) async {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (knownSemesters.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        '当前已经包含所有已识别学期；若学校新开学期，可临时手动输入学期代码。',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.68),
+                        ),
+                      ),
+                    ),
                   TextField(
                     controller: controller,
                     autofocus: true,
@@ -29,7 +114,7 @@ Future<String?> showCreateSemesterDialog(BuildContext context) async {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    '先创建学期容器，再对这个学期执行登录同步或手动导入。',
+                    '先创建学期容器，再对这个学期执行登录同步。',
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(
@@ -97,10 +182,10 @@ Future<bool> confirmDeleteSemester(
 class CurrentSemesterSummaryCard extends StatelessWidget {
   const CurrentSemesterSummaryCard({
     super.key,
-    required this.currentSemesterCode,
+    required this.currentSemesterLabel,
   });
 
-  final String? currentSemesterCode;
+  final String? currentSemesterLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -130,9 +215,9 @@ class CurrentSemesterSummaryCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    currentSemesterCode == null
+                    currentSemesterLabel == null
                         ? '当前还没有激活学期'
-                        : formatSemesterCode(currentSemesterCode!),
+                        : currentSemesterLabel!,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -140,7 +225,7 @@ class CurrentSemesterSummaryCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '在这里统一管理学期容器，并直接对指定学期进行同步或导入。',
+                    '在这里统一管理学期容器，并直接对指定学期进行同步。',
                     style: TextStyle(
                       fontSize: 12.5,
                       color: theme.colorScheme.onSurface.withValues(
@@ -162,21 +247,21 @@ class SemesterManagementCard extends StatelessWidget {
   const SemesterManagementCard({
     super.key,
     required this.semesterCode,
+    required this.semesterLabel,
     required this.isCurrent,
     required this.canDelete,
     required this.onDelete,
     required this.onSwitch,
     required this.onLoginFetch,
-    required this.onManualImport,
   });
 
   final String semesterCode;
+  final String semesterLabel;
   final bool isCurrent;
   final bool canDelete;
   final Future<void> Function() onDelete;
   final Future<void> Function() onSwitch;
   final Future<void> Function() onLoginFetch;
-  final Future<void> Function() onManualImport;
 
   @override
   Widget build(BuildContext context) {
@@ -200,7 +285,7 @@ class SemesterManagementCard extends StatelessWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              formatSemesterCode(semesterCode),
+                              semesterLabel,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
@@ -279,13 +364,6 @@ class SemesterManagementCard extends StatelessWidget {
                   icon: const Icon(Icons.cloud_sync_outlined, size: 18),
                   label: const Text('同步该学期'),
                 ),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    await onManualImport();
-                  },
-                  icon: const Icon(Icons.file_download_outlined, size: 18),
-                  label: const Text('导入到该学期'),
-                ),
               ],
             ),
           ],
@@ -332,7 +410,7 @@ class EmptySemesterHint extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Text(
-          '当前还没有学期容器。你可以先新建一个学期，再对该学期执行登录同步或手动导入。',
+          '当前还没有学期容器。你可以先新建一个学期，再对该学期执行登录同步。',
           style: TextStyle(
             fontSize: 13.5,
             height: 1.5,
@@ -350,6 +428,13 @@ bool looksLikeSemesterCode(String value) {
 
 String formatSemesterCode(String code) =>
     semester_formatter.formatSemesterCode(code);
+
+String _optionLabel(SemesterOption option) {
+  return option.normalizedName.isNotEmpty
+      ? option.normalizedName
+      : formatSemesterCode(option.code);
+}
+
 /*
   if (!looksLikeSemesterCode(code)) return code;
   final startYear = int.parse(code.substring(0, 4));
