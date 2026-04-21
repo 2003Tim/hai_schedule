@@ -15,6 +15,7 @@ import 'package:hai_schedule/services/app_repositories.dart';
 import 'package:hai_schedule/services/auth_credentials_service.dart';
 import 'package:hai_schedule/services/course_repository.dart';
 import 'package:hai_schedule/services/dio_client.dart';
+import 'package:hai_schedule/services/invalid_credentials_exception.dart';
 import 'package:hai_schedule/services/login_expired_exception.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/services/schedule_sync_result_service.dart';
@@ -110,6 +111,7 @@ class AutoSyncService {
   }
 
   static Future<void> handleCredentialCleared() async {
+    await AuthCredentialsService.instance.clear();
     await DioClient.clearAllSessions();
     await _clearLiveWebViewCookies();
     await AppStorage.instance.clearCookieSnapshot();
@@ -151,8 +153,8 @@ class AutoSyncService {
     );
   }
 
-  static Future<AutoSyncSnapshot> loadSnapshot() async {
-    final record = await _syncRepository.loadRecord();
+  static Future<AutoSyncSnapshot> loadSnapshot({String? semesterCode}) async {
+    final record = await _syncRepository.loadRecord(semesterCode: semesterCode);
     final settings = await loadSettings();
     final ready = await hasCredentialReady();
     return AutoSyncSnapshot(
@@ -165,6 +167,8 @@ class AutoSyncService {
       lastError: record.lastError,
       lastSource: record.lastSource,
       lastDiffSummary: record.lastDiffSummary,
+      semesterCode: record.semesterCode,
+      semesterSyncRecord: record.semesterSyncRecord,
       credentialReady: ready,
     );
   }
@@ -283,13 +287,6 @@ class AutoSyncService {
       }
 
       final now = DateTime.now();
-      await _syncRepository.saveStatus(
-        lastAttemptTime: now,
-        state: AutoSyncState.syncing.value,
-        source: source,
-        message: source == 'manual' ? '正在同步课表...' : '正在自动检查课表更新...',
-      );
-
       final semester = await _scheduleRepository.loadActiveSemesterCode();
       if (semester == null || semester.isEmpty) {
         await _markLoginRequired('缺少学期信息，请先手动登录抓取一次', source: source);
@@ -299,10 +296,18 @@ class AutoSyncService {
         );
       }
 
+      await _syncRepository.saveStatus(
+        lastAttemptTime: now,
+        state: AutoSyncState.syncing.value,
+        source: source,
+        message: source == 'manual' ? '正在同步课表...' : '正在自动检查课表更新...',
+        semesterCode: semester,
+      );
+
       final cookie = await _readCookie();
       final courseRepository = CourseRepository();
       final fetchResult = await courseRepository
-          .fetchGraduateSchedule(semester: semester, cookie: cookie)
+          .syncCourse(semester: semester, cookie: cookie)
           .timeout(
             const Duration(seconds: 30),
             onTimeout: () => throw TimeoutException('课表同步超时，请稍后重试'),
@@ -320,7 +325,7 @@ class AutoSyncService {
         source: source,
       );
 
-      final snapshot = await loadSnapshot();
+      final snapshot = await loadSnapshot(semesterCode: semester);
       return AutoSyncResult.success(
         fetchResult.courses.length,
         _buildSuccessMessage(
@@ -329,6 +334,14 @@ class AutoSyncService {
         ),
         snapshot,
       );
+    } on InvalidCredentialsException catch (e) {
+      await handleCredentialCleared();
+      await _markLoginRequired(
+        e.message,
+        source: source,
+        error: 'invalid_credentials',
+      );
+      return AutoSyncResult.loginRequired(e.message, await loadSnapshot());
     } on LoginExpiredException catch (e) {
       await _clearInvalidCookieSnapshot();
       await _markLoginRequired(

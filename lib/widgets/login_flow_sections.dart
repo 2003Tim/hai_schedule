@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:hai_schedule/services/auth_credentials_service.dart';
+import 'package:hai_schedule/utils/schedule_ui_tokens.dart';
 
 typedef AsyncBoolCallback = Future<void> Function(bool value);
 typedef AsyncVoidCallback = Future<void> Function();
@@ -45,39 +46,138 @@ class LoginRememberPasswordTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Theme.of(
-        context,
-      ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
-      child: ListTile(
-        dense: true,
-        leading: Checkbox(
-          value: rememberPassword,
-          onChanged:
-              isFetching
-                  ? null
-                  : (value) {
-                    if (value == null) return;
-                    unawaited(onRememberPasswordChanged(value));
-                  },
-        ),
-        title: const Text('记住密码'),
-        subtitle: Text(
-          activeCredential == null
-              ? '输入账号后可直接登录并同步；勾选后会安全保存到本机'
-              : hasSavedCredential
-              ? '当前已保存账号：${activeCredential!.maskedUsername}'
-              : '当前临时账号：${activeCredential!.maskedUsername}（仅本次会话有效）',
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(
-              context,
-            ).colorScheme.onSurface.withValues(alpha: 0.66),
+    final theme = Theme.of(context);
+    final summaryText =
+        activeCredential == null
+            ? '输入账号后可直接登录并同步；勾选后会安全保存到本机。'
+            : hasSavedCredential
+            ? '当前已保存账号：${activeCredential!.maskedUsername}'
+            : '当前临时账号：${activeCredential!.maskedUsername}，仅本次会话有效。';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      child: Container(
+        decoration: ScheduleUiTokens.glassCardDecoration(
+          theme,
+          borderRadius: BorderRadius.circular(18),
+          fillColor: ScheduleUiTokens.glassFillFor(
+            theme,
+            alpha: theme.brightness == Brightness.dark ? 0.78 : 0.68,
           ),
         ),
-        trailing: TextButton(
-          onPressed: isFetching ? null : () => unawaited(onManageCredential()),
-          child: Text(activeCredential == null ? '输入账号' : '更换账号'),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 8, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Checkbox(
+                      value: rememberPassword,
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged:
+                          isFetching
+                              ? null
+                              : (value) {
+                                if (value == null) return;
+                                unawaited(onRememberPasswordChanged(value));
+                              },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '记住密码',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '勾选后会保存登录凭据，后续可直接续登同步。',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.66,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: activeCredential == null ? '输入账号' : '切换账号',
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 40,
+                      height: 40,
+                    ),
+                    onPressed:
+                        isFetching
+                            ? null
+                            : () => unawaited(onManageCredential()),
+                    icon: Icon(
+                      activeCredential == null
+                          ? Icons.badge_outlined
+                          : Icons.manage_accounts_outlined,
+                    ),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 46, right: 6),
+                child: Divider(
+                  height: 14,
+                  thickness: 0.8,
+                  color: theme.colorScheme.outlineVariant.withValues(
+                    alpha: 0.45,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 46, right: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.lock_outline_rounded,
+                      size: 14,
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.55,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        summaryText,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          height: 1.35,
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.68,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -130,6 +230,8 @@ class LoginStatusBanner extends StatelessWidget {
               selectedSemesterCode == null
                   ? statusText
                   : '目标学期 ${selectedSemesterLabel ?? selectedSemesterCode} · $statusText',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style:
                   textStyle ??
                   TextStyle(
@@ -186,42 +288,82 @@ class LoginFlowScaffold extends StatelessWidget {
   final Color? idleBackgroundColor;
   final TextStyle? statusTextStyle;
 
+  PreferredSizeWidget _buildHeader(BuildContext context) {
+    final theme = Theme.of(context);
+    final semesterTooltip =
+        selectedSemesterCode == null
+            ? '选择目标学期'
+            : '切换目标学期：${selectedSemesterLabel ?? selectedSemesterCode}';
+
+    return AppBar(
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      backgroundColor: ScheduleUiTokens.glassFillFor(
+        theme,
+        alpha: theme.brightness == Brightness.dark ? 0.84 : 0.90,
+      ),
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      leadingWidth: 44,
+      titleSpacing: 4,
+      leading: IconButton(
+        tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+        onPressed: () => Navigator.maybePop(context),
+        icon: const Icon(Icons.arrow_back_rounded),
+      ),
+      title: const Row(
+        children: [
+          Expanded(
+            child: Text('同步课表', maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+      actions: [
+        if (!isFetching)
+          IconButton(
+            tooltip: semesterTooltip,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            onPressed: () => unawaited(onPickTargetSemester()),
+            icon: const Icon(Icons.school_outlined),
+          ),
+        if (!isFetching)
+          IconButton(
+            tooltip: activeCredential == null ? '输入账号' : '切换账号',
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            onPressed: () => unawaited(onOpenCredentialEditor()),
+            icon: const Icon(Icons.manage_accounts_outlined),
+          ),
+        if (!isFetching && activeCredential != null)
+          IconButton(
+            tooltip: '清除凭据',
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            onPressed: () => unawaited(onClearSavedCredential()),
+            icon: const Icon(Icons.logout_rounded),
+          ),
+        if (canManualFetch && !isFetching)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: IconButton(
+              tooltip: '手动抓取',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              onPressed: () => unawaited(onAutoFetch()),
+              icon: const Icon(Icons.download_rounded),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('登录教务系统'),
-        actions: [
-          if (!isFetching)
-            IconButton(
-              tooltip: '输入账号',
-              onPressed: () => unawaited(onOpenCredentialEditor()),
-              icon: const Icon(Icons.manage_accounts_outlined),
-            ),
-          if (!isFetching && activeCredential != null)
-            IconButton(
-              tooltip: '清除凭据',
-              onPressed: () => unawaited(onClearSavedCredential()),
-              icon: const Icon(Icons.logout_rounded),
-            ),
-          if (!isFetching)
-            TextButton.icon(
-              onPressed: () => unawaited(onPickTargetSemester()),
-              icon: const Icon(Icons.school_outlined, size: 18),
-              label: Text(
-                selectedSemesterCode == null
-                    ? '自动学期'
-                    : (selectedSemesterLabel ?? selectedSemesterCode!),
-              ),
-            ),
-          if (canManualFetch && !isFetching)
-            TextButton.icon(
-              onPressed: () => unawaited(onAutoFetch()),
-              icon: const Icon(Icons.download, size: 18),
-              label: const Text('手动抓取'),
-            ),
-        ],
-      ),
+      appBar: _buildHeader(context),
       body: Column(
         children: [
           LoginRememberPasswordTile(

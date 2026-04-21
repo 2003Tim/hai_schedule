@@ -12,6 +12,7 @@ class AppStorageSchema {
   static const lastStateKey = 'last_auto_sync_state';
   static const lastSourceKey = 'last_auto_sync_source';
   static const lastDiffSummaryKey = 'last_auto_sync_diff_summary';
+  static const lastStateSemesterCodeKey = 'last_auto_sync_state_semester_code';
   static const nextSyncTimeKey = 'next_background_sync_time';
   static const frequencyKey = 'auto_sync_frequency';
   static const customIntervalMinutesKey = 'auto_sync_custom_interval_minutes';
@@ -21,6 +22,9 @@ class AppStorageSchema {
   static const activeSemesterKey = 'active_semester_code';
   static const scheduleArchiveKey = 'schedule_archive_by_semester';
   static const semesterCatalogKey = 'known_semester_catalog';
+  static const semesterSyncRecordsKey = 'semester_sync_records';
+  static const hasSyncedAtLeastOneSemesterKey =
+      'has_synced_at_least_one_semester';
   static const scheduleOverridesKey = 'schedule_overrides';
   static const schoolTimeConfigKey = 'school_time_config';
   static const schoolTimeGeneratorSettingsKey =
@@ -66,6 +70,8 @@ class AppStorageSchema {
     activeSemesterKey,
     scheduleArchiveKey,
     semesterCatalogKey,
+    semesterSyncRecordsKey,
+    hasSyncedAtLeastOneSemesterKey,
     scheduleOverridesKey,
     schoolTimeConfigKey,
     schoolTimeGeneratorSettingsKey,
@@ -92,6 +98,7 @@ class AppStorageSchema {
     lastStateKey,
     lastSourceKey,
     lastDiffSummaryKey,
+    lastStateSemesterCodeKey,
     nextSyncTimeKey,
     lastScheduleJsonKey,
     cookieSnapshotKey,

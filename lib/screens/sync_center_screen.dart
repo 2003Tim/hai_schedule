@@ -24,6 +24,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
   SavedPortalCredential? _savedCredential;
   bool _isSyncing = false;
   DateTime? _lastManualSyncTime;
+  String? _observedSemesterCode;
   static const _manualSyncCooldown = Duration(seconds: 30);
 
   @override
@@ -32,13 +33,28 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
     _refresh();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final semesterCode = context.read<ScheduleProvider>().currentSemesterCode;
+    if (semesterCode == _observedSemesterCode) {
+      return;
+    }
+    _observedSemesterCode = semesterCode;
+    Future<void>.microtask(_refresh);
+  }
+
   Future<void> _refresh() async {
-    final snapshot = await AutoSyncService.loadSnapshot();
+    final semesterCode = context.read<ScheduleProvider>().currentSemesterCode;
+    final snapshot = await AutoSyncService.loadSnapshot(
+      semesterCode: semesterCode,
+    );
     final credential = await AuthCredentialsService.instance.load();
     if (!mounted) return;
     setState(() {
       _snapshot = snapshot;
       _savedCredential = credential;
+      _observedSemesterCode = semesterCode;
     });
   }
 
@@ -82,7 +98,10 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
     if (_isSyncing) return;
 
     final provider = context.read<ScheduleProvider>();
-    final beforeSnapshot = await AutoSyncService.loadSnapshot();
+    final semesterCode = provider.currentSemesterCode;
+    final beforeSnapshot = await AutoSyncService.loadSnapshot(
+      semesterCode: semesterCode,
+    );
     if (!mounted) return;
 
     setState(() => _isSyncing = true);
@@ -105,7 +124,9 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
         ),
       );
 
-      var afterSnapshot = await AutoSyncService.loadSnapshot();
+      var afterSnapshot = await AutoSyncService.loadSnapshot(
+        semesterCode: semesterCode,
+      );
       final didUpdate =
           afterSnapshot.lastFetchTime != null &&
           (beforeSnapshot.lastFetchTime == null ||
@@ -118,7 +139,9 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
           source: source,
           message: '桌面前台同步未完成，可稍后重试',
         );
-        afterSnapshot = await AutoSyncService.loadSnapshot();
+        afterSnapshot = await AutoSyncService.loadSnapshot(
+          semesterCode: semesterCode,
+        );
       }
 
       await _refresh();
@@ -364,6 +387,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<ScheduleProvider>();
     final snapshot =
         _snapshot ??
         const AutoSyncSnapshot(
@@ -372,7 +396,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
             customIntervalMinutes: AutoSyncService.defaultCustomIntervalMinutes,
           ),
           state: AutoSyncState.idle,
-          message: '等待下一次同步',
+          message: '当前学期未同步',
         );
     final statusColor = _statusColor(context, snapshot);
     final canEnableAutomatic = snapshot.credentialReady;
@@ -382,6 +406,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
 
     final statusCard = SyncCenterStatusCard(
       snapshot: snapshot,
+      activeSemesterCode: provider.currentSemesterCode,
       savedCredential: _savedCredential,
       isSyncing: _isSyncing,
       isDesktop: isDesktop,

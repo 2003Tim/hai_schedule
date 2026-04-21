@@ -12,6 +12,7 @@ class SyncCenterStatusCard extends StatelessWidget {
   const SyncCenterStatusCard({
     super.key,
     required this.snapshot,
+    required this.activeSemesterCode,
     required this.savedCredential,
     required this.isSyncing,
     required this.isDesktop,
@@ -22,6 +23,7 @@ class SyncCenterStatusCard extends StatelessWidget {
   });
 
   final AutoSyncSnapshot snapshot;
+  final String? activeSemesterCode;
   final SavedPortalCredential? savedCredential;
   final bool isSyncing;
   final bool isDesktop;
@@ -32,6 +34,7 @@ class SyncCenterStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scopedRecord = snapshot.semesterSyncRecord;
     final statusLabel = _statusLabel(snapshot, isSyncing: isSyncing);
     final bodyText = _bodyText(
       snapshot,
@@ -105,7 +108,8 @@ class SyncCenterStatusCard extends StatelessWidget {
               ),
             ],
           ),
-          if (snapshot.lastDiffSummary != null &&
+          if (scopedRecord != null &&
+              snapshot.lastDiffSummary != null &&
               snapshot.lastDiffSummary!.isNotEmpty) ...[
             const SizedBox(height: 10),
             _InfoChip(
@@ -128,9 +132,20 @@ class SyncCenterStatusCard extends StatelessWidget {
             runSpacing: 8,
             children: [
               _InfoChip(
-                icon: Icons.history_rounded,
+                icon: Icons.school_rounded,
                 label:
-                    '上次更新 ${AutoSyncService.formatDateTime(snapshot.lastFetchTime)}',
+                    activeSemesterCode == null || activeSemesterCode!.isEmpty
+                        ? '当前学期未确定'
+                        : '当前学期 $activeSemesterCode',
+              ),
+              if (scopedRecord != null)
+                _InfoChip(
+                  icon: Icons.library_books_rounded,
+                  label: '本学期 ${scopedRecord.count} 门课程',
+                ),
+              _InfoChip(
+                icon: Icons.history_rounded,
+                label: _lastSyncLabel(snapshot),
               ),
               _InfoChip(
                 icon: Icons.schedule_rounded,
@@ -639,9 +654,7 @@ String _statusLabel(AutoSyncSnapshot snapshot, {required bool isSyncing}) {
     case AutoSyncState.loginRequired:
       return '需登录';
     case AutoSyncState.idle:
-      return snapshot.settings.frequency == AutoSyncFrequency.manual
-          ? '手动'
-          : '待机';
+      return snapshot.hasScopedSyncRecord ? '已同步' : '未同步';
     case AutoSyncState.syncing:
       return '同步中';
   }
@@ -679,9 +692,12 @@ String _bodyText(
     if (snapshot.state == AutoSyncState.failed) {
       return snapshot.message;
     }
+    if (!snapshot.hasScopedSyncRecord) {
+      return '当前学期还没有同步记录。点击“立即同步”后，系统会抓取当前学期课表并单独保存同步状态。';
+    }
     return savedCredential != null
-        ? '桌面前台自动同步已开启。应用启动或回到前台时，会按你设置的频率自动检查；如果刚好到点，系统会直接拉起同步流程。'
-        : '桌面前台自动同步已开启。建议你先保存账号密码，这样到点后系统就能自动填充登录页并继续抓课。';
+        ? '当前学期已同步 ${snapshot.semesterSyncRecord!.count} 门课程。应用启动或回到前台时，会按你设置的频率继续检查这个学期的更新。'
+        : '当前学期已同步 ${snapshot.semesterSyncRecord!.count} 门课程。建议你先保存账号密码，这样到点后系统就能自动填充登录页并继续抓课。';
   }
 
   if (isSyncing || snapshot.state == AutoSyncState.syncing) {
@@ -705,9 +721,12 @@ String _bodyText(
   if (snapshot.state == AutoSyncState.failed) {
     return snapshot.message;
   }
+  if (!snapshot.hasScopedSyncRecord) {
+    return '当前学期还没有同步记录。点击“立即同步”即可抓取本学期课表，之后各学期会分别显示自己的同步结果。';
+  }
   return snapshot.settings.frequency == AutoSyncFrequency.manual
-      ? '当前为仅手动同步模式。你可以随时点击“立即同步”手动刷新。'
-      : '自动同步已开启，系统会在下一次调度时间自动检查课表更新。';
+      ? '当前学期已同步 ${snapshot.semesterSyncRecord!.count} 门课程。现在是仅手动同步模式，你可以随时点击“立即同步”刷新。'
+      : '当前学期已同步 ${snapshot.semesterSyncRecord!.count} 门课程。系统会在下一次调度时间继续检查这个学期的课表更新。';
 }
 
 String _frequencyHelpText(
@@ -739,6 +758,14 @@ String _scheduleLabel(AutoSyncSnapshot snapshot, {required bool isDesktop}) {
   }
   final prefix = isDesktop ? '下次前台' : '下次后台';
   return '$prefix ${AutoSyncService.formatDateTime(snapshot.nextSyncTime)}';
+}
+
+String _lastSyncLabel(AutoSyncSnapshot snapshot) {
+  final lastSyncTime = snapshot.semesterSyncRecord?.lastSyncTime;
+  if (lastSyncTime == null) {
+    return '当前学期未同步';
+  }
+  return '上次同步 ${AutoSyncService.formatDateTime(lastSyncTime)}';
 }
 
 IconData _credentialInfoIcon(AutoSyncSnapshot snapshot) {

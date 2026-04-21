@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:hai_schedule/services/api_service.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
 import 'package:hai_schedule/services/auth_credentials_service.dart';
+import 'package:hai_schedule/services/invalid_credentials_exception.dart';
 import 'package:hai_schedule/services/login_expired_exception.dart';
 
 class PortalHttpLoginService {
@@ -54,7 +55,7 @@ class PortalHttpLoginService {
           .map((entry) => '${_urlEncode(entry.key)}=${_urlEncode(entry.value)}')
           .join('&');
 
-      await _openRequest(
+      final loginResultPage = await _openRequest(
         url: form.actionUrl,
         method: 'POST',
         body: loginBody,
@@ -62,6 +63,9 @@ class PortalHttpLoginService {
         cookieJar: cookies,
         followRedirects: true,
       );
+      if (_containsInvalidCredentialError(loginResultPage.body)) {
+        throw const InvalidCredentialsException();
+      }
 
       final verifyPage = await _openRequest(
         url: _indexUrl,
@@ -69,6 +73,9 @@ class PortalHttpLoginService {
         cookieJar: cookies,
         followRedirects: true,
       );
+      if (_containsInvalidCredentialError(verifyPage.body)) {
+        throw const InvalidCredentialsException();
+      }
 
       final verifyUrl = verifyPage.url.toLowerCase();
       final loginStillRequired =
@@ -89,6 +96,8 @@ class PortalHttpLoginService {
       await _syncRepository.saveCookieSnapshot(mergedCookie);
       return mergedCookie;
     } on LoginExpiredException {
+      rethrow;
+    } on InvalidCredentialsException {
       rethrow;
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionTimeout ||
@@ -236,6 +245,17 @@ class PortalHttpLoginService {
         lower.contains('right-header-title') ||
         lower.contains('dynamiccode') ||
         lower.contains('reauthsubmitbtn');
+  }
+
+  bool _containsInvalidCredentialError(String html) {
+    if (html.trim().isEmpty) return false;
+    final lower = html.toLowerCase();
+    return lower.contains('用户名或密码错误') ||
+        lower.contains('账号或密码错误') ||
+        lower.contains('用户名密码错误') ||
+        lower.contains('密码错误') ||
+        lower.contains('bad credentials') ||
+        lower.contains('invalid credentials');
   }
 
   String? _findAttr(String tag, String name) {

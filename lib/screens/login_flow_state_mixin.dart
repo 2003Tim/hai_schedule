@@ -26,10 +26,12 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
 
   bool _isWebviewReady = false;
   bool _isFetching = false;
+  bool _isInteractingWithDialog = false;
   bool _rememberPassword = false;
   bool _suspendLoginAutomation = false;
   bool _credentialEditorOpened = false;
   String _statusText = '';
+  String? _currentUrl;
   String? _lastDetectedSemester;
   String? _selectedSemesterCode;
   SavedPortalCredential? _savedCredential;
@@ -116,9 +118,12 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   void _onUrlChanged(String url) {
+    _currentUrl = url;
     if (_isFetching) return;
 
-    if (!_suspendLoginAutomation && loginFetchService.shouldAutoFetch(url)) {
+    if (!_isInteractingWithDialog &&
+        !_suspendLoginAutomation &&
+        loginFetchService.shouldAutoFetch(url)) {
       _autofillController.stop(clearPending: true);
       unawaited(_autoFetch());
       return;
@@ -131,13 +136,15 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
                 ? LoginFlowText.manualLoginPrompt
                 : LoginFlowText.tryingSavedCredentialLogin;
       });
-      if (_activeCredential != null &&
+      if (!_isInteractingWithDialog &&
+          _activeCredential != null &&
           (!_suspendLoginAutomation || _autofillController.pendingAutofill)) {
         _scheduleAutofillBurst();
       }
       return;
     }
 
+    if (_isInteractingWithDialog) return;
     _autofillController.stop();
   }
 
@@ -157,10 +164,46 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   void _scheduleAutofillBurst() {
-    if (_activeCredential == null || _autofillController.loopActive) {
+    if (_isInteractingWithDialog ||
+        _activeCredential == null ||
+        _autofillController.loopActive) {
       return;
     }
     _autofillController.start(_runAutofillAttempt);
+  }
+
+  Future<R?> _runWhileDialogOpen<R>(
+    Future<R?> Function() action, {
+    bool resumeAutofillOnClose = true,
+  }) async {
+    if (mounted) {
+      setState(() => _isInteractingWithDialog = true);
+    }
+    _autofillController.stop();
+    try {
+      return await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isInteractingWithDialog = false);
+        if (resumeAutofillOnClose) {
+          _resumeAutofillIfPossible();
+        }
+      }
+    }
+  }
+
+  void _resumeAutofillIfPossible() {
+    final currentUrl = _currentUrl;
+    if (_isInteractingWithDialog ||
+        _isFetching ||
+        _activeCredential == null ||
+        !_isWebviewReady ||
+        !_autofillController.pendingAutofill ||
+        currentUrl == null ||
+        !loginFetchService.isLoginUrl(currentUrl)) {
+      return;
+    }
+    _scheduleAutofillBurst();
   }
 
   void _handleAutofillStatus(String status) {
@@ -183,6 +226,10 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
 
   void _runAutofillAttempt() {
     if (!mounted || !_autofillController.loopActive) return;
+    if (_isInteractingWithDialog) {
+      _autofillController.stop();
+      return;
+    }
     _autofillController.beginAttempt();
     unawaited(
       _autofillSavedCredential(
@@ -204,6 +251,9 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
 
   Future<void> _autofillSavedCredential({required bool autoSubmit}) async {
     final credential = _activeCredential;
+    if (_isInteractingWithDialog) {
+      return;
+    }
     if (credential == null || !_isWebviewReady) {
       _autofillController.stop(clearPending: true);
       return;
@@ -226,6 +276,29 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     } catch (_) {
       // Best-effort autofill only.
     }
+  }
+
+  Future<void> _handleLoginError(String errorText) async {
+    _autofillController.stop(clearPending: true);
+    try {
+      await _webviewAdapter.stopLoading();
+    } catch (_) {
+      // Best-effort stop only.
+    }
+    await AutoSyncService.handleCredentialCleared();
+    if (!mounted) return;
+    setState(() {
+      _savedCredential = null;
+      _activeCredential = null;
+      _rememberPassword = false;
+      _isFetching = false;
+      _suspendLoginAutomation = true;
+      _statusText = errorText.isNotEmpty ? errorText : '检测到登录报错，已停止自动尝试，请核对账密';
+    });
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('检测到登录报错，已停止自动尝试，请核对账密')));
   }
 
   Future<void> _resetLoginSession({bool autofillAfterReload = true}) async {
@@ -274,14 +347,20 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _openCredentialEditor({bool force = false}) async {
-    final result = await showLoginCredentialEditorDialog(
-      context: context,
-      currentCredential: _activeCredential ?? _savedCredential,
-      rememberPassword: _rememberPassword,
-      force: force,
+    final result = await _runWhileDialogOpen(
+      () => showLoginCredentialEditorDialog(
+        context: context,
+        currentCredential: _activeCredential ?? _savedCredential,
+        rememberPassword: _rememberPassword,
+        force: force,
+      ),
+      resumeAutofillOnClose: false,
     );
 
-    if (result == null || !mounted) return;
+    if (result == null || !mounted) {
+      _resumeAutofillIfPossible();
+      return;
+    }
     final username = result.username.trim();
     final password = result.password;
     final credential = SavedPortalCredential(
@@ -354,19 +433,23 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _pickTargetSemester() async {
-    final selection = await showLoginSemesterPicker(
-      context: context,
-      selectedSemesterCode: _selectedSemesterCode,
-      optionLabels:
-          _semesterOptions
-              .map(
-                (option) =>
-                    option.normalizedName.isNotEmpty
-                        ? option.normalizedName
-                        : _loginFlowCoordinator.formatSemesterCode(option.code),
-              )
-              .toList(),
-      optionCodes: _semesterOptions.map((option) => option.code).toList(),
+    final selection = await _runWhileDialogOpen(
+      () => showLoginSemesterPicker(
+        context: context,
+        selectedSemesterCode: _selectedSemesterCode,
+        optionLabels:
+            _semesterOptions
+                .map(
+                  (option) =>
+                      option.normalizedName.isNotEmpty
+                          ? option.normalizedName
+                          : _loginFlowCoordinator.formatSemesterCode(
+                            option.code,
+                          ),
+                )
+                .toList(),
+        optionCodes: _semesterOptions.map((option) => option.code).toList(),
+      ),
     );
     if (selection == null || !mounted) return;
     setState(() => _selectedSemesterCode = selection.semesterCode);
@@ -401,6 +484,9 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
         unawaited(_handleSemesterOptions(options));
       },
       onPayloadReady: _processData,
+      onLoginError: (error) {
+        unawaited(_handleLoginError(error));
+      },
       onAutofillStatus: _handleAutofillStatus,
       onAutofillResult: _handleAutofillResult,
       emptySemesterMessage: LoginFlowText.emptyDetectedSemester,

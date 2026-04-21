@@ -18,6 +18,8 @@ class LoadedScheduleState {
   final String? currentSemesterCode;
   final List<String> availableSemesterCodes;
   final List<SemesterOption> availableSemesterOptions;
+  final List<SemesterOption> knownSemesterCatalog;
+  final bool hasSyncedAtLeastOneSemester;
   final int displayDays;
   final bool showNonCurrentWeek;
 
@@ -29,6 +31,8 @@ class LoadedScheduleState {
     required this.currentSemesterCode,
     required this.availableSemesterCodes,
     required this.availableSemesterOptions,
+    required this.knownSemesterCatalog,
+    required this.hasSyncedAtLeastOneSemester,
     required this.displayDays,
     required this.showNonCurrentWeek,
   });
@@ -57,6 +61,11 @@ class ScheduleStateLoader {
       semesterCode: activeSemester,
     );
     final preferences = await _preferencesRepository.load();
+    final knownSemesterCatalog =
+        await _scheduleRepository.loadKnownSemesterOptions();
+    final availableSemesterCodes = await loadAvailableSemesterCodes(
+      additional: cache.semesterCode,
+    );
 
     return LoadedScheduleState(
       courses: await _resolveCourses(cache),
@@ -67,12 +76,14 @@ class ScheduleStateLoader {
         semesterCode: cache.semesterCode,
       ),
       currentSemesterCode: cache.semesterCode,
-      availableSemesterCodes: await loadAvailableSemesterCodes(
-        additional: cache.semesterCode,
+      availableSemesterCodes: availableSemesterCodes,
+      availableSemesterOptions: _mergeAvailableSemesterOptions(
+        knownOptions: knownSemesterCatalog,
+        availableCodes: availableSemesterCodes,
       ),
-      availableSemesterOptions: await loadAvailableSemesterOptions(
-        additional: cache.semesterCode,
-      ),
+      knownSemesterCatalog: knownSemesterCatalog,
+      hasSyncedAtLeastOneSemester:
+          await _scheduleRepository.loadHasSyncedAtLeastOneSemester(),
       displayDays: preferences.displayDays,
       showNonCurrentWeek: preferences.showNonCurrentWeek,
     );
@@ -94,6 +105,16 @@ class ScheduleStateLoader {
     final availableCodes = await loadAvailableSemesterCodes(
       additional: additional,
     );
+    return _mergeAvailableSemesterOptions(
+      knownOptions: knownOptions,
+      availableCodes: availableCodes,
+    );
+  }
+
+  List<SemesterOption> _mergeAvailableSemesterOptions({
+    required List<SemesterOption> knownOptions,
+    required List<String> availableCodes,
+  }) {
     final merged = <String, SemesterOption>{};
 
     for (final option in knownOptions) {

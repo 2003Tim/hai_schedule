@@ -37,6 +37,8 @@ class AppStorage {
   static const String _lastStateKey = AppStorageSchema.lastStateKey;
   static const String _lastSourceKey = AppStorageSchema.lastSourceKey;
   static const String _lastDiffSummaryKey = AppStorageSchema.lastDiffSummaryKey;
+  static const String _lastStateSemesterCodeKey =
+      AppStorageSchema.lastStateSemesterCodeKey;
   static const String _nextSyncTimeKey = AppStorageSchema.nextSyncTimeKey;
   static const String _frequencyKey = AppStorageSchema.frequencyKey;
   static const String _customIntervalMinutesKey =
@@ -46,6 +48,10 @@ class AppStorage {
   static const String _activeSemesterKey = AppStorageSchema.activeSemesterKey;
   static const String _scheduleArchiveKey = AppStorageSchema.scheduleArchiveKey;
   static const String _semesterCatalogKey = AppStorageSchema.semesterCatalogKey;
+  static const String _semesterSyncRecordsKey =
+      AppStorageSchema.semesterSyncRecordsKey;
+  static const String _hasSyncedAtLeastOneSemesterKey =
+      AppStorageSchema.hasSyncedAtLeastOneSemesterKey;
   static const String _scheduleOverridesKey =
       AppStorageSchema.scheduleOverridesKey;
   static const String _schoolTimeConfigKey =
@@ -201,6 +207,52 @@ class AppStorage {
     await prefs.setString(_semesterCatalogKey, json.encode(normalized));
   }
 
+  Future<bool> loadHasSyncedAtLeastOneSemester() async {
+    final prefs = await _reloadedPrefs();
+    final stored = prefs.getBool(_hasSyncedAtLeastOneSemesterKey);
+    if (stored != null) {
+      return stored;
+    }
+
+    final migrated = await _migrateHasSyncedAtLeastOneSemester(prefs);
+    return migrated;
+  }
+
+  Future<void> saveHasSyncedAtLeastOneSemester(bool value) async {
+    final prefs = await _prefs;
+    await prefs.setBool(_hasSyncedAtLeastOneSemesterKey, value);
+  }
+
+  Future<SemesterSyncRecord?> loadSemesterSyncRecord(
+    String semesterCode,
+  ) async {
+    final prefs = await _reloadedPrefs();
+    await _migrateLegacySemesterSyncRecord(prefs, semesterCode: semesterCode);
+    final records = AppStorageCodec.decodeSemesterSyncRecordMap(
+      prefs.getString(_semesterSyncRecordsKey),
+    );
+    return records[semesterCode];
+  }
+
+  Future<void> saveSemesterSyncRecord({
+    required String semesterCode,
+    required int count,
+    required DateTime lastSyncTime,
+  }) async {
+    final prefs = await _reloadedPrefs();
+    final records = AppStorageCodec.decodeSemesterSyncRecordMap(
+      prefs.getString(_semesterSyncRecordsKey),
+    );
+    records[semesterCode] = SemesterSyncRecord(
+      count: count,
+      lastSyncTime: lastSyncTime,
+    );
+    await prefs.setString(
+      _semesterSyncRecordsKey,
+      AppStorageCodec.encodeSemesterSyncRecordMap(records),
+    );
+  }
+
   Future<StoredSemesterSchedule?> loadSemesterArchive(
     String semesterCode,
   ) async {
@@ -258,6 +310,16 @@ class AppStorage {
       _scheduleArchiveKey,
       AppStorageCodec.encodeScheduleArchiveMap(archive),
     );
+
+    final syncRecords = AppStorageCodec.decodeSemesterSyncRecordMap(
+      prefs.getString(_semesterSyncRecordsKey),
+    );
+    if (syncRecords.remove(semesterCode) != null) {
+      await prefs.setString(
+        _semesterSyncRecordsKey,
+        AppStorageCodec.encodeSemesterSyncRecordMap(syncRecords),
+      );
+    }
 
     final overrides = AppStorageCodec.decodeScheduleOverrides(
       prefs.getString(_scheduleOverridesKey),
@@ -383,30 +445,61 @@ class AppStorage {
     await prefs.setBool(_showNonCurrentWeekKey, showNonCurrentWeek);
   }
 
-  Future<StoredAutoSyncRecord> loadAutoSyncRecord() async {
-    final prefs = await _prefs;
-    await prefs.reload();
+  Future<StoredAutoSyncRecord> loadAutoSyncRecord({
+    String? semesterCode,
+  }) async {
+    final prefs = await _reloadedPrefs();
+    final resolvedSemester =
+        semesterCode?.trim().isNotEmpty == true
+            ? semesterCode!.trim()
+            : _readActiveSemesterCode(prefs);
+    await _migrateLegacySemesterSyncRecord(
+      prefs,
+      semesterCode: resolvedSemester,
+    );
+
+    final semesterSyncRecord =
+        resolvedSemester == null || resolvedSemester.isEmpty
+            ? null
+            : AppStorageCodec.decodeSemesterSyncRecordMap(
+              prefs.getString(_semesterSyncRecordsKey),
+            )[resolvedSemester];
+    final stateSemesterCode = prefs.getString(_lastStateSemesterCodeKey);
+    final stateMatchesActive =
+        resolvedSemester != null &&
+        resolvedSemester.isNotEmpty &&
+        stateSemesterCode == resolvedSemester;
+
     return StoredAutoSyncRecord(
       frequency: prefs.getString(_frequencyKey) ?? 'daily',
       customIntervalMinutes: prefs.getInt(_customIntervalMinutesKey),
-      lastFetchTime: AppStorageCodec.readTime(
-        prefs.getString(_lastFetchTimeKey),
-      ),
-      lastAttemptTime: AppStorageCodec.readTime(
-        prefs.getString(_lastAttemptTimeKey),
-      ),
+      lastFetchTime: semesterSyncRecord?.lastSyncTime,
+      lastAttemptTime:
+          stateMatchesActive
+              ? AppStorageCodec.readTime(prefs.getString(_lastAttemptTimeKey))
+              : null,
       nextSyncTime: AppStorageCodec.readTime(prefs.getString(_nextSyncTimeKey)),
-      state: prefs.getString(_lastStateKey),
-      message: prefs.getString(_lastMessageKey),
-      lastError: prefs.getString(_lastErrorKey),
-      lastSource: prefs.getString(_lastSourceKey),
-      lastDiffSummary: prefs.getString(_lastDiffSummaryKey),
-      semesterCode:
-          prefs.getString(_activeSemesterKey) ??
-          prefs.getString(_semesterKey) ??
-          prefs.getString(_legacySemesterKey),
+      state:
+          stateMatchesActive
+              ? prefs.getString(_lastStateKey)
+              : semesterSyncRecord != null
+              ? 'success'
+              : 'idle',
+      message:
+          stateMatchesActive
+              ? prefs.getString(_lastMessageKey)
+              : semesterSyncRecord != null
+              ? '当前学期已同步 ${semesterSyncRecord.count} 门课程'
+              : '当前学期未同步',
+      lastError: stateMatchesActive ? prefs.getString(_lastErrorKey) : null,
+      lastSource: stateMatchesActive ? prefs.getString(_lastSourceKey) : null,
+      lastDiffSummary:
+          stateMatchesActive ? prefs.getString(_lastDiffSummaryKey) : null,
+      semesterCode: resolvedSemester,
+      stateSemesterCode: stateSemesterCode,
       cookieSnapshot: await loadCookieSnapshot(),
       rawScheduleJson: prefs.getString(_lastScheduleJsonKey),
+      semesterSyncRecord: semesterSyncRecord,
     );
   }
 
@@ -429,6 +522,7 @@ class AppStorage {
     String? source,
     String? diffSummary,
     String? error,
+    String? semesterCode,
     bool clearError = false,
     bool clearDiffSummary = false,
     DateTime? lastFetchTime,
@@ -438,6 +532,10 @@ class AppStorage {
     String? cookieSnapshot,
   }) async {
     final prefs = await _prefs;
+    final resolvedSemester =
+        semesterCode?.trim().isNotEmpty == true
+            ? semesterCode!.trim()
+            : _readActiveSemesterCode(prefs);
 
     if (state != null) {
       await prefs.setString(_lastStateKey, state);
@@ -460,6 +558,19 @@ class AppStorage {
     }
     if (lastFetchTime != null) {
       await prefs.setString(_lastFetchTimeKey, lastFetchTime.toIso8601String());
+    }
+    if (resolvedSemester != null && resolvedSemester.isNotEmpty) {
+      await prefs.setString(_lastStateSemesterCodeKey, resolvedSemester);
+    } else if (state != null ||
+        message != null ||
+        source != null ||
+        diffSummary != null ||
+        error != null ||
+        clearError ||
+        clearDiffSummary ||
+        lastFetchTime != null ||
+        lastAttemptTime != null) {
+      await prefs.remove(_lastStateSemesterCodeKey);
     }
     if (lastAttemptTime != null) {
       await prefs.setString(
@@ -658,6 +769,74 @@ class AppStorage {
     return AppStorageCodec.decodeScheduleArchiveMap(
       prefs.getString(_scheduleArchiveKey),
     );
+  }
+
+  Future<void> _migrateLegacySemesterSyncRecord(
+    SharedPreferences prefs, {
+    String? semesterCode,
+  }) async {
+    final resolvedSemester = semesterCode ?? _readActiveSemesterCode(prefs);
+    if (resolvedSemester == null || resolvedSemester.isEmpty) {
+      return;
+    }
+
+    final records = AppStorageCodec.decodeSemesterSyncRecordMap(
+      prefs.getString(_semesterSyncRecordsKey),
+    );
+    if (records.containsKey(resolvedSemester)) {
+      return;
+    }
+
+    final lastFetchTime = AppStorageCodec.readTime(
+      prefs.getString(_lastFetchTimeKey),
+    );
+    if (lastFetchTime == null) {
+      return;
+    }
+
+    final archive = await _loadScheduleArchiveMapFromPrefs(prefs);
+    final storedSemester = AppStorageCodec.readSemesterArchive(
+      archive,
+      resolvedSemester,
+    );
+    final count =
+        storedSemester?.courses.length ??
+        AppStorageCodec.decodeGlobalCourseMirror(
+          prefs.getStringList(_coursesKey),
+        ).length;
+    records[resolvedSemester] = SemesterSyncRecord(
+      count: count,
+      lastSyncTime: lastFetchTime,
+    );
+    await prefs.setString(
+      _semesterSyncRecordsKey,
+      AppStorageCodec.encodeSemesterSyncRecordMap(records),
+    );
+    await prefs.setString(_lastStateSemesterCodeKey, resolvedSemester);
+  }
+
+  Future<bool> _migrateHasSyncedAtLeastOneSemester(
+    SharedPreferences prefs,
+  ) async {
+    final hasSemesterArchives =
+        AppStorageCodec.decodeScheduleArchiveMap(
+          prefs.getString(_scheduleArchiveKey),
+        ).isNotEmpty;
+    final hasSyncRecords =
+        AppStorageCodec.decodeSemesterSyncRecordMap(
+          prefs.getString(_semesterSyncRecordsKey),
+        ).isNotEmpty;
+    final hasSuccessfulFetch =
+        AppStorageCodec.readTime(prefs.getString(_lastFetchTimeKey)) != null;
+    final hasSuccessfulState = prefs.getString(_lastStateKey) == 'success';
+
+    final migrated =
+        hasSemesterArchives ||
+        hasSyncRecords ||
+        hasSuccessfulFetch ||
+        hasSuccessfulState;
+    await prefs.setBool(_hasSyncedAtLeastOneSemesterKey, migrated);
+    return migrated;
   }
 
   Future<void> _persistCookieSnapshot(String cookie) async {

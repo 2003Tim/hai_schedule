@@ -5,6 +5,7 @@ import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/services/semester_catalog_parser.dart';
 
 class LoginFetchBridgeHandler {
+  static const _loginErrorPrefix = 'LOGIN_ERROR:';
   static const _autofillStatusPrefix = 'AUTOFILL_STATUS:';
   static const _autofillResultPrefix = 'AUTOFILL_RESULT:';
   static const _semesterPrefix = 'SEMESTER:';
@@ -18,6 +19,7 @@ class LoginFetchBridgeHandler {
 
   /// 允许的消息前缀集合，用于快速过滤非预期消息
   static const _knownPrefixes = [
+    _loginErrorPrefix,
     _autofillStatusPrefix,
     _autofillResultPrefix,
     _semesterPrefix,
@@ -42,6 +44,7 @@ class LoginFetchBridgeHandler {
     required ValueChanged<String> onSemesterSwitched,
     required ValueChanged<String> onPayloadReady,
     required ValueChanged<String> onError,
+    ValueChanged<String>? onLoginError,
     ValueChanged<String>? onAutofillStatus,
     ValueChanged<LoginAutofillResult>? onAutofillResult,
   }) {
@@ -49,6 +52,11 @@ class LoginFetchBridgeHandler {
     if (message.length > _maxMessageLength) return;
     // 丢弃不匹配任何已知前缀的消息，过滤页面其他脚本产生的噪声
     if (!_knownPrefixes.any(message.startsWith)) return;
+
+    if (message.startsWith(_loginErrorPrefix)) {
+      onLoginError?.call(message.substring(_loginErrorPrefix.length).trim());
+      return;
+    }
 
     if (message.startsWith(_autofillStatusPrefix)) {
       onAutofillStatus?.call(

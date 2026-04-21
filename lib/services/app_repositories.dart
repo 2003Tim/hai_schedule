@@ -67,6 +67,12 @@ class ScheduleRepository {
   Future<void> saveKnownSemesterOptions(List<SemesterOption> options) =>
       _storage.saveKnownSemesterOptions(options);
 
+  Future<bool> loadHasSyncedAtLeastOneSemester() =>
+      _storage.loadHasSyncedAtLeastOneSemester();
+
+  Future<void> saveHasSyncedAtLeastOneSemester(bool value) =>
+      _storage.saveHasSyncedAtLeastOneSemester(value);
+
   Future<void> saveImportedSchedule({
     required String rawScheduleJson,
     required String semesterCode,
@@ -156,7 +162,8 @@ class SyncRepository {
 
   final AppStorage _storage;
 
-  Future<StoredAutoSyncRecord> loadRecord() => _storage.loadAutoSyncRecord();
+  Future<StoredAutoSyncRecord> loadRecord({String? semesterCode}) =>
+      _storage.loadAutoSyncRecord(semesterCode: semesterCode);
 
   Future<void> saveFrequency(String frequency, {int? customIntervalMinutes}) =>
       _storage.saveAutoSyncSettings(
@@ -171,6 +178,7 @@ class SyncRepository {
     String? diffSummary,
     String? error,
     String? cookieSnapshot,
+    String? semesterCode,
     bool clearError = false,
     bool clearDiffSummary = false,
     DateTime? lastFetchTime,
@@ -185,6 +193,7 @@ class SyncRepository {
       diffSummary: diffSummary,
       error: error,
       cookieSnapshot: cookieSnapshot,
+      semesterCode: semesterCode,
       clearError: clearError,
       clearDiffSummary: clearDiffSummary,
       lastFetchTime: lastFetchTime,
@@ -193,6 +202,21 @@ class SyncRepository {
       clearNextSyncTime: clearNextSyncTime,
     );
   }
+
+  Future<void> saveSemesterSyncRecord({
+    required String semesterCode,
+    required int count,
+    required DateTime lastSyncTime,
+  }) {
+    return _storage.saveSemesterSyncRecord(
+      semesterCode: semesterCode,
+      count: count,
+      lastSyncTime: lastSyncTime,
+    );
+  }
+
+  Future<SemesterSyncRecord?> loadSemesterSyncRecord(String semesterCode) =>
+      _storage.loadSemesterSyncRecord(semesterCode);
 
   Future<void> saveCookieSnapshot(String cookie) =>
       _storage.saveCookieSnapshot(cookie);

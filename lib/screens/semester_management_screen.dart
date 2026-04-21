@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:hai_schedule/models/semester_option.dart';
+import 'package:hai_schedule/screens/login_router.dart';
+import 'package:hai_schedule/screens/sync_center_screen.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/widgets/semester_management_sections.dart';
-import 'package:hai_schedule/screens/login_router.dart';
 
 class SemesterManagementScreen extends StatelessWidget {
   const SemesterManagementScreen({super.key});
@@ -12,31 +13,41 @@ class SemesterManagementScreen extends StatelessWidget {
   Future<void> _showCreateSemesterDialog(BuildContext context) async {
     final provider = context.read<ScheduleProvider>();
     final messenger = ScaffoldMessenger.of(context);
-    final created = await showCreateSemesterDialog(
+    final result = await showCreateSemesterDialog(
       context,
-      knownSemesters: provider.availableSemesterOptions,
+      semesterCatalog: provider.knownSemesterCatalog,
       existingCodes: provider.availableSemesterCodes.toSet(),
     );
 
-    if (created == null || created.isEmpty) return;
-    if (provider.availableSemesterCodes.contains(created)) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('该学期已存在'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-
-    await provider.createSemester(created);
     if (!context.mounted) return;
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('已创建并切换到 ${formatSemesterCode(created)}'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    switch (result.action) {
+      case NewSemesterDialogAction.cancel:
+        return;
+      case NewSemesterDialogAction.goToSync:
+        await _openSyncCenter(context);
+        return;
+      case NewSemesterDialogAction.create:
+        final created = result.semesterCode;
+        if (created == null || created.isEmpty) return;
+        if (provider.availableSemesterCodes.contains(created)) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('该学期已存在'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+        await provider.createSemester(created);
+        if (!context.mounted) return;
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('已创建并切换到 ${formatSemesterCode(created)}'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+    }
   }
 
   Future<void> _switchSemester(
@@ -58,12 +69,14 @@ class SemesterManagementScreen extends StatelessWidget {
   Future<void> _deleteSemester(
     BuildContext context, {
     required String semesterCode,
+    required bool isLastSemester,
   }) async {
     final provider = context.read<ScheduleProvider>();
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await confirmDeleteSemester(
       context,
       semesterCode: semesterCode,
+      isLastSemester: isLastSemester,
     );
     if (!confirmed) return;
 
@@ -89,16 +102,22 @@ class SemesterManagementScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _openSyncCenter(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SyncCenterScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ScheduleProvider>();
+    final hasUnlockedEntry = provider.hasSyncedAtLeastOneSemester;
     final codes = [...provider.availableSemesterCodes]
       ..sort((a, b) => b.compareTo(a));
-    // TODO(sync-windows-followup): Windows 端仍需把同步设置等剩余学期入口
-    // 统一成和这里一致的下拉选择体验，避免残留的代码级学期操作路径。
     final optionByCode = <String, SemesterOption>{
       for (final option in provider.availableSemesterOptions)
-        option.code: option,
+        option.normalizedCode: option,
     };
 
     String semesterLabel(String code) {
@@ -109,14 +128,20 @@ class SemesterManagementScreen extends StatelessWidget {
       return formatSemesterCode(code);
     }
 
+    final canCreateSemester =
+        hasUnlockedEntry && provider.knownSemesterCatalog.isNotEmpty;
+
     return Scaffold(
       appBar: AppBar(title: const Text('学期管理'), centerTitle: true),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'semester_management_create',
-        onPressed: () => _showCreateSemesterDialog(context),
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('新建学期'),
-      ),
+      floatingActionButton:
+          hasUnlockedEntry
+              ? FloatingActionButton.extended(
+                heroTag: 'semester_management_create',
+                onPressed: () => _showCreateSemesterDialog(context),
+                icon: const Icon(Icons.add_rounded),
+                label: Text(canCreateSemester ? '新建学期' : '更新学期目录'),
+              )
+              : null,
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
         children: [
@@ -127,8 +152,18 @@ class SemesterManagementScreen extends StatelessWidget {
                     : semesterLabel(provider.currentSemesterCode!),
           ),
           const SizedBox(height: 16),
-          if (codes.isEmpty)
-            const EmptySemesterHint()
+          if (!hasUnlockedEntry)
+            SemesterManagementLockedState(
+              onGoToSyncCenter: () {
+                _openSyncCenter(context);
+              },
+            )
+          else if (codes.isEmpty)
+            SemesterManagementEmptyState(
+              onGoToSyncCenter: () {
+                _openSyncCenter(context);
+              },
+            )
           else
             ...codes.map(
               (code) => Padding(
@@ -137,8 +172,13 @@ class SemesterManagementScreen extends StatelessWidget {
                   semesterCode: code,
                   semesterLabel: semesterLabel(code),
                   isCurrent: code == provider.currentSemesterCode,
-                  canDelete: codes.length > 1,
-                  onDelete: () => _deleteSemester(context, semesterCode: code),
+                  canDelete: true,
+                  onDelete:
+                      () => _deleteSemester(
+                        context,
+                        semesterCode: code,
+                        isLastSemester: codes.length == 1,
+                      ),
                   onSwitch: () => _switchSemester(context, semesterCode: code),
                   onLoginFetch:
                       () => _openLoginFetch(context, semesterCode: code),

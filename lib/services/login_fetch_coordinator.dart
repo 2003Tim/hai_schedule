@@ -155,6 +155,7 @@ class LoginFetchCoordinator {
     required Future<void> Function(String semester) onSemesterReady,
     required ValueChanged<List<SemesterOption>> onSemesterOptions,
     required Future<void> Function(String jsonStr) onPayloadReady,
+    required ValueChanged<String> onLoginError,
     required ValueChanged<String> onAutofillStatus,
     required ValueChanged<LoginAutofillResult> onAutofillResult,
     String emptySemesterMessage =
@@ -196,6 +197,7 @@ class LoginFetchCoordinator {
           ),
         );
       },
+      onLoginError: onLoginError,
       onAutofillStatus: onAutofillStatus,
       onAutofillResult: onAutofillResult,
     );

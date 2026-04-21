@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/services/app_repositories.dart';
 import 'package:hai_schedule/screens/semester_management_screen.dart';
 import 'package:hai_schedule/utils/week_calculator.dart';
 import 'package:hai_schedule/widgets/mini_overlay.dart';
@@ -83,8 +84,10 @@ void main() {
 
     final provider = ScheduleProvider();
     await provider.ready;
+    await ScheduleRepository().saveHasSyncedAtLeastOneSemester(true);
     await provider.createSemester('20252');
     await provider.createSemester('20251');
+    await provider.reloadFromStorage();
 
     await tester.pumpWidget(
       ChangeNotifierProvider<ScheduleProvider>.value(

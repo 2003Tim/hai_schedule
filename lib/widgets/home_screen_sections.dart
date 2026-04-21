@@ -113,17 +113,18 @@ class HomeOverflowMenu extends StatelessWidget {
                       : null,
             ),
           ),
-          PopupMenuItem<HomeMenuAction>(
-            value: HomeMenuAction.semesterManagement,
-            child: _HomeMenuTile(
-              leading: const Icon(Icons.school_outlined, size: 20),
-              title: '学期管理',
-              subtitle:
-                  currentSemesterCode == null
-                      ? '新建、切换或删除学期'
-                      : formatSemesterCode(currentSemesterCode),
+          if (provider.hasSyncedAtLeastOneSemester)
+            PopupMenuItem<HomeMenuAction>(
+              value: HomeMenuAction.semesterManagement,
+              child: _HomeMenuTile(
+                leading: const Icon(Icons.school_outlined, size: 20),
+                title: '学期管理',
+                subtitle:
+                    currentSemesterCode == null
+                        ? '新建、切换或删除学期'
+                        : formatSemesterCode(currentSemesterCode),
+              ),
             ),
-          ),
           const PopupMenuDivider(),
           const PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.reminderSettings,

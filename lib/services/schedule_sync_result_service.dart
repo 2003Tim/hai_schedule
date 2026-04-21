@@ -32,7 +32,10 @@ class ScheduleSyncResultService {
   }) async {
     final previousCourses = List<Course>.from(provider.courses);
     final now = DateTime.now();
-    final diffSummary = AutoSyncCourseDiff.buildSummary(previousCourses, courses);
+    final diffSummary = AutoSyncCourseDiff.buildSummary(
+      previousCourses,
+      courses,
+    );
     final message = AutoSyncText.buildSuccessMessage(
       courses.length,
       diffSummary,
@@ -43,6 +46,15 @@ class ScheduleSyncResultService {
       semesterCode: semesterCode,
       rawScheduleJson: rawScheduleJson,
     );
+    await provider.markHasSyncedAtLeastOneSemester();
+    final resolvedSemesterCode = semesterCode ?? provider.currentSemesterCode;
+    if (resolvedSemesterCode != null && resolvedSemesterCode.isNotEmpty) {
+      await _syncRepository.saveSemesterSyncRecord(
+        semesterCode: resolvedSemesterCode,
+        count: courses.length,
+        lastSyncTime: now,
+      );
+    }
     await _syncRepository.saveStatus(
       lastFetchTime: now,
       lastAttemptTime: now,
@@ -50,6 +62,7 @@ class ScheduleSyncResultService {
       source: source,
       message: message,
       diffSummary: diffSummary,
+      semesterCode: resolvedSemesterCode,
       clearError: true,
     );
 

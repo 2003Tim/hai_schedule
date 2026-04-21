@@ -76,6 +76,7 @@ class ScheduleLoginFetchService {
     required ValueChanged<String> onSemesterSwitched,
     required ValueChanged<String> onPayloadReady,
     required ValueChanged<String> onError,
+    ValueChanged<String>? onLoginError,
     ValueChanged<String>? onAutofillStatus,
     ValueChanged<LoginAutofillResult>? onAutofillResult,
   }) => LoginFetchBridgeHandler.handle(
@@ -87,6 +88,7 @@ class ScheduleLoginFetchService {
     onSemesterSwitched: onSemesterSwitched,
     onPayloadReady: onPayloadReady,
     onError: onError,
+    onLoginError: onLoginError,
     onAutofillStatus: onAutofillStatus,
     onAutofillResult: onAutofillResult,
   );

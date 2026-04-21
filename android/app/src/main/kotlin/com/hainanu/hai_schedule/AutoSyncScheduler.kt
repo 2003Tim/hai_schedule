@@ -27,6 +27,15 @@ import java.util.TimeZone
 import java.util.regex.Pattern
 import kotlin.concurrent.thread
 
+private class InvalidCredentialsException(
+    message: String = AutoSyncScheduler.invalidCredentialsMessage,
+) : IllegalStateException(message)
+
+private data class SyncExecutionResult(
+    val succeeded: Boolean,
+    val shouldReschedule: Boolean = true,
+)
+
 class AutoSyncScheduler : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -35,9 +44,9 @@ class AutoSyncScheduler : BroadcastReceiver() {
             ACTION_RUN -> {
                 val pendingResult = goAsync()
                 thread(name = "hai-schedule-auto-sync") {
-                    var syncSucceeded = false
+                    var executionResult = SyncExecutionResult(succeeded = false)
                     try {
-                        syncSucceeded = performSync(context)
+                        executionResult = performSync(context)
                     } catch (t: Throwable) {
                         Log.e(TAG, "后台自动同步异常", t)
                         writeState(
@@ -47,7 +56,19 @@ class AutoSyncScheduler : BroadcastReceiver() {
                             error = "${t::class.java.simpleName}: ${t.message ?: "未知错误"}",
                         )
                     } finally {
-                        schedule(context, afterSuccessfulSync = syncSucceeded)
+                        if (executionResult.shouldReschedule) {
+                            schedule(
+                                context,
+                                afterSuccessfulSync = executionResult.succeeded,
+                            )
+                        } else {
+                            cancel(context)
+                            synchronized(PREFS_WRITE_LOCK) {
+                                flutterPrefs(context).edit()
+                                    .remove(flutterKey(KEY_NEXT_SYNC))
+                                    .commit()
+                            }
+                        }
                         pendingResult.finish()
                     }
                 }
@@ -63,6 +84,8 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private const val CHANNEL_DESCRIPTION = "后台自动同步结果通知"
         private const val RESULT_NOTIFICATION_ID = 9311
         private const val DEFAULT_LOGIN_EXPIRED_MESSAGE = "登录已失效，请点击下方“登录并刷新课表”重连"
+        const val invalidCredentialsMessage = "登录失败：密码错误，请手动重新关联"
+        private val PREFS_WRITE_LOCK = Any()
 
         @Suppress("NOTHING_TO_INLINE")
         private inline fun logd(msg: String) {
@@ -85,10 +108,12 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private const val KEY_LAST_ERROR = "last_auto_sync_error"
         private const val KEY_LAST_SOURCE = "last_auto_sync_source"
         private const val KEY_LAST_DIFF_SUMMARY = "last_auto_sync_diff_summary"
+        private const val KEY_LAST_STATE_SEMESTER = "last_auto_sync_state_semester_code"
         private const val KEY_LAST_SCHEDULE_JSON = "last_schedule_json"
         private const val KEY_LAST_SEMESTER = "last_semester_code"
         private const val KEY_LEGACY_SEMESTER = "current_semester"
         private const val KEY_ACTIVE_SEMESTER = "active_semester_code"
+        private const val KEY_SEMESTER_SYNC_RECORDS = "semester_sync_records"
         private const val KEY_NEXT_SYNC = "next_background_sync_time"
         private const val KEY_COOKIE_SNAPSHOT = "last_auto_sync_cookie"
         private const val KEY_COOKIE_SNAPSHOT_INVALIDATED = "last_auto_sync_cookie_invalidated"
@@ -217,7 +242,10 @@ class AutoSyncScheduler : BroadcastReceiver() {
             alarmManager.cancel(createPendingIntent(context))
         }
 
-        private fun performSync(context: Context, retryDepth: Int = 0): Boolean {
+        private fun performSync(
+            context: Context,
+            retryDepth: Int = 0,
+        ): SyncExecutionResult {
             logd("开始执行后台同步")
             val prefs = flutterPrefs(context)
             val semester = prefs.getString(flutterKey(KEY_ACTIVE_SEMESTER), null)
@@ -225,12 +253,15 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 ?: prefs.getString(flutterKey(KEY_LEGACY_SEMESTER), null)
             logd("当前目标学期: ${semester ?: "<empty>"}")
 
-            prefs.edit()
-                .putString(flutterKey(KEY_LAST_ATTEMPT), toIsoString(System.currentTimeMillis()))
-                .putString(flutterKey(KEY_LAST_STATE), "syncing")
-                .putString(flutterKey(KEY_LAST_SOURCE), "background")
-                .putString(flutterKey(KEY_LAST_MESSAGE), "后台正在同步课表...")
-                .apply()
+            synchronized(PREFS_WRITE_LOCK) {
+                prefs.edit()
+                    .putString(flutterKey(KEY_LAST_ATTEMPT), toIsoString(System.currentTimeMillis()))
+                    .putString(flutterKey(KEY_LAST_STATE), "syncing")
+                    .putString(flutterKey(KEY_LAST_SOURCE), "background")
+                    .putString(flutterKey(KEY_LAST_MESSAGE), "后台正在同步课表...")
+                    .putString(flutterKey(KEY_LAST_STATE_SEMESTER), semester)
+                    .commit()
+            }
 
             if (semester.isNullOrBlank()) {
                 logd("后台同步终止: 缺少学期信息")
@@ -239,8 +270,9 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     state = "login_required",
                     message = "缺少学期信息，请先手动登录抓取一次",
                     error = null,
+                    semester = semester,
                 )
-                return false
+                return SyncExecutionResult(succeeded = false)
             }
 
             val cookie = try {
@@ -257,7 +289,15 @@ class AutoSyncScheduler : BroadcastReceiver() {
 
             if (cookie.isNullOrBlank()) {
                 logd("未读取到有效 cookie，尝试后台续登")
-                val reloginCookie = tryBackgroundRelogin(context)
+                val reloginCookie = try {
+                    tryBackgroundRelogin(context)
+                } catch (e: InvalidCredentialsException) {
+                    handleInvalidCredentials(context, prefs, semester, e.message)
+                    return SyncExecutionResult(
+                        succeeded = false,
+                        shouldReschedule = false,
+                    )
+                }
                 if (!reloginCookie.isNullOrBlank()) {
                     logd("后台续登成功，准备重试同步")
                     persistCookieSnapshot(context, prefs, reloginCookie)
@@ -268,8 +308,9 @@ class AutoSyncScheduler : BroadcastReceiver() {
                             state = "failed",
                             message = "后台同步重试次数过多，请手动刷新",
                             error = null,
+                            semester = semester,
                         )
-                        return false
+                        return SyncExecutionResult(succeeded = false)
                     }
                     return performSync(context, retryDepth = retryDepth + 1)
                 }
@@ -280,8 +321,9 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     state = "login_required",
                     message = "后台未读取到有效登录态，请先登录并刷新课表一次",
                     error = null,
+                    semester = semester,
                 )
-                return false
+                return SyncExecutionResult(succeeded = false)
             }
 
             val json = fetchSchedulePayload(cookie, semester)
@@ -290,7 +332,15 @@ class AutoSyncScheduler : BroadcastReceiver() {
             logd("课表接口返回 code=$code")
             if (code != "0") {
                 logd("现有登录态无效，尝试后台续登后重试")
-                val reloginCookie = tryBackgroundRelogin(context)
+                val reloginCookie = try {
+                    tryBackgroundRelogin(context)
+                } catch (e: InvalidCredentialsException) {
+                    handleInvalidCredentials(context, prefs, semester, e.message)
+                    return SyncExecutionResult(
+                        succeeded = false,
+                        shouldReschedule = false,
+                    )
+                }
                 if (!reloginCookie.isNullOrBlank()) {
                     logd("后台续登成功，正在重试课表接口")
                     persistCookieSnapshot(context, prefs, reloginCookie)
@@ -298,12 +348,14 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     val retryText = retryJson.toString()
                     logd("重试课表接口返回 code=${retryJson.optString("code")}")
                     if (retryJson.optString("code") == "0") {
-                        return persistSuccessfulSync(
-                            context = context,
-                            prefs = prefs,
-                            semester = semester,
-                            root = retryJson,
-                            rawScheduleJson = retryText,
+                        return SyncExecutionResult(
+                            succeeded = persistSuccessfulSync(
+                                context = context,
+                                prefs = prefs,
+                                semester = semester,
+                                root = retryJson,
+                                rawScheduleJson = retryText,
+                            ),
                         )
                     }
                 }
@@ -314,16 +366,19 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     state = "login_required",
                     message = DEFAULT_LOGIN_EXPIRED_MESSAGE,
                     error = "code=$code",
+                    semester = semester,
                 )
-                return false
+                return SyncExecutionResult(succeeded = false)
             }
 
-            return persistSuccessfulSync(
-                context = context,
-                prefs = prefs,
-                semester = semester,
-                root = json,
-                rawScheduleJson = responseText,
+            return SyncExecutionResult(
+                succeeded = persistSuccessfulSync(
+                    context = context,
+                    prefs = prefs,
+                    semester = semester,
+                    root = json,
+                    rawScheduleJson = responseText,
+                ),
             )
         }
 
@@ -340,16 +395,25 @@ class AutoSyncScheduler : BroadcastReceiver() {
             val message = buildSuccessMessage(courses.size, diffSummary)
             val nowIso = toIsoString(System.currentTimeMillis())
 
-            prefs.edit()
-                .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), rawScheduleJson)
-                .putString(flutterKey(KEY_LAST_FETCH), nowIso)
-                .putString(flutterKey(KEY_LAST_STATE), "success")
-                .putString(flutterKey(KEY_LAST_SOURCE), "background")
-                .putString(flutterKey(KEY_LAST_MESSAGE), message)
-                .putString(flutterKey(KEY_LAST_DIFF_SUMMARY), diffSummary)
-                .remove(flutterKey(KEY_LAST_ERROR))
-                .apply()
+            synchronized(PREFS_WRITE_LOCK) {
+                prefs.edit()
+                    .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), rawScheduleJson)
+                    .putString(flutterKey(KEY_LAST_FETCH), nowIso)
+                    .putString(flutterKey(KEY_LAST_STATE), "success")
+                    .putString(flutterKey(KEY_LAST_SOURCE), "background")
+                    .putString(flutterKey(KEY_LAST_MESSAGE), message)
+                    .putString(flutterKey(KEY_LAST_DIFF_SUMMARY), diffSummary)
+                    .putString(flutterKey(KEY_LAST_STATE_SEMESTER), semester)
+                    .remove(flutterKey(KEY_LAST_ERROR))
+                    .commit()
+            }
 
+            persistSemesterSyncRecord(
+                prefs = prefs,
+                semester = semester,
+                count = courses.size,
+                lastSyncTimeIso = nowIso,
+            )
             persistScheduleArchive(context, semester, rawScheduleJson, courses)
             saveProjectionPayload(context, semester, courses)
             ClassReminderScheduler.rebuildFromStoredProjection(context)
@@ -370,11 +434,18 @@ class AutoSyncScheduler : BroadcastReceiver() {
             state: String,
             message: String,
             error: String?,
+            semester: String? = null,
         ) {
             val editor = flutterPrefs(context).edit()
                 .putString(flutterKey(KEY_LAST_STATE), state)
                 .putString(flutterKey(KEY_LAST_SOURCE), "background")
                 .putString(flutterKey(KEY_LAST_MESSAGE), message)
+
+            if (!semester.isNullOrBlank()) {
+                editor.putString(flutterKey(KEY_LAST_STATE_SEMESTER), semester)
+            } else {
+                editor.remove(flutterKey(KEY_LAST_STATE_SEMESTER))
+            }
 
             if (state != "success") {
                 editor.remove(flutterKey(KEY_LAST_DIFF_SUMMARY))
@@ -384,17 +455,19 @@ class AutoSyncScheduler : BroadcastReceiver() {
             } else {
                 editor.putString(flutterKey(KEY_LAST_ERROR), error)
             }
-            editor.apply()
+            synchronized(PREFS_WRITE_LOCK) {
+                editor.commit()
+            }
 
             if (state == "login_required") {
                 notifyBackgroundSyncResult(
                     context = context,
-                    title =
-                        if (message == DEFAULT_LOGIN_EXPIRED_MESSAGE) {
-                            "登录失效，请手动处理"
-                        } else {
-                            "自动同步需要处理"
-                        },
+                    title = when {
+                        error == "invalid_credentials" ||
+                            message == invalidCredentialsMessage -> "登录失败：密码错误"
+                        message == DEFAULT_LOGIN_EXPIRED_MESSAGE -> "登录失效，请手动处理"
+                        else -> "自动同步需要处理"
+                    },
                     body = message,
                     highPriority = true,
                 )
@@ -407,10 +480,12 @@ class AutoSyncScheduler : BroadcastReceiver() {
             cookie: String,
         ) {
             NativeCredentialStore.saveCookieSnapshot(context, cookie)
-            prefs.edit()
-                .remove(flutterKey(KEY_COOKIE_SNAPSHOT))
-                .remove(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED))
-                .apply()
+            synchronized(PREFS_WRITE_LOCK) {
+                prefs.edit()
+                    .remove(flutterKey(KEY_COOKIE_SNAPSHOT))
+                    .remove(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED))
+                    .commit()
+            }
         }
 
         private fun clearPersistedCookieSnapshot(
@@ -418,10 +493,12 @@ class AutoSyncScheduler : BroadcastReceiver() {
             prefs: SharedPreferences,
         ) {
             NativeCredentialStore.clearCookieSnapshot(context)
-            prefs.edit()
-                .remove(flutterKey(KEY_COOKIE_SNAPSHOT))
-                .putBoolean(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED), true)
-                .apply()
+            synchronized(PREFS_WRITE_LOCK) {
+                prefs.edit()
+                    .remove(flutterKey(KEY_COOKIE_SNAPSHOT))
+                    .putBoolean(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED), true)
+                    .commit()
+            }
         }
 
         private fun loadStoredCookieSnapshot(
@@ -430,14 +507,18 @@ class AutoSyncScheduler : BroadcastReceiver() {
         ): String? {
             val secure = NativeCredentialStore.loadCookieSnapshot(context)
             if (!secure.isNullOrBlank()) {
-                prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT)).apply()
+                synchronized(PREFS_WRITE_LOCK) {
+                    prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT)).commit()
+                }
                 return secure
             }
 
             val legacy = prefs.getString(flutterKey(KEY_COOKIE_SNAPSHOT), null)
             if (!legacy.isNullOrBlank()) {
                 NativeCredentialStore.saveCookieSnapshot(context, legacy)
-                prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT)).apply()
+                synchronized(PREFS_WRITE_LOCK) {
+                    prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT)).commit()
+                }
                 return legacy
             }
             return null
@@ -490,7 +571,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     fields["lt"] = ""
                 }
 
-                openRequest(
+                val submitPage = openRequest(
                     url = form.actionUrl,
                     method = "POST",
                     body = fields.entries.joinToString("&") { (key, value) ->
@@ -500,6 +581,9 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     cookieJar = cookieJar,
                     followRedirects = true,
                 )
+                if (containsInvalidCredentialError(submitPage.body)) {
+                    throw InvalidCredentialsException()
+                }
 
                 val verifyPage = openRequest(
                     url = INDEX_URL,
@@ -508,6 +592,9 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     followRedirects = true,
                 )
                 val verifyUrl = verifyPage.url.lowercase(Locale.ROOT)
+                if (containsInvalidCredentialError(verifyPage.body)) {
+                    throw InvalidCredentialsException()
+                }
                 val loginStillRequired =
                     verifyUrl.contains("authserver") ||
                         verifyUrl.contains("login") ||
@@ -526,6 +613,9 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 logd("后台续登结束，cookie可用=${!mergedCookie.isNullOrBlank()}")
                 mergedCookie
             } catch (t: Throwable) {
+                if (t is InvalidCredentialsException) {
+                    throw t
+                }
                 Log.e(TAG, "后台续登失败", t)
                 null
             }
@@ -588,6 +678,17 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 lower.contains("name=\"dynamiccode\"") ||
                 lower.contains("id=\"getdynamiccode\"") ||
                 lower.contains("id=\"reauthsubmitbtn\"")
+        }
+
+        private fun containsInvalidCredentialError(html: String): Boolean {
+            if (html.isBlank()) return false
+            val lower = html.lowercase(Locale.ROOT)
+            return lower.contains("用户名或密码错误") ||
+                lower.contains("账号或密码错误") ||
+                lower.contains("用户名密码错误") ||
+                lower.contains("密码错误") ||
+                lower.contains("bad credentials") ||
+                lower.contains("invalid credentials")
         }
 
         private fun findAttr(tag: String, name: String): String? {
@@ -877,30 +978,78 @@ class AutoSyncScheduler : BroadcastReceiver() {
             courses: List<ParsedCourse>,
         ) {
             val prefs = flutterPrefs(context)
-            val archiveRaw = prefs.getString(flutterKey(KEY_SCHEDULE_ARCHIVE), null)
-            val archive = try {
-                if (archiveRaw.isNullOrBlank()) JSONObject() else JSONObject(archiveRaw)
-            } catch (_: Throwable) {
-                JSONObject()
+            synchronized(PREFS_WRITE_LOCK) {
+                val archiveRaw = prefs.getString(flutterKey(KEY_SCHEDULE_ARCHIVE), null)
+                val archive = try {
+                    if (archiveRaw.isNullOrBlank()) JSONObject() else JSONObject(archiveRaw)
+                } catch (_: Throwable) {
+                    JSONObject()
+                }
+
+                val entry = archive.optJSONObject(semester) ?: JSONObject()
+                entry.put("rawScheduleJson", rawScheduleJson)
+                entry.put(
+                    "courses",
+                    JSONArray().apply {
+                        courses.forEach { put(it.toJson()) }
+                    },
+                )
+                archive.put(semester, entry)
+
+                prefs.edit()
+                    .putString(flutterKey(KEY_SCHEDULE_ARCHIVE), archive.toString())
+                    .putString(flutterKey(KEY_ACTIVE_SEMESTER), semester)
+                    .putString(flutterKey(KEY_LAST_SEMESTER), semester)
+                    .putString(flutterKey(KEY_LEGACY_SEMESTER), semester)
+                    .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), rawScheduleJson)
+                    .commit()
             }
+        }
 
-            val entry = archive.optJSONObject(semester) ?: JSONObject()
-            entry.put("rawScheduleJson", rawScheduleJson)
-            entry.put(
-                "courses",
-                JSONArray().apply {
-                    courses.forEach { put(it.toJson()) }
-                },
+        private fun persistSemesterSyncRecord(
+            prefs: SharedPreferences,
+            semester: String,
+            count: Int,
+            lastSyncTimeIso: String,
+        ) {
+            synchronized(PREFS_WRITE_LOCK) {
+                val raw = prefs.getString(flutterKey(KEY_SEMESTER_SYNC_RECORDS), null)
+                val records = try {
+                    if (raw.isNullOrBlank()) JSONObject() else JSONObject(raw)
+                } catch (_: Throwable) {
+                    JSONObject()
+                }
+                val entry = records.optJSONObject(semester) ?: JSONObject()
+                entry.put("count", count)
+                entry.put("lastSyncTime", lastSyncTimeIso)
+                records.put(semester, entry)
+                prefs.edit()
+                    .putString(flutterKey(KEY_SEMESTER_SYNC_RECORDS), records.toString())
+                    .commit()
+            }
+        }
+
+        private fun handleInvalidCredentials(
+            context: Context,
+            prefs: SharedPreferences,
+            semester: String,
+            message: String?,
+        ) {
+            Log.w(TAG, "后台续登检测到错误凭据，停止后续自动同步")
+            NativeCredentialStore.clear(context)
+            clearPersistedCookieSnapshot(context, prefs)
+            synchronized(PREFS_WRITE_LOCK) {
+                prefs.edit().remove(flutterKey(KEY_NEXT_SYNC)).commit()
+            }
+            cancel(context)
+            writeState(
+                context = context,
+                state = "login_required",
+                message = message?.ifBlank { invalidCredentialsMessage }
+                    ?: invalidCredentialsMessage,
+                error = "invalid_credentials",
+                semester = semester,
             )
-            archive.put(semester, entry)
-
-            prefs.edit()
-                .putString(flutterKey(KEY_SCHEDULE_ARCHIVE), archive.toString())
-                .putString(flutterKey(KEY_ACTIVE_SEMESTER), semester)
-                .putString(flutterKey(KEY_LAST_SEMESTER), semester)
-                .putString(flutterKey(KEY_LEGACY_SEMESTER), semester)
-                .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), rawScheduleJson)
-                .apply()
         }
 
         private fun persistScheduleArchive(

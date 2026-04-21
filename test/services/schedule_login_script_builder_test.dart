@@ -22,6 +22,12 @@ void main() {
         expect(script, contains(jsonEncode(password)));
         expect(script, contains('AUTOFILL_STATUS:CREDENTIALS_FILLED'));
         expect(script, contains('AUTOFILL_RESULT:'));
+        expect(script, contains('LOGIN_ERROR:'));
+        expect(
+          script,
+          contains('\\u7528\\u6237\\u540d\\u5bc6\\u7801\\u6709\\u8bef'),
+        );
+        expect(script, contains('findLoginErrorText()'));
         expect(script, contains('attempt(true);'));
       },
     );

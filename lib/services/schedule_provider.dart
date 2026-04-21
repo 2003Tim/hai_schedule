@@ -41,6 +41,8 @@ class ScheduleProvider extends ChangeNotifier {
   String? _currentSemesterCode;
   List<String> _availableSemesterCodes = const [];
   List<SemesterOption> _availableSemesterOptions = const [];
+  List<SemesterOption> _knownSemesterCatalog = const [];
+  bool _hasSyncedAtLeastOneSemester = false;
   late final Future<void> ready = _bootstrap();
 
   int _displayDays = 7;
@@ -58,6 +60,8 @@ class ScheduleProvider extends ChangeNotifier {
   List<String> get availableSemesterCodes => _availableSemesterCodes;
   List<SemesterOption> get availableSemesterOptions =>
       _availableSemesterOptions;
+  List<SemesterOption> get knownSemesterCatalog => _knownSemesterCatalog;
+  bool get hasSyncedAtLeastOneSemester => _hasSyncedAtLeastOneSemester;
   int get displayDays => _displayDays;
   bool get showNonCurrentWeek => _showNonCurrentWeek;
 
@@ -163,19 +167,25 @@ class ScheduleProvider extends ChangeNotifier {
         merged.values.toList()..sort(
           (left, right) => right.normalizedCode.compareTo(left.normalizedCode),
         );
-    if (_availableSemesterOptions.length == nextOptions.length &&
-        _availableSemesterOptions.every(nextOptions.contains)) {
+    if (_knownSemesterCatalog.length == nextOptions.length &&
+        _knownSemesterCatalog.every(nextOptions.contains)) {
       return;
     }
 
     await _scheduleRepository.saveKnownSemesterOptions(nextOptions);
-    _availableSemesterOptions = nextOptions;
-    _availableSemesterCodes =
-        {
-            ..._availableSemesterCodes,
-            ...nextOptions.map((item) => item.normalizedCode),
-          }.toList()
-          ..sort((a, b) => b.compareTo(a));
+    _knownSemesterCatalog = nextOptions;
+    _availableSemesterOptions = await _stateLoader.loadAvailableSemesterOptions(
+      additional: _currentSemesterCode,
+    );
+    notifyListeners();
+  }
+
+  Future<void> markHasSyncedAtLeastOneSemester() async {
+    if (_hasSyncedAtLeastOneSemester) {
+      return;
+    }
+    await _scheduleRepository.saveHasSyncedAtLeastOneSemester(true);
+    _hasSyncedAtLeastOneSemester = true;
     notifyListeners();
   }
 
@@ -442,6 +452,8 @@ class ScheduleProvider extends ChangeNotifier {
     _currentSemesterCode = state.currentSemesterCode;
     _availableSemesterCodes = state.availableSemesterCodes;
     _availableSemesterOptions = state.availableSemesterOptions;
+    _knownSemesterCatalog = state.knownSemesterCatalog;
+    _hasSyncedAtLeastOneSemester = state.hasSyncedAtLeastOneSemester;
     _displayDays = state.displayDays;
     _showNonCurrentWeek = state.showNonCurrentWeek;
     _applySemesterContext(

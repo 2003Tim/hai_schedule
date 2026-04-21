@@ -28,6 +28,24 @@ void main() {
       expect(results.single.verificationRequired, isFalse);
     });
 
+    test('forwards login error messages', () {
+      String? loginError;
+
+      LoginFetchBridgeHandler.handle(
+        message: 'LOGIN_ERROR:用户名密码有误',
+        chunkState: LoginFetchChunkState(),
+        onStatus: (_) {},
+        onSemesterDetected: (_) {},
+        onSemesterOptions: (_) {},
+        onSemesterSwitched: (_) {},
+        onPayloadReady: (_) {},
+        onError: (_) {},
+        onLoginError: (value) => loginError = value,
+      );
+
+      expect(loginError, '用户名密码有误');
+    });
+
     test('formats semester switch error in Chinese', () {
       final errors = <String>[];
       final chunkState = LoginFetchChunkState()..arm('req-1');

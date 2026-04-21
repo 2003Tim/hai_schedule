@@ -23,6 +23,8 @@ abstract class LoginWebviewAdapter {
 
   Future<void> loadTargetUrl(String targetUrl);
 
+  Future<void> stopLoading();
+
   Widget buildView();
 
   void dispose();
@@ -97,6 +99,11 @@ class WindowsLoginWebviewAdapter implements LoginWebviewAdapter {
   }
 
   @override
+  Future<void> stopLoading() {
+    return _controller.executeScript('try { window.stop(); } catch (_) {}');
+  }
+
+  @override
   Widget buildView() {
     return Webview(_controller);
   }
@@ -167,6 +174,11 @@ class AndroidLoginWebviewAdapter implements LoginWebviewAdapter {
   @override
   Future<void> loadTargetUrl(String targetUrl) {
     return _controller.loadRequest(Uri.parse(targetUrl));
+  }
+
+  @override
+  Future<void> stopLoading() {
+    return _controller.runJavaScript('try { window.stop(); } catch (_) {}');
   }
 
   @override

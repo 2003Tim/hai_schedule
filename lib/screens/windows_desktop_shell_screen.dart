@@ -280,6 +280,10 @@ class _WindowsDesktopShellScreenState extends State<WindowsDesktopShellScreen>
     final semesterCode = context.select<ScheduleProvider, String?>(
       (provider) => provider.currentSemesterCode,
     );
+    final hasUnlockedSemesterManagement = context
+        .select<ScheduleProvider, bool>(
+          (provider) => provider.hasSyncedAtLeastOneSemester,
+        );
 
     final width = MediaQuery.of(context).size.width;
     final sideWidth =
@@ -289,18 +293,17 @@ class _WindowsDesktopShellScreenState extends State<WindowsDesktopShellScreen>
             ? 280.0
             : 252.0;
     final colorScheme = Theme.of(context).colorScheme;
-    final navItems = List<DesktopShellSidebarNavItem>.generate(
-      _destinations.length,
-      (index) {
-        final item = _destinations[index];
-        return DesktopShellSidebarNavItem(
-          label: item.label,
-          icon: item.icon,
-          selected: index == _selectedIndex,
-          onTap: () => _selectDestination(index),
-        );
-      },
-    );
+    final navItems = <DesktopShellSidebarNavItem>[
+      for (var index = 0; index < _destinations.length; index++)
+        if (hasUnlockedSemesterManagement ||
+            _destinations[index].label != '学期管理')
+          DesktopShellSidebarNavItem(
+            label: _destinations[index].label,
+            icon: _destinations[index].icon,
+            selected: index == _selectedIndex,
+            onTap: () => _selectDestination(index),
+          ),
+    ];
 
     return Material(
       color: colorScheme.surface,

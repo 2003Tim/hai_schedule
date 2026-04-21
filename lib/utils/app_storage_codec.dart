@@ -53,6 +53,49 @@ class AppStorageCodec {
     return json.encode(archive);
   }
 
+  static Map<String, SemesterSyncRecord> decodeSemesterSyncRecordMap(
+    String? raw,
+  ) {
+    if (raw == null || raw.isEmpty) {
+      return <String, SemesterSyncRecord>{};
+    }
+
+    try {
+      final decoded = json.decode(raw);
+      if (decoded is! Map) {
+        return <String, SemesterSyncRecord>{};
+      }
+
+      final records = <String, SemesterSyncRecord>{};
+      for (final entry in decoded.entries) {
+        final key = entry.key.toString().trim();
+        final value = entry.value;
+        if (key.isEmpty || value is! Map) {
+          continue;
+        }
+        try {
+          records[key] = SemesterSyncRecord.fromJson(
+            Map<String, dynamic>.from(value),
+          );
+        } catch (error) {
+          AppLogger.warn('AppStorage', '忽略损坏的学期同步记录', error);
+        }
+      }
+      return records;
+    } catch (error) {
+      AppLogger.warn('AppStorage', '学期同步记录解析失败，已回退为空映射', error);
+      return <String, SemesterSyncRecord>{};
+    }
+  }
+
+  static String encodeSemesterSyncRecordMap(
+    Map<String, SemesterSyncRecord> records,
+  ) {
+    return json.encode(
+      records.map((key, value) => MapEntry(key, value.toJson())),
+    );
+  }
+
   static StoredSemesterSchedule? readSemesterArchive(
     Map<String, dynamic> archive,
     String semesterCode,

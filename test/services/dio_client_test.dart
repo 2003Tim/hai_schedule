@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hai_schedule/services/dio_client.dart';
+import 'package:hai_schedule/services/invalid_credentials_exception.dart';
 import 'package:hai_schedule/services/login_expired_exception.dart';
 
 void main() {
@@ -91,6 +92,46 @@ void main() {
       );
       expect(adapter.requestLog, hasLength(1));
     });
+
+    test(
+      'surfaces InvalidCredentialsException without retrying the request again',
+      () async {
+        final adapter = _FakeAdapter(
+          (_) async => ResponseBody.fromString(
+            '<html><body>Not login!</body></html>',
+            401,
+            headers: {
+              Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+            },
+          ),
+        );
+
+        final client = DioClient(
+          options: BaseOptions(baseUrl: 'https://example.com'),
+          reLogin: () async => throw const InvalidCredentialsException(),
+        );
+        client.dio.httpClientAdapter = adapter;
+
+        await expectLater(
+          client.dio.get('/schedule'),
+          throwsA(
+            isA<DioException>()
+                .having(
+                  (error) => error.error,
+                  'error',
+                  isA<InvalidCredentialsException>(),
+                )
+                .having(
+                  (error) =>
+                      (error.error as InvalidCredentialsException).message,
+                  'message',
+                  InvalidCredentialsException.defaultMessage,
+                ),
+          ),
+        );
+        expect(adapter.requestLog, hasLength(1));
+      },
+    );
   });
 }
 

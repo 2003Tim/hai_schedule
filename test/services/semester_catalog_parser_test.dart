@@ -18,5 +18,37 @@ void main() {
         const SemesterOption(code: '20251', name: '2025-2026学年 第一学期'),
       ]);
     });
+
+    test('parses semester options from portal html select tags', () {
+      final options = SemesterCatalogParser.parseHtml('''
+        <html>
+          <body>
+            <select id="semester">
+              <option value="20251">2025-2026学年 第一学期</option>
+              <option value="20252">2025-2026学年 第二学期</option>
+            </select>
+          </body>
+        </html>
+      ''');
+
+      expect(options, const [
+        SemesterOption(code: '20252', name: '2025-2026学年 第二学期'),
+        SemesterOption(code: '20251', name: '2025-2026学年 第一学期'),
+      ]);
+    });
+
+    test(
+      'falls back to inferred semester when html has no valid select value',
+      () {
+        final options = SemesterCatalogParser.parseHtml(
+          '<html><body><div>当前无可解析学期</div></body></html>',
+          fallbackNow: DateTime(2026, 4, 20),
+        );
+
+        expect(options, const [
+          SemesterOption(code: '20252', name: '2025-2026学年 第二学期'),
+        ]);
+      },
+    );
   });
 }

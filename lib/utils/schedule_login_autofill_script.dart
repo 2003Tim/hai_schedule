@@ -105,6 +105,74 @@ class ScheduleLoginAutofillScript {
           return false;
         }
 
+        function collapseWhitespace(value) {
+          return (value || '').toString().replace(/\\s+/g, ' ').trim();
+        }
+
+        var loginErrorKeywords = [
+          '\\u7528\\u6237\\u540d\\u5bc6\\u7801\\u6709\\u8bef',
+          '\\u7528\\u6237\\u540d\\u6216\\u5bc6\\u7801\\u9519\\u8bef',
+          '\\u8d26\\u53f7\\u6216\\u5bc6\\u7801\\u9519\\u8bef',
+          '\\u5bc6\\u7801\\u9519\\u8bef',
+          '\\u9a8c\\u8bc1\\u7801\\u9519\\u8bef',
+          '\\u8d26\\u53f7\\u975e\\u5e38\\u7528'
+        ];
+
+        function findLoginErrorText() {
+          var selectors = [
+            '.auth_error',
+            '.error',
+            '.errors',
+            '.error-msg',
+            '.errorMessage',
+            '.form-error',
+            '.msg',
+            '.message',
+            '.tips',
+            '.alert',
+            '.alert-danger',
+            '[role="alert"]',
+            '[class*="error"]',
+            '[id*="error"]'
+          ];
+
+          for (var i = 0; i < selectors.length; i++) {
+            var nodes = Array.prototype.slice.call(
+              document.querySelectorAll(selectors[i])
+            );
+            for (var j = 0; j < nodes.length; j++) {
+              var node = nodes[j];
+              if (!visible(node)) continue;
+              var text = collapseWhitespace(node.innerText || node.textContent);
+              if (text && containsKeyword(text, loginErrorKeywords)) {
+                return text;
+              }
+            }
+          }
+
+          var fallbacks = Array.prototype.slice.call(
+            document.querySelectorAll('div, span, p, li, label, small')
+          );
+          for (var k = 0; k < fallbacks.length; k++) {
+            var fallback = fallbacks[k];
+            if (!visible(fallback)) continue;
+            var fallbackText = collapseWhitespace(
+              fallback.innerText || fallback.textContent
+            );
+            if (!fallbackText || fallbackText.length > 80) continue;
+            if (containsKeyword(fallbackText, loginErrorKeywords)) {
+              return fallbackText;
+            }
+          }
+          return '';
+        }
+
+        function postLoginError(message) {
+          var text = collapseWhitespace(message);
+          if (!text) return;
+          post('LOGIN_ERROR:' + text);
+        }
+
         function postResult(usernameFilled, passwordFilled, submitted, verificationRequired) {
           post(
             'AUTOFILL_RESULT:' +
@@ -592,6 +660,12 @@ class ScheduleLoginAutofillScript {
   }) {
     return '''
         function attempt(autoSubmit) {
+          var loginError = findLoginErrorText();
+          if (loginError) {
+            postLoginError(loginError);
+            return;
+          }
+
           if (hasVerificationStep()) {
             post('AUTOFILL_STATUS:VERIFICATION_REQUIRED');
             postResult(false, false, false, true);
@@ -657,6 +731,12 @@ class ScheduleLoginAutofillScript {
           }
           if (isRecent(runtime.submittedAt, 4000)) {
             post('AUTOFILL_STATUS:SUBMITTING');
+            return;
+          }
+
+          loginError = findLoginErrorText();
+          if (loginError) {
+            postLoginError(loginError);
             return;
           }
 

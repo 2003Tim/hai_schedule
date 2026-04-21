@@ -1,3 +1,5 @@
+import 'package:hai_schedule/models/storage_records.dart';
+
 enum AutoSyncFrequency {
   manual('manual', '仅手动'),
   daily('daily', '每天'),
@@ -74,6 +76,8 @@ class AutoSyncSnapshot {
   final String? lastError;
   final String? lastSource;
   final String? lastDiffSummary;
+  final String? semesterCode;
+  final SemesterSyncRecord? semesterSyncRecord;
   final bool credentialReady;
 
   const AutoSyncSnapshot({
@@ -86,10 +90,13 @@ class AutoSyncSnapshot {
     this.lastError,
     this.lastSource,
     this.lastDiffSummary,
+    this.semesterCode,
+    this.semesterSyncRecord,
     this.credentialReady = false,
   });
 
   bool get requiresLogin => state == AutoSyncState.loginRequired;
+  bool get hasScopedSyncRecord => semesterSyncRecord != null;
 }
 
 class AutoSyncResult {

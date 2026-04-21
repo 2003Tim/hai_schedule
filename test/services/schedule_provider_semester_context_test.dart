@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 
@@ -68,6 +69,26 @@ void main() {
 
       expect(result, ScheduleTodayNavigationResult.outOfRange);
       expect(provider.selectedWeek, 5);
+    },
+  );
+
+  test(
+    'merging semester catalog does not create semester containers implicitly',
+    () async {
+      final provider = ScheduleProvider();
+      await provider.ready;
+
+      await provider.mergeKnownSemesterOptions(const <SemesterOption>[
+        SemesterOption(code: '20251', name: '2025-2026学年 第一学期'),
+        SemesterOption(code: '20252', name: '2025-2026学年 第二学期'),
+      ]);
+
+      expect(provider.availableSemesterCodes, isEmpty);
+      expect(provider.knownSemesterCatalog, hasLength(2));
+      expect(provider.availableSemesterOptions.map((item) => item.code), [
+        '20252',
+        '20251',
+      ]);
     },
   );
 }
