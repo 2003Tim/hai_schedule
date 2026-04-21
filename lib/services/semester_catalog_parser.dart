@@ -142,7 +142,7 @@ class SemesterCatalogParser {
       return '';
     }
     final label = term == '1' ? '第一学期' : '第二学期';
-    return '${startYear}-${startYear + 1}学年 $label';
+    return '$startYear-${startYear + 1}学年 $label';
   }
 
   static String _stripHtml(String raw) {
