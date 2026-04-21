@@ -67,6 +67,12 @@ class ScheduleRepository {
   Future<void> saveKnownSemesterOptions(List<SemesterOption> options) =>
       _storage.saveKnownSemesterOptions(options);
 
+  Future<List<SemesterOption>> loadSemesterCatalog() =>
+      _storage.loadSemesterCatalog();
+
+  Future<void> saveSemesterCatalog(List<SemesterOption> options) =>
+      _storage.saveSemesterCatalog(options);
+
   Future<bool> loadHasSyncedAtLeastOneSemester() =>
       _storage.loadHasSyncedAtLeastOneSemester();
 

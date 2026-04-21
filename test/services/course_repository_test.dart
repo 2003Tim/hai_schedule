@@ -5,6 +5,7 @@ import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/services/api_service.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/course_repository.dart';
+import 'package:hai_schedule/services/catalog_parsing_exception.dart';
 import 'package:hai_schedule/services/portal_redirect_exception.dart';
 
 void main() {
@@ -91,6 +92,66 @@ void main() {
       await expectLater(
         repository.fetchSemesterCatalog(),
         throwsA(isA<PortalRedirectException>()),
+      );
+    },
+  );
+
+  test('fetchSemesterCatalog saves catalog and notifies the caller', () async {
+    final apiService = _FakeApiService(
+      portalPage: const PortalPageResult(
+        body: '''
+        <html>
+          <body>
+            <select>
+              <option value="20252">2025-2026学年 第二学期</option>
+            </select>
+          </body>
+        </html>
+      ''',
+        contentType: 'text/html; charset=utf-8',
+      ),
+      schedulePayload: _sampleSchedulePayload(),
+    );
+    final repository = CourseRepository(
+      apiService: apiService,
+      storage: AppStorage.instance,
+    );
+    List<SemesterOption> notified = const <SemesterOption>[];
+
+    final options = await repository.fetchSemesterCatalog(
+      onCatalogUpdated: (nextOptions) async {
+        notified = nextOptions;
+      },
+    );
+
+    expect(options, isNotEmpty);
+    expect(notified.map((item) => item.code), ['20252']);
+    expect(
+      (await AppStorage.instance.loadSemesterCatalog()).map(
+        (item) => item.code,
+      ),
+      ['20252'],
+    );
+  });
+
+  test(
+    'fetchSemesterCatalog throws CatalogParsingException for empty catalog',
+    () async {
+      final apiService = _FakeApiService(
+        portalPage: const PortalPageResult(
+          body: '<html><body><div>欢迎使用教务系统</div></body></html>',
+          contentType: 'text/html; charset=utf-8',
+        ),
+        schedulePayload: _sampleSchedulePayload(),
+      );
+      final repository = CourseRepository(
+        apiService: apiService,
+        storage: AppStorage.instance,
+      );
+
+      await expectLater(
+        repository.fetchSemesterCatalog(),
+        throwsA(isA<CatalogParsingException>()),
       );
     },
   );

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/models/schedule_parser.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -88,6 +89,28 @@ void main() {
       expect(provider.availableSemesterOptions.map((item) => item.code), [
         '20252',
         '20251',
+      ]);
+    },
+  );
+
+  test(
+    'setCourses refreshes known semester catalog saved before sync completes',
+    () async {
+      final provider = ScheduleProvider();
+      await provider.ready;
+
+      await AppStorage.instance.saveSemesterCatalog(const <SemesterOption>[
+        SemesterOption(code: '20252', name: '2025-2026学年 第二学期'),
+      ]);
+
+      await provider.setCourses(
+        ScheduleParser.parseApiResponse(_samplePayload()),
+        semesterCode: '20252',
+        rawScheduleJson: jsonEncode(_samplePayload()),
+      );
+
+      expect(provider.knownSemesterCatalog, const <SemesterOption>[
+        SemesterOption(code: '20252', name: '2025-2026学年 第二学期'),
       ]);
     },
   );

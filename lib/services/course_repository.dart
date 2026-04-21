@@ -8,6 +8,9 @@ import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/portal_redirect_exception.dart';
 import 'package:hai_schedule/services/semester_catalog_parser.dart';
 
+typedef SemesterCatalogUpdateCallback =
+    Future<void> Function(List<SemesterOption> options);
+
 class CourseFetchResult {
   final Map<String, dynamic> rawData;
   final String rawJson;
@@ -34,7 +37,10 @@ class CourseRepository {
     _apiService.updateCookie(cookie);
   }
 
-  Future<List<SemesterOption>> fetchSemesterCatalog({String? cookie}) async {
+  Future<List<SemesterOption>> fetchSemesterCatalog({
+    String? cookie,
+    SemesterCatalogUpdateCallback? onCatalogUpdated,
+  }) async {
     if (cookie != null && cookie.isNotEmpty) {
       updateCookie(cookie);
     }
@@ -45,21 +51,25 @@ class CourseRepository {
     }
 
     final options = SemesterCatalogParser.parseHtml(page.body);
-    await _storage.saveKnownSemesterOptions(options);
+    await _storage.saveSemesterCatalog(options);
+    if (onCatalogUpdated != null) {
+      await onCatalogUpdated(options);
+    }
     return options;
   }
 
   Future<CourseFetchResult> syncCourse({
     required String semester,
     String? cookie,
+    SemesterCatalogUpdateCallback? onSemesterCatalogUpdated,
   }) async {
     if (cookie != null && cookie.isNotEmpty) {
       updateCookie(cookie);
     }
 
-    final semesterCatalog = await _storage.loadKnownSemesterOptions();
+    final semesterCatalog = await _storage.loadSemesterCatalog();
     if (semesterCatalog.isEmpty) {
-      await fetchSemesterCatalog();
+      await fetchSemesterCatalog(onCatalogUpdated: onSemesterCatalogUpdated);
     }
 
     return fetchGraduateSchedule(semester: semester);

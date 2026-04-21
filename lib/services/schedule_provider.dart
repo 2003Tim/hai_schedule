@@ -138,6 +138,23 @@ class ScheduleProvider extends ChangeNotifier {
     await _restorePersistedState();
   }
 
+  Future<void> refreshKnownSemesterCatalog([
+    List<SemesterOption>? options,
+  ]) async {
+    final nextCatalog =
+        options ?? await _scheduleRepository.loadSemesterCatalog();
+    if (_knownSemesterCatalog.length == nextCatalog.length &&
+        _knownSemesterCatalog.every(nextCatalog.contains)) {
+      return;
+    }
+
+    _knownSemesterCatalog = nextCatalog;
+    _availableSemesterOptions = await _stateLoader.loadAvailableSemesterOptions(
+      additional: _currentSemesterCode,
+    );
+    notifyListeners();
+  }
+
   Future<void> mergeKnownSemesterOptions(List<SemesterOption> options) async {
     final currentOptions = await _scheduleRepository.loadKnownSemesterOptions();
     final merged = <String, SemesterOption>{};
@@ -361,6 +378,7 @@ class ScheduleProvider extends ChangeNotifier {
       );
       _courses = courses;
       _currentSemesterCode = resolvedSemester;
+      _knownSemesterCatalog = await _scheduleRepository.loadSemesterCatalog();
       _availableSemesterCodes = await _stateLoader.loadAvailableSemesterCodes(
         additional: resolvedSemester,
       );

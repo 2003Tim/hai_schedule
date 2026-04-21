@@ -307,7 +307,11 @@ class AutoSyncService {
       final cookie = await _readCookie();
       final courseRepository = CourseRepository();
       final fetchResult = await courseRepository
-          .syncCourse(semester: semester, cookie: cookie)
+          .syncCourse(
+            semester: semester,
+            cookie: cookie,
+            onSemesterCatalogUpdated: provider.refreshKnownSemesterCatalog,
+          )
           .timeout(
             const Duration(seconds: 30),
             onTimeout: () => throw TimeoutException('课表同步超时，请稍后重试'),

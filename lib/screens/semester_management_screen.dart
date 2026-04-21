@@ -128,8 +128,8 @@ class SemesterManagementScreen extends StatelessWidget {
       return formatSemesterCode(code);
     }
 
-    final canCreateSemester =
-        hasUnlockedEntry && provider.knownSemesterCatalog.isNotEmpty;
+    final hasCatalog = provider.knownSemesterCatalog.isNotEmpty;
+    final canCreateSemester = hasUnlockedEntry && hasCatalog;
 
     return Scaffold(
       appBar: AppBar(title: const Text('学期管理'), centerTitle: true),

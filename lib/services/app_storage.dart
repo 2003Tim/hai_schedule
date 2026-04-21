@@ -173,7 +173,7 @@ class AppStorage {
     return codes;
   }
 
-  Future<List<SemesterOption>> loadKnownSemesterOptions() async {
+  Future<List<SemesterOption>> loadSemesterCatalog() async {
     final prefs = await _reloadedPrefs();
     final raw = prefs.getString(_semesterCatalogKey);
     if (raw == null || raw.isEmpty) {
@@ -197,15 +197,30 @@ class AppStorage {
     }
   }
 
-  Future<void> saveKnownSemesterOptions(List<SemesterOption> options) async {
+  Future<List<SemesterOption>> loadKnownSemesterOptions() =>
+      loadSemesterCatalog();
+
+  Future<void> saveSemesterCatalog(List<SemesterOption> options) async {
     final prefs = await _prefs;
     final normalized =
         options
             .where((item) => item.isValid)
             .map((item) => item.toJson())
             .toList();
-    await prefs.setString(_semesterCatalogKey, json.encode(normalized));
+    final didSave = await prefs.setString(
+      _semesterCatalogKey,
+      json.encode(normalized),
+    );
+    if (!didSave) {
+      throw StateError('学期目录保存失败');
+    }
+    if (Platform.isAndroid) {
+      await prefs.reload();
+    }
   }
+
+  Future<void> saveKnownSemesterOptions(List<SemesterOption> options) =>
+      saveSemesterCatalog(options);
 
   Future<bool> loadHasSyncedAtLeastOneSemester() async {
     final prefs = await _reloadedPrefs();

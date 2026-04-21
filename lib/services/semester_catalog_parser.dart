@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:hai_schedule/models/semester_option.dart';
+import 'package:hai_schedule/services/catalog_parsing_exception.dart';
 import 'package:hai_schedule/utils/week_calculator.dart';
 
 class SemesterCatalogParser {
@@ -62,7 +63,7 @@ class SemesterCatalogParser {
         if (selectHtml == null || selectHtml.isEmpty) {
           continue;
         }
-        options.addAll(_parseOptionTags(selectHtml));
+        options.addAll(_parseOptionTags(selectHtml, fallbackNow: fallbackNow));
       }
     } catch (_) {
       // Fall through to the semester-code fallback below.
@@ -72,19 +73,13 @@ class SemesterCatalogParser {
     if (normalized.isNotEmpty) {
       return normalized;
     }
-
-    final fallbackCode =
-        _inferSemesterCodeFromHtml(html) ??
-        WeekCalculator.inferSemesterCode(fallbackNow ?? DateTime.now());
-    return <SemesterOption>[
-      SemesterOption(
-        code: fallbackCode,
-        name: _formatFallbackSemesterName(fallbackCode),
-      ),
-    ];
+    throw const CatalogParsingException();
   }
 
-  static List<SemesterOption> _parseOptionTags(String selectHtml) {
+  static List<SemesterOption> _parseOptionTags(
+    String selectHtml, {
+    DateTime? fallbackNow,
+  }) {
     final items = <SemesterOption>[];
     final optionRegex = RegExp(
       r'<option\b([^>]*)>([\s\S]*?)</option>',
@@ -99,10 +94,11 @@ class SemesterCatalogParser {
       final attrs = match.group(1) ?? '';
       final text = _stripHtml(match.group(2) ?? '');
       final valueMatch = valueRegex.firstMatch(attrs);
+      final rawValueCandidate =
+          valueMatch?.group(2) ?? valueMatch?.group(3) ?? '';
       final rawValue =
-          valueMatch?.group(2) ?? valueMatch?.group(3) ?? text.trim();
-      final codeMatch = RegExp(r'20\d{3}').firstMatch(rawValue);
-      final code = codeMatch?.group(0);
+          rawValueCandidate.trim().isEmpty ? text.trim() : rawValueCandidate;
+      final code = _extractSemesterCode(rawValue, fallbackNow: fallbackNow);
       if (code == null || code.isEmpty) {
         continue;
       }
@@ -112,8 +108,13 @@ class SemesterCatalogParser {
     return items;
   }
 
-  static String? _inferSemesterCodeFromHtml(String html) {
-    final text = _stripHtml(html);
+  static String? _extractSemesterCode(String raw, {DateTime? fallbackNow}) {
+    final directCodeMatch = RegExp(r'20\d{3}').firstMatch(raw);
+    if (directCodeMatch != null) {
+      return directCodeMatch.group(0);
+    }
+
+    final text = _stripHtml(raw);
     final academicYearMatch = RegExp(
       r'(20\d{2})-(20\d{2})学年\s*第?([一二12])学期',
     ).firstMatch(text);
@@ -126,23 +127,21 @@ class SemesterCatalogParser {
       }
     }
 
-    final directCodeMatch = RegExp(
-      "XNXQDM[\"':=\\s]+(20\\d{3})",
-    ).firstMatch(html);
-    return directCodeMatch?.group(1);
-  }
+    final htmlCodeMatch = RegExp("XNXQDM[\"':=\\s]+(20\\d{3})").firstMatch(raw);
+    if (htmlCodeMatch != null) {
+      return htmlCodeMatch.group(1);
+    }
 
-  static String _formatFallbackSemesterName(String code) {
-    if (!RegExp(r'^\d{5}$').hasMatch(code)) {
-      return '';
+    final shouldFallback =
+        text.contains('学期') && !text.contains('请选择') && !text.contains('切换');
+    if (!shouldFallback) {
+      return null;
     }
-    final startYear = int.tryParse(code.substring(0, 4));
-    final term = code.substring(4);
-    if (startYear == null) {
-      return '';
-    }
-    final label = term == '1' ? '第一学期' : '第二学期';
-    return '$startYear-${startYear + 1}学年 $label';
+
+    final fallbackCode = WeekCalculator.inferSemesterCode(
+      fallbackNow ?? DateTime.now(),
+    );
+    return RegExp(r'^\d{5}$').hasMatch(fallbackCode) ? fallbackCode : null;
   }
 
   static String _stripHtml(String raw) {
