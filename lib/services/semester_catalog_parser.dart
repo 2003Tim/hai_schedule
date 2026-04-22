@@ -13,11 +13,13 @@ class SemesterCatalogParser {
       throw const FormatException('学期列表格式无效');
     }
 
-    return normalize(
-      decoded.whereType<Map>().map(
-        (item) => SemesterOption.fromJson(Map<String, dynamic>.from(item)),
-      ),
+    final normalized = normalize(
+      decoded.whereType<Map>().map(_parseBridgeSemesterOption).whereType(),
     );
+    if (normalized.isEmpty) {
+      throw const CatalogParsingException();
+    }
+    return normalized;
   }
 
   static List<SemesterOption> normalize(Iterable<SemesterOption> options) {
@@ -76,6 +78,29 @@ class SemesterCatalogParser {
     throw const CatalogParsingException();
   }
 
+  static SemesterOption? _parseBridgeSemesterOption(Map item) {
+    final option = SemesterOption.fromJson(Map<String, dynamic>.from(item));
+    final normalizedName = option.normalizedName;
+    final rawCandidates = <String>[
+      option.normalizedCode,
+      normalizedName,
+      '${option.normalizedCode} $normalizedName'.trim(),
+    ];
+
+    for (final raw in rawCandidates) {
+      if (raw.isEmpty) {
+        continue;
+      }
+      final code = _extractSemesterCode(raw, allowDateFallback: false);
+      if (code == null || code.isEmpty) {
+        continue;
+      }
+      return SemesterOption(code: code, name: normalizedName);
+    }
+
+    return null;
+  }
+
   static List<SemesterOption> _parseOptionTags(
     String selectHtml, {
     DateTime? fallbackNow,
@@ -108,7 +133,11 @@ class SemesterCatalogParser {
     return items;
   }
 
-  static String? _extractSemesterCode(String raw, {DateTime? fallbackNow}) {
+  static String? _extractSemesterCode(
+    String raw, {
+    DateTime? fallbackNow,
+    bool allowDateFallback = true,
+  }) {
     final directCodeMatch = RegExp(r'20\d{3}').firstMatch(raw);
     if (directCodeMatch != null) {
       return directCodeMatch.group(0);
@@ -130,6 +159,10 @@ class SemesterCatalogParser {
     final htmlCodeMatch = RegExp("XNXQDM[\"':=\\s]+(20\\d{3})").firstMatch(raw);
     if (htmlCodeMatch != null) {
       return htmlCodeMatch.group(1);
+    }
+
+    if (!allowDateFallback) {
+      return null;
     }
 
     final shouldFallback =

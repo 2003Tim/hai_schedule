@@ -175,23 +175,26 @@ class AppStorage {
 
   Future<List<SemesterOption>> loadSemesterCatalog() async {
     final prefs = await _reloadedPrefs();
-    final raw = prefs.getString(_semesterCatalogKey);
-    if (raw == null || raw.isEmpty) {
+    final rawItems = prefs.getStringList(_semesterCatalogKey);
+    if (rawItems != null) {
+      try {
+        return _decodeSemesterCatalogItems(rawItems.map(json.decode));
+      } catch (_) {
+        return const <SemesterOption>[];
+      }
+    }
+
+    final legacyRaw = prefs.getString(_semesterCatalogKey);
+    if (legacyRaw == null || legacyRaw.isEmpty) {
       return const <SemesterOption>[];
     }
 
     try {
-      final decoded = json.decode(raw);
+      final decoded = json.decode(legacyRaw);
       if (decoded is! List) {
         return const <SemesterOption>[];
       }
-      return decoded
-          .whereType<Map>()
-          .map(
-            (item) => SemesterOption.fromJson(Map<String, dynamic>.from(item)),
-          )
-          .where((item) => item.isValid)
-          .toList();
+      return _decodeSemesterCatalogItems(decoded);
     } catch (_) {
       return const <SemesterOption>[];
     }
@@ -202,25 +205,46 @@ class AppStorage {
 
   Future<void> saveSemesterCatalog(List<SemesterOption> options) async {
     final prefs = await _prefs;
-    final normalized =
-        options
-            .where((item) => item.isValid)
-            .map((item) => item.toJson())
-            .toList();
-    final didSave = await prefs.setString(
+    final encodedItems = options
+        .where((item) => item.isValid)
+        .map((item) => json.encode(item.toJson()))
+        .toList(growable: false);
+    final didSave = await prefs.setStringList(
       _semesterCatalogKey,
-      json.encode(normalized),
+      encodedItems,
     );
     if (!didSave) {
       throw StateError('学期目录保存失败');
     }
-    if (Platform.isAndroid) {
-      await prefs.reload();
+    await prefs.reload();
+    final persistedItems = prefs.getStringList(_semesterCatalogKey);
+    if (!_sameStringList(persistedItems, encodedItems)) {
+      throw StateError('学期目录落盘失败');
     }
   }
 
   Future<void> saveKnownSemesterOptions(List<SemesterOption> options) =>
       saveSemesterCatalog(options);
+
+  List<SemesterOption> _decodeSemesterCatalogItems(Iterable<dynamic> items) {
+    return items
+        .whereType<Map>()
+        .map((item) => SemesterOption.fromJson(Map<String, dynamic>.from(item)))
+        .where((item) => item.isValid)
+        .toList();
+  }
+
+  bool _sameStringList(List<String>? left, List<String> right) {
+    if (left == null || left.length != right.length) {
+      return false;
+    }
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   Future<bool> loadHasSyncedAtLeastOneSemester() async {
     final prefs = await _reloadedPrefs();

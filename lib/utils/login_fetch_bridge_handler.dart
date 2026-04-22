@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:hai_schedule/models/login_fetch_models.dart';
 import 'package:hai_schedule/models/semester_option.dart';
+import 'package:hai_schedule/services/catalog_parsing_exception.dart';
 import 'package:hai_schedule/services/semester_catalog_parser.dart';
 
 class LoginFetchBridgeHandler {
@@ -92,8 +93,10 @@ class LoginFetchBridgeHandler {
         onSemesterOptions(
           SemesterCatalogParser.parseBridgePayload(semesterOptions.$2),
         );
-      } catch (_) {
-        // Ignore malformed semester metadata from the page.
+      } on CatalogParsingException catch (e) {
+        onError(e.message);
+      } on FormatException {
+        onError('学期目录格式无效，请重试');
       }
       return;
     }

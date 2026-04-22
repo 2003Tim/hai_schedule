@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hai_schedule/models/login_fetch_models.dart';
 import 'package:hai_schedule/models/semester_option.dart';
+import 'package:hai_schedule/services/catalog_parsing_exception.dart';
 import 'package:hai_schedule/utils/login_fetch_bridge_handler.dart';
 
 void main() {
@@ -114,6 +115,48 @@ void main() {
       expect(options.single, [
         const SemesterOption(code: '20252', name: '2025-2026学年 第二学期'),
       ]);
+    });
+
+    test('parses semester option payloads whose codes must be inferred', () {
+      final options = <List<SemesterOption>>[];
+      final errors = <String>[];
+      final chunkState = LoginFetchChunkState()..arm('req-options');
+
+      LoginFetchBridgeHandler.handle(
+        message:
+            'SEMESTER_OPTIONS:req-options:[{"code":"","name":"2025-2026学年 第二学期"}]',
+        chunkState: chunkState,
+        onStatus: (_) {},
+        onSemesterDetected: (_) {},
+        onSemesterOptions: options.add,
+        onSemesterSwitched: (_) {},
+        onPayloadReady: (_) {},
+        onError: errors.add,
+      );
+
+      expect(errors, isEmpty);
+      expect(options, hasLength(1));
+      expect(options.single, [
+        const SemesterOption(code: '20252', name: '2025-2026学年 第二学期'),
+      ]);
+    });
+
+    test('surfaces empty semester option payloads as a parsing error', () {
+      final errors = <String>[];
+      final chunkState = LoginFetchChunkState()..arm('req-options');
+
+      LoginFetchBridgeHandler.handle(
+        message: 'SEMESTER_OPTIONS:req-options:[]',
+        chunkState: chunkState,
+        onStatus: (_) {},
+        onSemesterDetected: (_) {},
+        onSemesterOptions: (_) {},
+        onSemesterSwitched: (_) {},
+        onPayloadReady: (_) {},
+        onError: errors.add,
+      );
+
+      expect(errors, [CatalogParsingException.defaultMessage]);
     });
 
     test('rejects incomplete chunks for active request', () {

@@ -20,6 +20,25 @@ void main() {
       ]);
     });
 
+    test('infers bridge payload codes from semester names when needed', () {
+      final options = SemesterCatalogParser.parseBridgePayload(
+        '[{"code":"","name":"2025-2026学年 第一学期"},'
+        '{"code":"","name":"2025-2026学年 第二学期"}]',
+      );
+
+      expect(options, const [
+        SemesterOption(code: '20252', name: '2025-2026学年 第二学期'),
+        SemesterOption(code: '20251', name: '2025-2026学年 第一学期'),
+      ]);
+    });
+
+    test('throws when bridge payload does not contain a valid catalog', () {
+      expect(
+        () => SemesterCatalogParser.parseBridgePayload('[]'),
+        throwsA(isA<CatalogParsingException>()),
+      );
+    });
+
     test('parses semester options from portal html select tags', () {
       final options = SemesterCatalogParser.parseHtml('''
         <html>

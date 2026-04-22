@@ -7,6 +7,7 @@ import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/course_repository.dart';
 import 'package:hai_schedule/services/catalog_parsing_exception.dart';
 import 'package:hai_schedule/services/portal_redirect_exception.dart';
+import 'package:hai_schedule/services/schedule_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -133,6 +134,44 @@ void main() {
       ['20252'],
     );
   });
+
+  test(
+    'fetchSemesterCatalog refreshes ScheduleProvider through callback',
+    () async {
+      final apiService = _FakeApiService(
+        portalPage: const PortalPageResult(
+          body: '''
+        <html>
+          <body>
+            <select>
+              <option value="20252">2025-2026学年 第二学期</option>
+            </select>
+          </body>
+        </html>
+      ''',
+          contentType: 'text/html; charset=utf-8',
+        ),
+        schedulePayload: _sampleSchedulePayload(),
+      );
+      final repository = CourseRepository(
+        apiService: apiService,
+        storage: AppStorage.instance,
+      );
+      final provider = ScheduleProvider();
+      await provider.ready;
+      var notificationCount = 0;
+      provider.addListener(() {
+        notificationCount += 1;
+      });
+
+      final options = await repository.fetchSemesterCatalog(
+        onCatalogUpdated: provider.refreshKnownSemesterCatalog,
+      );
+
+      expect(provider.knownSemesterCatalog, options);
+      expect(notificationCount, greaterThan(0));
+    },
+  );
 
   test(
     'fetchSemesterCatalog throws CatalogParsingException for empty catalog',

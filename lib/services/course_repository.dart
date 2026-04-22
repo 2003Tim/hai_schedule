@@ -50,12 +50,19 @@ class CourseRepository {
       throw const PortalRedirectException();
     }
 
-    final options = SemesterCatalogParser.parseHtml(page.body);
-    await _storage.saveSemesterCatalog(options);
-    if (onCatalogUpdated != null) {
-      await onCatalogUpdated(options);
+    final parsedOptions = SemesterCatalogParser.parseHtml(page.body);
+    await _storage.saveSemesterCatalog(parsedOptions);
+    final persistedCatalog = await _storage.loadSemesterCatalog();
+    final isPersistedCatalogValid =
+        persistedCatalog.length == parsedOptions.length &&
+        parsedOptions.every(persistedCatalog.contains);
+    if (!isPersistedCatalogValid) {
+      throw StateError('学期目录保存后读取校验失败');
     }
-    return options;
+    if (onCatalogUpdated != null) {
+      await onCatalogUpdated(persistedCatalog);
+    }
+    return persistedCatalog;
   }
 
   Future<CourseFetchResult> syncCourse({
