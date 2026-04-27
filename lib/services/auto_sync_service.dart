@@ -43,10 +43,12 @@ class AutoSyncService {
   static final ScheduleSyncResultService _syncResultService =
       ScheduleSyncResultService();
   static bool _isRunning = false;
+  @visibleForTesting
+  static bool? debugForceAndroid;
 
-  static bool get _supportsTimedAutoSync =>
-      Platform.isAndroid || Platform.isWindows;
+  static bool get _supportsTimedAutoSync => _isAndroid || Platform.isWindows;
   static bool get supportsForegroundDesktopAutoSync => Platform.isWindows;
+  static bool get _isAndroid => debugForceAndroid ?? Platform.isAndroid;
 
   static Future<AutoSyncSettings> loadSettings() async {
     final record = await _syncRepository.loadRecord();
@@ -97,10 +99,12 @@ class AutoSyncService {
     );
   }
 
-  static Future<void> ensureBackgroundSchedule() async {
+  static Future<void> ensureBackgroundSchedule({
+    bool? credentialReadyOverride,
+  }) async {
     if (!_supportsTimedAutoSync) return;
     final settings = await loadSettings();
-    final ready = await hasCredentialReady();
+    final ready = credentialReadyOverride ?? await hasCredentialReady();
     await _configureBackgroundSync(
       enabled: ready && settings.backgroundEnabled,
       frequency: settings.frequency,
@@ -111,10 +115,12 @@ class AutoSyncService {
   }
 
   static Future<void> handleCredentialCleared() async {
-    await AuthCredentialsService.instance.clear();
+    await AppStorage.instance.setSyncInvalidationFlag(true);
+    await _cancelBackgroundSync(strict: true);
+    await AuthCredentialsService.instance.clear(strict: true);
+    await AppStorage.instance.clearCookieSnapshot(strict: true);
     await DioClient.clearAllSessions();
-    await _clearLiveWebViewCookies();
-    await AppStorage.instance.clearCookieSnapshot();
+    await _clearLiveWebViewCookies(strict: true);
     await _syncRepository.saveStatus(
       state: AutoSyncState.idle.value,
       source: 'credential_clear',
@@ -123,7 +129,6 @@ class AutoSyncService {
       clearDiffSummary: true,
       clearNextSyncTime: true,
     );
-    await ensureBackgroundSchedule();
   }
 
   static Future<void> recordExternalSyncSuccess({
@@ -174,6 +179,9 @@ class AutoSyncService {
   }
 
   static Future<bool> hasCredentialReady() async {
+    if (await AppStorage.instance.loadSyncInvalidationFlag()) {
+      return false;
+    }
     final record = await _syncRepository.loadRecord();
     final hasSemester = record.semesterCode?.isNotEmpty ?? false;
     if (!hasSemester) return false;
@@ -182,7 +190,7 @@ class AutoSyncService {
   }
 
   static Future<bool> captureCookieSnapshot({int retries = 3}) async {
-    if (!Platform.isAndroid) return false;
+    if (!_isAndroid) return false;
 
     for (var attempt = 0; attempt < retries; attempt++) {
       await _flushCookies();
@@ -263,7 +271,7 @@ class AutoSyncService {
     bool force = false,
     String source = 'foreground',
   }) async {
-    if (!Platform.isAndroid) {
+    if (!_isAndroid) {
       return AutoSyncResult.skipped('当前平台不需要自动同步', await loadSnapshot());
     }
 
@@ -562,8 +570,18 @@ class AutoSyncService {
     }
   }
 
+  static Future<void> _cancelBackgroundSync({bool strict = false}) async {
+    if (!_isAndroid) return;
+    try {
+      await _channel.invokeMethod<void>('cancelBackgroundSync');
+    } on PlatformException catch (e) {
+      if (strict) rethrow;
+      debugPrint('取消后台同步失败: ${e.message}');
+    }
+  }
+
   static Future<void> _flushCookies() async {
-    if (!Platform.isAndroid) return;
+    if (!_isAndroid) return;
     try {
       await _channel.invokeMethod('flushCookies');
     } on PlatformException catch (e) {
@@ -571,11 +589,12 @@ class AutoSyncService {
     }
   }
 
-  static Future<void> _clearLiveWebViewCookies() async {
-    if (!Platform.isAndroid) return;
+  static Future<void> _clearLiveWebViewCookies({bool strict = false}) async {
+    if (!_isAndroid) return;
     try {
-      await _channel.invokeMethod('clearCookies');
+      await _channel.invokeMethod<void>('clearCookies');
     } on PlatformException catch (e) {
+      if (strict) rethrow;
       debugPrint('清理 WebView Cookie 失败: ${e.message}');
     }
   }

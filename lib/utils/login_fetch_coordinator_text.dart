@@ -1,5 +1,6 @@
 import 'package:hai_schedule/models/login_fetch_coordinator_models.dart';
 import 'package:hai_schedule/models/login_fetch_models.dart';
+import 'package:hai_schedule/utils/login_flow_text.dart';
 
 class LoginFetchCoordinatorText {
   static const emptySemesterMessage =
@@ -33,8 +34,7 @@ class LoginFetchCoordinatorText {
         '\u767b\u5f55\u8bf7\u6c42\u5df2\u53d1\u51fa\uff0c\u6b63\u5728\u7b49\u5f85\u9875\u9762\u54cd\u5e94...',
     'SUBMITTED':
         '\u5df2\u81ea\u52a8\u63d0\u4ea4\u767b\u5f55\uff0c\u8bf7\u7a0d\u5019...',
-    'VERIFICATION_REQUIRED':
-        '\u68c0\u6d4b\u5230\u591a\u56e0\u5b50\u6216\u8bbe\u5907\u9a8c\u8bc1\u7801\u9a8c\u8bc1\uff0c\u9700\u8981\u4f60\u624b\u52a8\u5b8c\u6210\u540e\u518d\u7ee7\u7eed...',
+    'VERIFICATION_REQUIRED': LoginFlowText.securityVerificationRequired,
   };
 
   static String? messageForAutofillStatus(String status) {
@@ -47,8 +47,7 @@ class LoginFetchCoordinatorText {
   }) {
     if (result.verificationRequired) {
       return const LoginAutofillStateResolution(
-        statusText:
-            '\u68c0\u6d4b\u5230\u591a\u56e0\u5b50\u6216\u8bbe\u5907\u9a8c\u8bc1\u7801\u6821\u9a8c\uff0c\u9700\u8981\u4f60\u624b\u52a8\u5b8c\u6210\u9a8c\u8bc1',
+        statusText: LoginFlowText.securityVerificationRequired,
         stopAutofillLoop: true,
         clearPendingAutofill: true,
       );

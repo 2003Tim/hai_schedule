@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/auth_credentials_service.dart';
 import 'package:hai_schedule/services/invalid_credentials_exception.dart';
 import 'package:hai_schedule/services/login_expired_exception.dart';
@@ -20,6 +22,8 @@ void main() {
 
   setUp(() {
     SecureStorageMock.clear();
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    AppStorage.instance.resetForTesting();
   });
 
   group('PortalReloginService.reLogin', () {

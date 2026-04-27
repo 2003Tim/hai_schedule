@@ -24,14 +24,14 @@ object NativeCredentialStore {
         prefs(context).edit()
             .putString(KEY_USERNAME, username)
             .putString(KEY_PASSWORD, password)
-            .apply()
+            .commit()
     }
 
     fun clear(context: Context) {
         prefs(context).edit()
             .remove(KEY_USERNAME)
             .remove(KEY_PASSWORD)
-            .apply()
+            .commit()
     }
 
     fun load(context: Context): Pair<String, String>? {
@@ -47,7 +47,7 @@ object NativeCredentialStore {
     fun saveCookieSnapshot(context: Context, cookie: String) {
         prefs(context).edit()
             .putString(KEY_COOKIE_SNAPSHOT, cookie)
-            .apply()
+            .commit()
     }
 
     fun loadCookieSnapshot(context: Context): String? {
@@ -58,6 +58,6 @@ object NativeCredentialStore {
     fun clearCookieSnapshot(context: Context) {
         prefs(context).edit()
             .remove(KEY_COOKIE_SNAPSHOT)
-            .apply()
+            .commit()
     }
 }

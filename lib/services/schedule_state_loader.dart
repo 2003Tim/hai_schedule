@@ -10,6 +10,9 @@ import 'package:hai_schedule/models/school_time.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
 import 'package:hai_schedule/utils/week_calculator.dart';
 
+const _startupConsistencyRetryDelay = Duration(milliseconds: 200);
+const _startupConsistencyMaxAttempts = 5;
+
 class LoadedScheduleState {
   final List<Course> courses;
   final List<ScheduleOverride> overrides;
@@ -38,6 +41,16 @@ class LoadedScheduleState {
   });
 }
 
+class _ConsistentScheduleCache {
+  final String? activeSemesterCode;
+  final ScheduleCache cache;
+
+  const _ConsistentScheduleCache({
+    required this.activeSemesterCode,
+    required this.cache,
+  });
+}
+
 class ScheduleStateLoader {
   ScheduleStateLoader({
     ScheduleRepository? scheduleRepository,
@@ -56,10 +69,8 @@ class ScheduleStateLoader {
   final SchoolTimeRepository _schoolTimeRepository;
 
   Future<LoadedScheduleState> load() async {
-    final activeSemester = await _scheduleRepository.loadActiveSemesterCode();
-    final cache = await _scheduleRepository.loadCache(
-      semesterCode: activeSemester,
-    );
+    final consistentCache = await _loadConsistentCache();
+    final cache = consistentCache.cache;
     final preferences = await _preferencesRepository.load();
     final knownSemesterCatalog =
         await _scheduleRepository.loadKnownSemesterOptions();
@@ -202,5 +213,33 @@ class ScheduleStateLoader {
     }
 
     return const <Course>[];
+  }
+
+  Future<_ConsistentScheduleCache> _loadConsistentCache() async {
+    var activeSemester = await _scheduleRepository.loadActiveSemesterCode();
+    var cache = await _scheduleRepository.loadCache(
+      semesterCode: activeSemester,
+    );
+
+    for (var attempt = 0; attempt < _startupConsistencyMaxAttempts; attempt++) {
+      final writingLocked = await _scheduleRepository.loadSyncWritingLock();
+      if (!writingLocked) {
+        return _ConsistentScheduleCache(
+          activeSemesterCode: activeSemester,
+          cache: cache,
+        );
+      }
+      if (attempt == _startupConsistencyMaxAttempts - 1) {
+        break;
+      }
+      await Future<void>.delayed(_startupConsistencyRetryDelay);
+      activeSemester = await _scheduleRepository.loadActiveSemesterCode();
+      cache = await _scheduleRepository.loadCache(semesterCode: activeSemester);
+    }
+
+    return _ConsistentScheduleCache(
+      activeSemesterCode: activeSemester,
+      cache: cache,
+    );
   }
 }

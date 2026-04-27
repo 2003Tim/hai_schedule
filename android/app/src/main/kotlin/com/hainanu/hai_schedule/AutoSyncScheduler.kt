@@ -39,6 +39,10 @@ private data class SyncExecutionResult(
 class AutoSyncScheduler : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (isInvalidated(context)) {
+            cancel(context, clearNextSyncTime = true)
+            return
+        }
         logd("收到广播: ${intent.action}")
         when (intent.action) {
             ACTION_RUN -> {
@@ -117,6 +121,8 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private const val KEY_NEXT_SYNC = "next_background_sync_time"
         private const val KEY_COOKIE_SNAPSHOT = "last_auto_sync_cookie"
         private const val KEY_COOKIE_SNAPSHOT_INVALIDATED = "last_auto_sync_cookie_invalidated"
+        private const val KEY_SYNC_INVALIDATION_FLAG = "sync_invalidation_flag"
+        private const val KEY_SYNC_WRITING_LOCK = "sync_writing_lock"
         private const val KEY_SCHEDULE_ARCHIVE = "schedule_archive_by_semester"
         private const val KEY_SCHEDULE_OVERRIDES = "schedule_overrides"
         private const val KEY_SCHOOL_TIME_CONFIG = "school_time_config"
@@ -174,8 +180,12 @@ class AutoSyncScheduler : BroadcastReceiver() {
             }
 
             if (!enabled || frequency == "manual") {
-                cancel(context)
-                prefs.edit().remove(flutterKey(KEY_NEXT_SYNC)).apply()
+                cancel(context, clearNextSyncTime = true)
+                return null
+            }
+
+            if (isInvalidated(context)) {
+                cancel(context, clearNextSyncTime = true)
                 return null
             }
 
@@ -196,6 +206,10 @@ class AutoSyncScheduler : BroadcastReceiver() {
             preserveExistingCustomSchedule: Boolean = true,
         ): String? {
             val prefs = flutterPrefs(context)
+            if (isInvalidated(context)) {
+                cancel(context, clearNextSyncTime = true)
+                return null
+            }
             val resolvedFrequency = frequency
                 ?: prefs.getString(flutterKey(KEY_FREQUENCY), "daily")
                 ?: "daily"
@@ -206,8 +220,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 )
 
             if (resolvedFrequency == "manual") {
-                cancel(context)
-                prefs.edit().remove(flutterKey(KEY_NEXT_SYNC)).apply()
+                cancel(context, clearNextSyncTime = true)
                 return null
             }
 
@@ -237,9 +250,16 @@ class AutoSyncScheduler : BroadcastReceiver() {
             return nextIso
         }
 
-        fun cancel(context: Context) {
+        fun cancel(context: Context, clearNextSyncTime: Boolean = false) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             alarmManager.cancel(createPendingIntent(context))
+            if (clearNextSyncTime) {
+                synchronized(PREFS_WRITE_LOCK) {
+                    flutterPrefs(context).edit()
+                        .remove(flutterKey(KEY_NEXT_SYNC))
+                        .commit()
+                }
+            }
         }
 
         private fun performSync(
@@ -247,6 +267,13 @@ class AutoSyncScheduler : BroadcastReceiver() {
             retryDepth: Int = 0,
         ): SyncExecutionResult {
             logd("开始执行后台同步")
+            if (isInvalidated(context)) {
+                logd("后台同步终止: 执行阶段命中凭据失效标记")
+                return SyncExecutionResult(
+                    succeeded = false,
+                    shouldReschedule = false,
+                )
+            }
             val prefs = flutterPrefs(context)
             val semester = prefs.getString(flutterKey(KEY_ACTIVE_SEMESTER), null)
                 ?: prefs.getString(flutterKey(KEY_LAST_SEMESTER), null)
@@ -395,26 +422,31 @@ class AutoSyncScheduler : BroadcastReceiver() {
             val message = buildSuccessMessage(courses.size, diffSummary)
             val nowIso = toIsoString(System.currentTimeMillis())
 
-            synchronized(PREFS_WRITE_LOCK) {
-                prefs.edit()
-                    .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), rawScheduleJson)
-                    .putString(flutterKey(KEY_LAST_FETCH), nowIso)
-                    .putString(flutterKey(KEY_LAST_STATE), "success")
-                    .putString(flutterKey(KEY_LAST_SOURCE), "background")
-                    .putString(flutterKey(KEY_LAST_MESSAGE), message)
-                    .putString(flutterKey(KEY_LAST_DIFF_SUMMARY), diffSummary)
-                    .putString(flutterKey(KEY_LAST_STATE_SEMESTER), semester)
-                    .remove(flutterKey(KEY_LAST_ERROR))
-                    .commit()
-            }
+            setSyncWritingLock(prefs, true)
+            try {
+                synchronized(PREFS_WRITE_LOCK) {
+                    prefs.edit()
+                        .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), rawScheduleJson)
+                        .putString(flutterKey(KEY_LAST_FETCH), nowIso)
+                        .putString(flutterKey(KEY_LAST_STATE), "success")
+                        .putString(flutterKey(KEY_LAST_SOURCE), "background")
+                        .putString(flutterKey(KEY_LAST_MESSAGE), message)
+                        .putString(flutterKey(KEY_LAST_DIFF_SUMMARY), diffSummary)
+                        .putString(flutterKey(KEY_LAST_STATE_SEMESTER), semester)
+                        .remove(flutterKey(KEY_LAST_ERROR))
+                        .commit()
+                }
 
-            persistSemesterSyncRecord(
-                prefs = prefs,
-                semester = semester,
-                count = courses.size,
-                lastSyncTimeIso = nowIso,
-            )
-            persistScheduleArchive(context, semester, rawScheduleJson, courses)
+                persistSemesterSyncRecord(
+                    prefs = prefs,
+                    semester = semester,
+                    count = courses.size,
+                    lastSyncTimeIso = nowIso,
+                )
+                persistScheduleArchive(context, semester, rawScheduleJson, courses)
+            } finally {
+                setSyncWritingLock(prefs, false)
+            }
             saveProjectionPayload(context, semester, courses)
             ClassReminderScheduler.rebuildFromStoredProjection(context)
             ClassSilenceScheduler.rebuildFromStoredProjection(context)
@@ -484,6 +516,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 prefs.edit()
                     .remove(flutterKey(KEY_COOKIE_SNAPSHOT))
                     .remove(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED))
+                    .remove(flutterKey(KEY_SYNC_INVALIDATION_FLAG))
                     .commit()
             }
         }
@@ -499,6 +532,28 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     .putBoolean(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED), true)
                     .commit()
             }
+        }
+
+        private fun setSyncWritingLock(
+            prefs: SharedPreferences,
+            writing: Boolean,
+        ) {
+            synchronized(PREFS_WRITE_LOCK) {
+                val editor = prefs.edit()
+                if (writing) {
+                    editor.putBoolean(flutterKey(KEY_SYNC_WRITING_LOCK), true)
+                } else {
+                    editor.remove(flutterKey(KEY_SYNC_WRITING_LOCK))
+                }
+                editor.commit()
+            }
+        }
+
+        fun isInvalidated(context: Context): Boolean {
+            return flutterPrefs(context).getBoolean(
+                flutterKey(KEY_SYNC_INVALIDATION_FLAG),
+                false,
+            )
         }
 
         private fun loadStoredCookieSnapshot(

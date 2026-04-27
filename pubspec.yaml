@@ -32,11 +32,12 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - HaiSchedule_splash_v3.png
+    - images/HaiSchedule_splash_v3.png
+    - images/HaiSchedule_splash_v3_pad.png
 
 flutter_native_splash:
   color: "#EAF4FF"
-  background_image: HaiSchedule_splash_v3.png
+  background_image: images/HaiSchedule_splash_v3.png
   android: true
   ios: false
   web: false

@@ -18,7 +18,7 @@ void main() {
       );
       expect(
         coordinator.messageForAutofillStatus('VERIFICATION_REQUIRED'),
-        '\u68c0\u6d4b\u5230\u591a\u56e0\u5b50\u6216\u8bbe\u5907\u9a8c\u8bc1\u7801\u9a8c\u8bc1\uff0c\u9700\u8981\u4f60\u624b\u52a8\u5b8c\u6210\u540e\u518d\u7ee7\u7eed...',
+        '\u9700\u8981\u5b89\u5168\u9a8c\u8bc1\uff0c\u8bf7\u5728\u624b\u673a\u4e0a\u626b\u7801\u6216\u786e\u8ba4\uff08\u82e5\u65e0\u6cd5\u626b\u7801\uff0c\u8bf7\u5c1d\u8bd5\u624b\u52a8\u64cd\u4f5c\uff09',
       );
       expect(coordinator.messageForAutofillStatus('UNKNOWN_STATUS'), isNull);
     });
@@ -37,7 +37,7 @@ void main() {
       expect(verificationResolution.clearPendingAutofill, isTrue);
       expect(
         verificationResolution.statusText,
-        '\u68c0\u6d4b\u5230\u591a\u56e0\u5b50\u6216\u8bbe\u5907\u9a8c\u8bc1\u7801\u6821\u9a8c\uff0c\u9700\u8981\u4f60\u624b\u52a8\u5b8c\u6210\u9a8c\u8bc1',
+        '\u9700\u8981\u5b89\u5168\u9a8c\u8bc1\uff0c\u8bf7\u5728\u624b\u673a\u4e0a\u626b\u7801\u6216\u786e\u8ba4\uff08\u82e5\u65e0\u6cd5\u626b\u7801\uff0c\u8bf7\u5c1d\u8bd5\u624b\u52a8\u64cd\u4f5c\uff09',
       );
 
       final filledResolution = coordinator.resolveAutofillResult(

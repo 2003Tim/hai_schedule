@@ -1,8 +1,10 @@
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/utils/app_logger.dart';
 
 class SavedPortalCredential {
@@ -21,6 +23,8 @@ class AuthCredentialsService {
   AuthCredentialsService._();
 
   static final AuthCredentialsService instance = AuthCredentialsService._();
+  @visibleForTesting
+  static bool? debugForceAndroid;
 
   static const _storage = FlutterSecureStorage();
   static const _nativeChannel = MethodChannel(
@@ -28,6 +32,8 @@ class AuthCredentialsService {
   );
   static const _usernameKey = 'portal_username';
   static const _passwordKey = 'portal_password';
+
+  static bool get _isAndroid => debugForceAndroid ?? Platform.isAndroid;
 
   Future<SavedPortalCredential?> load() async {
     final username = await _storage.read(key: _usernameKey);
@@ -44,7 +50,7 @@ class AuthCredentialsService {
       await _storage.write(key: _passwordKey, value: native.password);
       return native;
     }
-    if (Platform.isAndroid) {
+    if (_isAndroid) {
       try {
         await _nativeChannel.invokeMethod('saveCredential', {
           'username': username,
@@ -63,7 +69,7 @@ class AuthCredentialsService {
   }) async {
     await _storage.write(key: _usernameKey, value: username);
     await _storage.write(key: _passwordKey, value: password);
-    if (Platform.isAndroid) {
+    if (_isAndroid) {
       try {
         await _nativeChannel.invokeMethod('saveCredential', {
           'username': username,
@@ -73,22 +79,27 @@ class AuthCredentialsService {
         AppLogger.warn('AuthCredentials', 'Native 凭据镜像写入失败（不影响功能）', e);
       }
     }
+    await AppStorage.instance.clearSyncInvalidationFlag();
   }
 
-  Future<void> clear() async {
-    await _storage.delete(key: _usernameKey);
-    await _storage.delete(key: _passwordKey);
-    if (Platform.isAndroid) {
-      try {
-        await _nativeChannel.invokeMethod('clearCredential');
-      } catch (e) {
-        AppLogger.warn('AuthCredentials', 'Native 凭据镜像清除失败（不影响功能）', e);
+  Future<void> clear({bool strict = false}) async {
+    if (_isAndroid) {
+      if (strict) {
+        await _nativeChannel.invokeMethod<void>('clearCredential');
+      } else {
+        try {
+          await _nativeChannel.invokeMethod('clearCredential');
+        } catch (e) {
+          AppLogger.warn('AuthCredentials', 'Native 凭据镜像清除失败（不影响功能）', e);
+        }
       }
     }
+    await _storage.delete(key: _usernameKey);
+    await _storage.delete(key: _passwordKey);
   }
 
   Future<SavedPortalCredential?> _loadFromNative() async {
-    if (!Platform.isAndroid) return null;
+    if (!_isAndroid) return null;
     try {
       final raw = await _nativeChannel.invokeMapMethod<String, dynamic>(
         'loadCredential',

@@ -208,7 +208,6 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
   }
 
   Future<void> _clearSavedCredential() async {
-    await AuthCredentialsService.instance.clear();
     await AutoSyncService.handleCredentialCleared();
     if (!mounted) return;
     await _refresh();

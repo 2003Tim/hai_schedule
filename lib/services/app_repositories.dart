@@ -76,6 +76,8 @@ class ScheduleRepository {
   Future<bool> loadHasSyncedAtLeastOneSemester() =>
       _storage.loadHasSyncedAtLeastOneSemester();
 
+  Future<bool> loadSyncWritingLock() => _storage.loadSyncWritingLock();
+
   Future<void> saveHasSyncedAtLeastOneSemester(bool value) =>
       _storage.saveHasSyncedAtLeastOneSemester(value);
 

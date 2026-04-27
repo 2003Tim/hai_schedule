@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +21,8 @@ class AppStorage {
   AppStorage._();
 
   static final AppStorage instance = AppStorage._();
+  @visibleForTesting
+  static bool? debugForceAndroid;
 
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
   static const MethodChannel _nativeSecureChannel = MethodChannel(
@@ -63,6 +67,9 @@ class AppStorage {
   static const String _cookieSnapshotKey = AppStorageSchema.cookieSnapshotKey;
   static const String _cookieSnapshotInvalidatedKey =
       AppStorageSchema.cookieSnapshotInvalidatedKey;
+  static const String _syncInvalidationFlagKey =
+      AppStorageSchema.syncInvalidationFlagKey;
+  static const String _syncWritingLockKey = AppStorageSchema.syncWritingLockKey;
   static const String _studentIdKey = AppStorageSchema.studentIdKey;
   static const String _reminderLeadTimeKey =
       AppStorageSchema.reminderLeadTimeKey;
@@ -79,6 +86,8 @@ class AppStorage {
 
   Future<SharedPreferences> get _prefs =>
       _prefsFuture ??= SharedPreferences.getInstance();
+
+  static bool get _isAndroid => debugForceAndroid ?? Platform.isAndroid;
 
   void resetForTesting() {
     _prefsFuture = null;
@@ -209,18 +218,24 @@ class AppStorage {
         .where((item) => item.isValid)
         .map((item) => json.encode(item.toJson()))
         .toList(growable: false);
-    final didSave = await prefs.setStringList(
-      _semesterCatalogKey,
-      encodedItems,
-    );
-    if (!didSave) {
-      throw StateError('学期目录保存失败');
+    for (var attempt = 0; attempt < 4; attempt++) {
+      final didSave = await prefs.setStringList(
+        _semesterCatalogKey,
+        encodedItems,
+      );
+      if (!didSave) {
+        throw StateError('学期目录保存失败');
+      }
+      await prefs.reload();
+      final persistedItems = prefs.getStringList(_semesterCatalogKey);
+      if (_sameStringList(persistedItems, encodedItems)) {
+        return;
+      }
+      if (attempt < 3) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
     }
-    await prefs.reload();
-    final persistedItems = prefs.getStringList(_semesterCatalogKey);
-    if (!_sameStringList(persistedItems, encodedItems)) {
-      throw StateError('学期目录落盘失败');
-    }
+    throw StateError('学期目录落盘失败');
   }
 
   Future<void> saveKnownSemesterOptions(List<SemesterOption> options) =>
@@ -639,6 +654,36 @@ class AppStorage {
     await prefs.remove(_cookieSnapshotKey);
   }
 
+  Future<bool> loadSyncInvalidationFlag() async {
+    final prefs = await _reloadedPrefs();
+    return prefs.getBool(_syncInvalidationFlagKey) ?? false;
+  }
+
+  Future<void> setSyncInvalidationFlag(bool value) async {
+    final prefs = await _prefs;
+    if (value) {
+      await prefs.setBool(_syncInvalidationFlagKey, true);
+      return;
+    }
+    await prefs.remove(_syncInvalidationFlagKey);
+  }
+
+  Future<void> clearSyncInvalidationFlag() => setSyncInvalidationFlag(false);
+
+  Future<bool> loadSyncWritingLock() async {
+    final prefs = await _reloadedPrefs();
+    return prefs.getBool(_syncWritingLockKey) ?? false;
+  }
+
+  Future<void> setSyncWritingLock(bool value) async {
+    final prefs = await _prefs;
+    if (value) {
+      await prefs.setBool(_syncWritingLockKey, true);
+      return;
+    }
+    await prefs.remove(_syncWritingLockKey);
+  }
+
   Future<String?> loadCookieSnapshot() async {
     final prefs = await _prefs;
     final invalidated = prefs.getBool(_cookieSnapshotInvalidatedKey) ?? false;
@@ -676,8 +721,8 @@ class AppStorage {
     return null;
   }
 
-  Future<void> clearCookieSnapshot() async {
-    await _clearCookieSnapshotFromNative();
+  Future<void> clearCookieSnapshot({bool strict = false}) async {
+    await _clearCookieSnapshotFromNative(strict: strict);
     await _secureStorage.delete(key: _cookieSnapshotKey);
     final prefs = await _prefs;
     await prefs.remove(_cookieSnapshotKey);
@@ -757,7 +802,7 @@ class AppStorage {
 
   Future<SharedPreferences> _reloadedPrefs() async {
     final prefs = await _prefs;
-    if (Platform.isAndroid) await prefs.reload();
+    if (_isAndroid) await prefs.reload();
     return prefs;
   }
 
@@ -883,10 +928,11 @@ class AppStorage {
     await _secureStorage.write(key: _cookieSnapshotKey, value: cookie);
     final prefs = await _prefs;
     await prefs.remove(_cookieSnapshotInvalidatedKey);
+    await prefs.remove(_syncInvalidationFlagKey);
   }
 
   Future<bool> _saveCookieSnapshotToNative(String cookie) async {
-    if (!Platform.isAndroid) return false;
+    if (!_isAndroid) return false;
     try {
       await _nativeSecureChannel.invokeMethod<void>('saveCookieSnapshot', {
         'cookie': cookie,
@@ -900,7 +946,7 @@ class AppStorage {
   }
 
   Future<String?> _loadCookieSnapshotFromNative() async {
-    if (!Platform.isAndroid) return null;
+    if (!_isAndroid) return null;
     try {
       final value = await _nativeSecureChannel.invokeMethod<String>(
         'loadCookieSnapshot',
@@ -914,14 +960,14 @@ class AppStorage {
     }
   }
 
-  Future<void> _clearCookieSnapshotFromNative() async {
-    if (!Platform.isAndroid) return;
+  Future<void> _clearCookieSnapshotFromNative({bool strict = false}) async {
+    if (!_isAndroid) return;
     try {
       await _nativeSecureChannel.invokeMethod<void>('clearCookieSnapshot');
     } on MissingPluginException {
-      // Ignore in environments without the Android bridge.
+      if (strict) rethrow;
     } on PlatformException {
-      // Ignore here and still clear the Flutter-side mirror.
+      if (strict) rethrow;
     }
   }
 }

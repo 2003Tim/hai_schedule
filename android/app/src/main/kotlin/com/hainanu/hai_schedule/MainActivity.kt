@@ -61,6 +61,14 @@ class MainActivity : FlutterActivity() {
                     result.success(next ?: "")
                 }
 
+                "cancelBackgroundSync" -> {
+                    AutoSyncScheduler.cancel(
+                        context = applicationContext,
+                        clearNextSyncTime = true,
+                    )
+                    result.success(true)
+                }
+
                 else -> result.notImplemented()
             }
         }
@@ -205,4 +213,3 @@ class MainActivity : FlutterActivity() {
         }
     }
 }
-

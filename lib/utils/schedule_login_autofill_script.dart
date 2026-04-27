@@ -117,6 +117,7 @@ class ScheduleLoginAutofillScript {
           '\\u9a8c\\u8bc1\\u7801\\u9519\\u8bef',
           '\\u8d26\\u53f7\\u975e\\u5e38\\u7528'
         ];
+        var isBlockedByError = false;
 
         function findLoginErrorText() {
           var selectors = [
@@ -145,6 +146,7 @@ class ScheduleLoginAutofillScript {
               if (!visible(node)) continue;
               var text = collapseWhitespace(node.innerText || node.textContent);
               if (text && containsKeyword(text, loginErrorKeywords)) {
+                isBlockedByError = true;
                 return text;
               }
             }
@@ -161,6 +163,7 @@ class ScheduleLoginAutofillScript {
             );
             if (!fallbackText || fallbackText.length > 80) continue;
             if (containsKeyword(fallbackText, loginErrorKeywords)) {
+              isBlockedByError = true;
               return fallbackText;
             }
           }
@@ -540,7 +543,28 @@ class ScheduleLoginAutofillScript {
           );
         }
 
+        function hasHainanuSecurityVerificationCue() {
+          var qrChallenge = pick([
+            '#qrCode',
+            '.qrcode-img'
+          ], false);
+          if (qrChallenge) {
+            return true;
+          }
+
+          var bodyText = normalize(document.body ? document.body.innerText : '');
+          return containsKeyword(bodyText, [
+            '\\u8bf7\\u4f7f\\u7528\\u6d77\\u5357\\u5927\\u5b66APP\\u626b\\u7801',
+            '\\u4e8c\\u6b21\\u9a8c\\u8bc1',
+            '\\u8eab\\u4efd\\u786e\\u8ba4'
+          ]);
+        }
+
         function hasVerificationStep() {
+          if (hasHainanuSecurityVerificationCue()) {
+            return true;
+          }
+
           var factorTitle = pick([
             'span.right-header-title'
           ], false);
@@ -607,6 +631,14 @@ class ScheduleLoginAutofillScript {
         }
 
         function submitLogin() {
+          if (isBlockedByError) {
+            return false;
+          }
+          var loginError = findLoginErrorText();
+          if (loginError) {
+            postLoginError(loginError);
+            return false;
+          }
           var submitNode = findSubmitButton();
           if (submitNode) {
             return triggerClick(submitNode);

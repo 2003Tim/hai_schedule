@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -18,6 +19,8 @@ import 'package:hai_schedule/widgets/mini_overlay.dart';
 final globalScaffoldKey = GlobalKey<ScaffoldMessengerState>();
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await _configureAndroidSystemUi();
   final bootstrap = await AppBootstrap.initialize();
   runApp(
     HaiScheduleApp(
@@ -25,6 +28,21 @@ void main() async {
       themeProvider: bootstrap.themeProvider,
     ),
   );
+}
+
+Future<void> _configureAndroidSystemUi() async {
+  if (!Platform.isAndroid) return;
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarIconBrightness: Brightness.dark,
+      systemStatusBarContrastEnforced: false,
+      systemNavigationBarContrastEnforced: false,
+    ),
+  );
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 }
 
 class HaiScheduleApp extends StatelessWidget {
@@ -88,10 +106,9 @@ class _AndroidShellState extends State<AndroidShell> {
 
   Future<void> _prepareLaunch() async {
     final start = DateTime.now();
-    await precacheImage(
-      const AssetImage(AppLaunchSplashScreen.assetPath),
-      context,
-    );
+    final width = MediaQuery.sizeOf(context).width;
+    final assetPath = AppLaunchSplashScreen.assetPathForWidth(width);
+    await precacheImage(AssetImage(assetPath), context);
     final elapsed = DateTime.now().difference(start);
     const minSplashDuration = Duration(milliseconds: 900);
     final remaining = minSplashDuration - elapsed;
@@ -158,10 +175,7 @@ class _WindowsShellState extends State<WindowsShell> with WindowListener {
 
   Future<void> _saveWindowPreferences() {
     return WindowShellPreferencesStore.save(
-      WindowShellPreferences(
-        opacity: _opacity,
-        alwaysOnTop: _alwaysOnTop,
-      ),
+      WindowShellPreferences(opacity: _opacity, alwaysOnTop: _alwaysOnTop),
     );
   }
 
