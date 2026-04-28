@@ -315,16 +315,30 @@ version: 1.0.0+1
 确保 `android/local/key.properties` 和对应 keystore 文件已就位，然后：
 
 ```bash
-# 生成 APK（直接安装用）
-flutter build apk --release
+# 生成 split per ABI APK（直接安装用）
+flutter build apk --release --split-per-abi
 
 # 生成 AAB（上传 Google Play 用）
 flutter build appbundle --release
 ```
 
 产物路径：
-- APK：`build/app/outputs/flutter-apk/app-release.apk`
+- APK：
+  - `build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk`
+  - `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
+  - `build/app/outputs/flutter-apk/app-x86_64-release.apk`
 - AAB：`build/app/outputs/bundle/release/app-release.aab`
+
+推荐发布命名：
+- `HaiSchedule-vX.Y.Z-android-armeabi-v7a.apk`
+- `HaiSchedule-vX.Y.Z-android-arm64-v8a.apk`
+- `HaiSchedule-vX.Y.Z-android-x86_64.apk`
+- `HaiSchedule-vX.Y.Z.aab`
+
+下载说明：
+- 大多数 Android 手机优先下载 `arm64-v8a`
+- 较老的 32 位 Android 设备下载 `armeabi-v7a`
+- `x86_64` 主要用于模拟器或少数特殊环境
 
 未配置签名时会自动回退使用 debug key，产物无法发布到 Play Store。
 
@@ -336,7 +350,26 @@ flutter build windows --release
 
 产物路径：`build/windows/x64/runner/Release/`
 
-将整个 `Release/` 目录打包为 zip 即可分发，或使用 `msix` 工具生成安装包。
+将整个 `Release/` 目录复制到 `build/release-assets/vX.Y.Z/HaiSchedule-vX.Y.Z-windows-x64/`，再打包为：
+
+- `HaiSchedule-vX.Y.Z-windows-x64.zip`
+
+Windows 用户解压后直接运行 `hai_schedule.exe` 即可。
+
+### GitHub Release
+
+正式 release 建议统一包含：
+
+- 标题：`vX.Y.Z`
+- 正文：版本、对应 tag / commit、更新内容、发布资产、下载说明、构建校验
+- 资产：
+  - Windows x64 zip
+  - Android split per ABI APK
+  - AAB（如果本次需要商店分发）
+
+更完整的发布流程、正文模板和历史规范见：
+
+- [docs/release_workflow.md](docs/release_workflow.md)
 
 ---
 
