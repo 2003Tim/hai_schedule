@@ -122,7 +122,9 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
           nowDate: nowDate,
           nowMinutes: nowMinutes,
           activeWeeks:
-              activeWeeks.isEmpty ? <int>[lessonWeek] : activeWeeks.toSet().toList(),
+              activeWeeks.isEmpty
+                  ? <int>[lessonWeek]
+                  : activeWeeks.toSet().toList(),
           isOngoing: isOngoing,
           timeConfig: timeConfig,
         );
@@ -300,7 +302,7 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
     final accentColor = ScheduleUiTokens.terracotta;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isCompact = constraints.maxWidth < 320;
@@ -410,7 +412,7 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
     final countdownText = info.label;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isCompact = constraints.maxWidth < 340;
@@ -956,7 +958,8 @@ class _HomeNextLessonWeeksSheet extends StatelessWidget {
                         ),
                         _WeekSheetPill(
                           icon: Icons.schedule_rounded,
-                          label: '第${info.slot.startSection}-${info.slot.endSection}节',
+                          label:
+                              '第${info.slot.startSection}-${info.slot.endSection}节',
                           tintColor: baseColor,
                         ),
                         _WeekSheetPill(
@@ -1063,7 +1066,9 @@ class _WeekCell extends StatelessWidget {
             ? baseColor.withValues(alpha: 0.40)
             : (isCurrent
                 ? baseColor.withValues(alpha: 0.22)
-                : ScheduleUiTokens.glassBorderFor(theme).withValues(alpha: 0.55));
+                : ScheduleUiTokens.glassBorderFor(
+                  theme,
+                ).withValues(alpha: 0.55));
     final fillColor =
         isActive
             ? baseColor.withValues(alpha: 0.14)

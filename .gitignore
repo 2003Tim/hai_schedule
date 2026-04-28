@@ -53,6 +53,7 @@ app.*.map.json
 .claude/
 backupversion/
 release/
+docs/flutter_sdk_location.md
 
 # Gradle user home cache (downloaded by build, not project files)
 android/.gradle-user/

@@ -8,6 +8,8 @@ import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/services/theme_provider.dart';
 import 'package:hai_schedule/utils/week_calculator.dart';
+import 'package:hai_schedule/widgets/home_screen_sections.dart';
+import 'package:hai_schedule/widgets/week_selector.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -103,6 +105,65 @@ void main() {
       expect(scheduleProvider.selectedWeek, 3);
     },
   );
+
+  testWidgets('day view keeps the date selector below the next lesson card', (
+    tester,
+  ) async {
+    final scheduleProvider = ScheduleProvider();
+    await scheduleProvider.ready;
+    final themeProvider = ThemeProvider();
+    await themeProvider.ready;
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ScheduleProvider>.value(
+            value: scheduleProvider,
+          ),
+          ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
+        ],
+        child: MaterialApp(
+          theme: themeProvider.themeData,
+          darkTheme: themeProvider.darkThemeData,
+          home: Scaffold(
+            body: SizedBox.expand(
+              child: HomeScheduleBody(
+                provider: scheduleProvider,
+                showDayView: true,
+                selectedDay: 1,
+                onDaySelected: (_) {},
+                onLoginFetch: () {},
+                onManualImport: () {},
+                wrapScheduleSemantics: (child, _) => child,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final cardFinder = find.byKey(const ValueKey('home.nextLesson.cardShell'));
+    final dateFinder = find.byKey(const ValueKey('home.daySelector.shell'));
+    final weekFinder = find.byType(WeekSelector);
+    final cardTop = tester.getTopLeft(cardFinder).dy;
+    final cardBottom = tester.getBottomLeft(cardFinder).dy;
+    final dateTop = tester.getTopLeft(dateFinder).dy;
+
+    expect(cardTop, lessThan(dateTop));
+    expect(
+      tester.getTopLeft(dateFinder).dx,
+      moreOrLessEquals(tester.getTopLeft(cardFinder).dx, epsilon: 0.1),
+    );
+    expect(
+      tester.getTopRight(dateFinder).dx,
+      moreOrLessEquals(tester.getTopRight(cardFinder).dx, epsilon: 0.1),
+    );
+    expect(
+      dateTop - cardBottom,
+      moreOrLessEquals(cardTop - tester.getBottomLeft(weekFinder).dy),
+    );
+  });
 }
 
 Future<void> _pumpHome(

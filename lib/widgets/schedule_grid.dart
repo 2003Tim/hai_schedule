@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import 'package:hai_schedule/models/course.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/school_time.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
-import 'package:hai_schedule/services/theme_provider.dart';
 import 'package:hai_schedule/utils/constants.dart';
 import 'package:hai_schedule/widgets/course_card.dart';
+import 'package:hai_schedule/widgets/schedule_day_strip.dart';
 import 'package:hai_schedule/widgets/schedule_slot_dialogs.dart';
 
 class ScheduleGrid extends StatelessWidget {
@@ -16,11 +15,9 @@ class ScheduleGrid extends StatelessWidget {
 
   const ScheduleGrid({super.key, required this.provider, this.weekOverride});
 
-  static const double _headerHeight = 60;
   static const double _timeColWidth = 40;
   static const double _cellHeight = 58;
   static const double _periodGap = 10;
-  static const double _dayColumnHorizontalInset = 3;
   static const EdgeInsets _cardInset = EdgeInsets.symmetric(
     horizontal: 2,
     vertical: 1.5,
@@ -38,7 +35,7 @@ class ScheduleGrid extends StatelessWidget {
 
     return RepaintBoundary(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
         child: Column(
           children: [
             _buildDayHeader(context, week, days),
@@ -67,154 +64,14 @@ class ScheduleGrid extends StatelessWidget {
   }
 
   Widget _buildDayHeader(BuildContext context, int week, int days) {
-    final today = provider.todayWeekday;
-    final isCurrentWeek = week == provider.currentWeek;
-    final theme = Theme.of(context);
-    final themeProvider = context.read<ThemeProvider>();
-    final isLightTheme = theme.brightness == Brightness.light;
-    final primaryTextColor =
-        isLightTheme ? theme.colorScheme.onSurface : Colors.white;
-    final secondaryTextColor =
-        isLightTheme
-            ? theme.colorScheme.onSurface.withValues(alpha: 0.72)
-            : Colors.white.withValues(alpha: 0.84);
-    final fillTop = themeProvider.glassPanelStrongFill(
-      theme.brightness,
-      strength: 0.76,
-    );
-    final fillBottom = themeProvider.glassPanelFill(
-      theme.brightness,
-      strength: 0.66,
-    );
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [fillTop, fillBottom],
-        ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: themeProvider.glassOutline(theme.brightness, strength: 0.82),
-        ),
-      ),
-      child: SizedBox(
-        height: _headerHeight,
-        child: Row(
-          children: [
-            SizedBox(
-              width: _timeColWidth,
-              child: Center(
-                child: Text(
-                  '${provider.weekCalc.getWeekMonday(week).month}\n月',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: primaryTextColor,
-                    height: 1.25,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-            ...List.generate(days, (i) {
-              final weekday = i + 1;
-              final date = provider.weekCalc.getDate(week, weekday);
-              final isToday = isCurrentWeek && weekday == today;
-
-              return Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: _dayColumnHorizontalInset,
-                    vertical: 6,
-                  ),
-                  child: Center(
-                    child: Container(
-                      width: double.infinity,
-                      alignment: Alignment.center,
-                      decoration:
-                          isToday
-                              ? BoxDecoration(
-                                color: theme.colorScheme.primary.withValues(
-                                  alpha:
-                                      theme.brightness == Brightness.dark
-                                          ? 0.18
-                                          : 0.10,
-                                ),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: Colors.white.withValues(
-                                    alpha:
-                                        theme.brightness == Brightness.dark
-                                            ? 0.08
-                                            : 0.16,
-                                  ),
-                                ),
-                              )
-                              : null,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Align(
-                            alignment: Alignment.center,
-                            child: Text(
-                              WeekdayNames.getShort(weekday),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight:
-                                    isToday ? FontWeight.w700 : FontWeight.w500,
-                                color: secondaryTextColor,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Align(
-                            alignment: Alignment.center,
-                            child: Container(
-                              width: 24,
-                              height: 24,
-                              alignment: Alignment.center,
-                              decoration:
-                                  isToday
-                                      ? BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
-                                            theme.colorScheme.primary
-                                                .withValues(alpha: 0.92),
-                                            theme.colorScheme.primary
-                                                .withValues(alpha: 0.76),
-                                          ],
-                                        ),
-                                        shape: BoxShape.circle,
-                                      )
-                                      : null,
-                              child: Text(
-                                '${date.day}',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color:
-                                      isToday ? Colors.white : primaryTextColor,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
+    return ScheduleDayStrip(
+      surfaceKey: const ValueKey('scheduleGrid.dayHeader'),
+      dayKeyPrefix: 'scheduleGrid.dayHeader.item',
+      displayDays: days,
+      leadingWidth: _timeColWidth,
+      highlightedWeekday:
+          week == provider.currentWeek ? provider.todayWeekday : null,
+      dateForWeekday: (weekday) => provider.weekCalc.getDate(week, weekday),
     );
   }
 

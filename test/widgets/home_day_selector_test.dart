@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
+import 'package:hai_schedule/services/theme_provider.dart';
 import 'package:hai_schedule/widgets/home_day_selector.dart';
-import 'package:hai_schedule/widgets/shared_glass_container.dart';
 
 void main() {
-  testWidgets('home day selector renders transparent date row content', (
+  testWidgets('home day selector uses the schedule grid day header style', (
     tester,
   ) async {
     final theme = ThemeData(
@@ -17,14 +18,17 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
-        theme: theme,
-        home: Scaffold(
-          body: HomeDaySelector(
-            displayDays: 2,
-            selectedDay: 1,
-            dateForWeekday: (weekday) => DateTime(2026, 4, 26 + weekday),
-            onSelected: (_) {},
+      ChangeNotifierProvider<ThemeProvider>(
+        create: (_) => ThemeProvider(),
+        child: MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: HomeDaySelector(
+              displayDays: 2,
+              selectedDay: 1,
+              dateForWeekday: (weekday) => DateTime(2026, 4, 26 + weekday),
+              onSelected: (_) {},
+            ),
           ),
         ),
       ),
@@ -32,21 +36,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.byKey(const ValueKey('home.daySelector.shellBlur')),
-      findsNothing,
+      find.byKey(const ValueKey('home.daySelector.shell')),
+      findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('home.daySelector.shell')), findsNothing);
-    expect(find.text('4月'), findsOneWidget);
+    expect(find.text('4\n月'), findsOneWidget);
+    expect(find.text('一'), findsOneWidget);
+    expect(find.text('周一'), findsNothing);
     expect(find.text('27'), findsOneWidget);
 
-    final selected = tester.widget<SharedGlassPill>(
-      find.byKey(const ValueKey('home.daySelector.item.1')),
+    final shell = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('home.daySelector.shell')),
     );
-    expect(selected.selected, isTrue);
-
-    final unselected = tester.widget<SharedGlassPill>(
-      find.byKey(const ValueKey('home.daySelector.item.2')),
-    );
-    expect(unselected.selected, isFalse);
+    final decoration = shell.decoration as BoxDecoration;
+    expect(decoration.borderRadius, BorderRadius.circular(15));
   });
 }

@@ -251,6 +251,7 @@ class HomeScheduleBody extends StatelessWidget {
                 onWeekSelected: provider.selectWeek,
               ),
             ),
+            HomeNextLessonCard(),
             if (showDayView)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
@@ -265,7 +266,6 @@ class HomeScheduleBody extends StatelessWidget {
                   onSelected: onDaySelected,
                 ),
               ),
-            HomeNextLessonCard(),
             Expanded(
               child:
                   provider.courses.isEmpty
