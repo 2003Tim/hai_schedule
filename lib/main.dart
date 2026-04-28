@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:hai_schedule/models/window_shell_preferences.dart';
 import 'package:hai_schedule/screens/app_launch_splash_screen.dart';
 import 'package:hai_schedule/screens/home_screen.dart';
+import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/screens/windows_desktop_shell_screen.dart';
 import 'package:hai_schedule/services/app_bootstrap.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
@@ -31,7 +30,7 @@ void main() async {
 }
 
 Future<void> _configureAndroidSystemUi() async {
-  if (!Platform.isAndroid) return;
+  if (!AppPlatform.instance.isAndroid) return;
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -76,7 +75,7 @@ class HaiScheduleApp extends StatelessWidget {
             themeMode: theme.themeMode,
             home:
                 homeOverride ??
-                (Platform.isWindows
+                (AppPlatform.instance.isWindows
                     ? const WindowsShell()
                     : const AndroidShell()),
           );

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +10,7 @@ import 'package:hai_schedule/models/course.dart';
 import 'package:hai_schedule/models/reminder_models.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/utils/class_reminder_planner.dart';
 import 'package:hai_schedule/utils/schedule_projection_payload.dart';
 import 'package:hai_schedule/utils/week_calculator.dart';
@@ -47,10 +47,10 @@ class ClassReminderService {
   static bool _initialized = false;
   static bool _timezoneReady = false;
 
-  static bool get isSupported => Platform.isAndroid;
+  static bool get isSupported => AppPlatform.instance.supportsLocalNotifications;
 
   static Future<void> initialize() async {
-    if (!Platform.isAndroid || _initialized) return;
+    if (!AppPlatform.instance.supportsLocalNotifications || _initialized) return;
 
     _ensureTimezoneReady();
 
@@ -331,7 +331,7 @@ class ClassReminderService {
 
   static Future<_PermissionResult>
   _requestPermissionsForUserInitiatedEnable() async {
-    if (!Platform.isAndroid) {
+    if (!AppPlatform.instance.supportsLocalNotifications) {
       return const _PermissionResult(
         notificationsGranted: true,
         exactAlarmEnabled: false,
@@ -381,7 +381,7 @@ class ClassReminderService {
   }
 
   static Future<void> _cancelLegacyPluginReminders() async {
-    if (!Platform.isAndroid) return;
+    if (!AppPlatform.instance.supportsLocalNotifications) return;
     await initialize();
     final pending = await _plugin.pendingNotificationRequests();
     for (final request in pending) {
@@ -392,7 +392,7 @@ class ClassReminderService {
   }
 
   static Future<void> _invokeNativeCancel() async {
-    if (!Platform.isAndroid) return;
+    if (!AppPlatform.instance.supportsLocalNotifications) return;
     try {
       await _nativeChannel.invokeMethod<void>('cancelSchedule');
     } on MissingPluginException {

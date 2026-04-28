@@ -1,7 +1,7 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import 'package:hai_schedule/utils/app_platform.dart';
 
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
@@ -61,7 +61,7 @@ class _WindowsDesktopShellScreenState extends State<WindowsDesktopShellScreen>
   }
 
   Future<void> _maybeRunDesktopForegroundAutoSync() async {
-    if (!Platform.isWindows ||
+    if (!AppPlatform.instance.isWindows ||
         !AutoSyncService.supportsForegroundDesktopAutoSync ||
         _isDesktopForegroundSyncRunning ||
         !mounted) {

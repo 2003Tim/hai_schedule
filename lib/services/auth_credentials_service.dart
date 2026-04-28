@@ -1,11 +1,10 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/utils/app_logger.dart';
+import 'package:hai_schedule/utils/app_platform.dart';
 
 class SavedPortalCredential {
   final String username;
@@ -33,7 +32,7 @@ class AuthCredentialsService {
   static const _usernameKey = 'portal_username';
   static const _passwordKey = 'portal_password';
 
-  static bool get _isAndroid => debugForceAndroid ?? Platform.isAndroid;
+  static bool get _isAndroid => debugForceAndroid ?? AppPlatform.instance.isAndroid;
 
   Future<SavedPortalCredential?> load() async {
     final username = await _storage.read(key: _usernameKey);

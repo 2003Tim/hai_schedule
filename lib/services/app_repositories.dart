@@ -194,22 +194,29 @@ class SyncRepository {
     DateTime? nextSyncTime,
     bool clearNextSyncTime = false,
   }) {
-    return _storage.saveAutoSyncRecord(
-      state: state,
-      message: message,
-      source: source,
-      diffSummary: diffSummary,
-      error: error,
-      cookieSnapshot: cookieSnapshot,
-      semesterCode: semesterCode,
-      clearError: clearError,
-      clearDiffSummary: clearDiffSummary,
-      lastFetchTime: lastFetchTime,
-      lastAttemptTime: lastAttemptTime,
-      nextSyncTime: nextSyncTime,
-      clearNextSyncTime: clearNextSyncTime,
+    return _storage.applyAutoSyncStatusPatch(
+      AutoSyncStatusPatch(
+        state: state,
+        message: message,
+        source: source,
+        diffSummary: diffSummary,
+        error: error,
+        cookieSnapshot: cookieSnapshot,
+        semesterCode: semesterCode,
+        lastFetchTime: lastFetchTime,
+        lastAttemptTime: lastAttemptTime,
+        nextSyncTime: nextSyncTime,
+        clearError: clearError,
+        clearDiffSummary: clearDiffSummary,
+        clearNextSyncTime: clearNextSyncTime,
+      ),
     );
   }
+
+  /// 推荐的 patch-style 入口：直接传入 [AutoSyncStatusPatch]，避免调用处堆叠
+  /// 大量可选参数。
+  Future<void> applyStatusPatch(AutoSyncStatusPatch patch) =>
+      _storage.applyAutoSyncStatusPatch(patch);
 
   Future<void> saveSemesterSyncRecord({
     required String semesterCode,

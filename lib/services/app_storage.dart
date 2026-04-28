@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -12,10 +10,15 @@ import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/school_time.dart';
 import 'package:hai_schedule/models/storage_records.dart';
+import 'package:hai_schedule/models/auto_sync_status_patch.dart';
+import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/utils/app_storage_codec.dart';
 import 'package:hai_schedule/utils/app_storage_schema.dart';
+import 'package:hai_schedule/utils/cookie_snapshot_store.dart';
+import 'package:hai_schedule/utils/persist_retry.dart';
 
 export '../models/storage_records.dart';
+export '../models/auto_sync_status_patch.dart';
 
 class AppStorage {
   AppStorage._();
@@ -25,8 +28,9 @@ class AppStorage {
   static bool? debugForceAndroid;
 
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
-  static const MethodChannel _nativeSecureChannel = MethodChannel(
-    'hai_schedule/native_credentials',
+  static final CookieSnapshotStore _cookieSnapshotStore = CookieSnapshotStore(
+    secureStorage: _secureStorage,
+    isAndroid: () => _isAndroid,
   );
 
   static const String _coursesKey = AppStorageSchema.coursesKey;
@@ -65,8 +69,6 @@ class AppStorage {
   static const String _lastScheduleJsonKey =
       AppStorageSchema.lastScheduleJsonKey;
   static const String _cookieSnapshotKey = AppStorageSchema.cookieSnapshotKey;
-  static const String _cookieSnapshotInvalidatedKey =
-      AppStorageSchema.cookieSnapshotInvalidatedKey;
   static const String _syncInvalidationFlagKey =
       AppStorageSchema.syncInvalidationFlagKey;
   static const String _syncWritingLockKey = AppStorageSchema.syncWritingLockKey;
@@ -87,7 +89,7 @@ class AppStorage {
   Future<SharedPreferences> get _prefs =>
       _prefsFuture ??= SharedPreferences.getInstance();
 
-  static bool get _isAndroid => debugForceAndroid ?? Platform.isAndroid;
+  static bool get _isAndroid => debugForceAndroid ?? AppPlatform.instance.isAndroid;
 
   void resetForTesting() {
     _prefsFuture = null;
@@ -218,24 +220,19 @@ class AppStorage {
         .where((item) => item.isValid)
         .map((item) => json.encode(item.toJson()))
         .toList(growable: false);
-    for (var attempt = 0; attempt < 4; attempt++) {
-      final didSave = await prefs.setStringList(
-        _semesterCatalogKey,
-        encodedItems,
-      );
-      if (!didSave) {
-        throw StateError('学期目录保存失败');
-      }
-      await prefs.reload();
-      final persistedItems = prefs.getStringList(_semesterCatalogKey);
-      if (_sameStringList(persistedItems, encodedItems)) {
-        return;
-      }
-      if (attempt < 3) {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-    }
-    throw StateError('学期目录落盘失败');
+    await PersistRetry.run(
+      description: '学期目录',
+      maxAttempts: 4,
+      delay: const Duration(milliseconds: 200),
+      write: () => prefs.setStringList(_semesterCatalogKey, encodedItems),
+      verify: () async {
+        await prefs.reload();
+        return _sameStringList(
+          prefs.getStringList(_semesterCatalogKey),
+          encodedItems,
+        );
+      },
+    );
   }
 
   Future<void> saveKnownSemesterOptions(List<SemesterOption> options) =>
@@ -570,6 +567,75 @@ class AppStorage {
     }
   }
 
+  Future<void> applyAutoSyncStatusPatch(AutoSyncStatusPatch patch) async {
+    if (!patch.hasAnyChange) return;
+    final prefs = await _prefs;
+    final resolvedSemester =
+        patch.semesterCode?.trim().isNotEmpty == true
+            ? patch.semesterCode!.trim()
+            : _readActiveSemesterCode(prefs);
+
+    await _writeOptionalString(prefs, _lastStateKey, patch.state);
+    await _writeOptionalString(prefs, _lastMessageKey, patch.message);
+    await _writeOptionalString(prefs, _lastSourceKey, patch.source);
+
+    await _writeOrClearString(
+      prefs,
+      _lastDiffSummaryKey,
+      value: patch.diffSummary,
+      clear: patch.clearDiffSummary,
+    );
+    await _writeOrClearString(
+      prefs,
+      _lastErrorKey,
+      value: patch.error,
+      clear: patch.clearError,
+    );
+
+    if (patch.lastFetchTime != null) {
+      await prefs.setString(
+        _lastFetchTimeKey,
+        patch.lastFetchTime!.toIso8601String(),
+      );
+    }
+
+    if (resolvedSemester != null && resolvedSemester.isNotEmpty) {
+      await prefs.setString(_lastStateSemesterCodeKey, resolvedSemester);
+    } else if (patch.state != null ||
+        patch.message != null ||
+        patch.source != null ||
+        patch.diffSummary != null ||
+        patch.error != null ||
+        patch.clearError ||
+        patch.clearDiffSummary ||
+        patch.lastFetchTime != null ||
+        patch.lastAttemptTime != null) {
+      await prefs.remove(_lastStateSemesterCodeKey);
+    }
+
+    if (patch.lastAttemptTime != null) {
+      await prefs.setString(
+        _lastAttemptTimeKey,
+        patch.lastAttemptTime!.toIso8601String(),
+      );
+    }
+
+    await _writeOrClearString(
+      prefs,
+      _nextSyncTimeKey,
+      value: patch.nextSyncTime?.toIso8601String(),
+      clear: patch.clearNextSyncTime,
+    );
+
+    if (patch.cookieSnapshot != null) {
+      await _persistCookieSnapshot(patch.cookieSnapshot!);
+      await prefs.remove(_cookieSnapshotKey);
+    }
+  }
+
+  /// Backwards-compatible wrapper retained for legacy callers and tests that
+  /// still invoke the wide-keyword API. New code should construct an
+  /// [AutoSyncStatusPatch] and call [applyAutoSyncStatusPatch] directly.
   Future<void> saveAutoSyncRecord({
     String? state,
     String? message,
@@ -584,62 +650,45 @@ class AppStorage {
     DateTime? nextSyncTime,
     bool clearNextSyncTime = false,
     String? cookieSnapshot,
-  }) async {
-    final prefs = await _prefs;
-    final resolvedSemester =
-        semesterCode?.trim().isNotEmpty == true
-            ? semesterCode!.trim()
-            : _readActiveSemesterCode(prefs);
+  }) {
+    return applyAutoSyncStatusPatch(
+      AutoSyncStatusPatch(
+        state: state,
+        message: message,
+        source: source,
+        diffSummary: diffSummary,
+        error: error,
+        semesterCode: semesterCode,
+        cookieSnapshot: cookieSnapshot,
+        lastFetchTime: lastFetchTime,
+        lastAttemptTime: lastAttemptTime,
+        nextSyncTime: nextSyncTime,
+        clearError: clearError,
+        clearDiffSummary: clearDiffSummary,
+        clearNextSyncTime: clearNextSyncTime,
+      ),
+    );
+  }
 
-    if (state != null) {
-      await prefs.setString(_lastStateKey, state);
-    }
-    if (message != null) {
-      await prefs.setString(_lastMessageKey, message);
-    }
-    if (source != null) {
-      await prefs.setString(_lastSourceKey, source);
-    }
-    if (diffSummary != null) {
-      await prefs.setString(_lastDiffSummaryKey, diffSummary);
-    } else if (clearDiffSummary) {
-      await prefs.remove(_lastDiffSummaryKey);
-    }
-    if (error != null) {
-      await prefs.setString(_lastErrorKey, error);
-    } else if (clearError) {
-      await prefs.remove(_lastErrorKey);
-    }
-    if (lastFetchTime != null) {
-      await prefs.setString(_lastFetchTimeKey, lastFetchTime.toIso8601String());
-    }
-    if (resolvedSemester != null && resolvedSemester.isNotEmpty) {
-      await prefs.setString(_lastStateSemesterCodeKey, resolvedSemester);
-    } else if (state != null ||
-        message != null ||
-        source != null ||
-        diffSummary != null ||
-        error != null ||
-        clearError ||
-        clearDiffSummary ||
-        lastFetchTime != null ||
-        lastAttemptTime != null) {
-      await prefs.remove(_lastStateSemesterCodeKey);
-    }
-    if (lastAttemptTime != null) {
-      await prefs.setString(
-        _lastAttemptTimeKey,
-        lastAttemptTime.toIso8601String(),
-      );
-    }
-    if (nextSyncTime != null) {
-      await prefs.setString(_nextSyncTimeKey, nextSyncTime.toIso8601String());
-    } else if (clearNextSyncTime) {
-      await prefs.remove(_nextSyncTimeKey);
-    }
-    if (cookieSnapshot != null) {
-      await _persistCookieSnapshot(cookieSnapshot);
-      await prefs.remove(_cookieSnapshotKey);
+  Future<void> _writeOptionalString(
+    SharedPreferences prefs,
+    String key,
+    String? value,
+  ) async {
+    if (value == null) return;
+    await prefs.setString(key, value);
+  }
+
+  Future<void> _writeOrClearString(
+    SharedPreferences prefs,
+    String key, {
+    required String? value,
+    required bool clear,
+  }) async {
+    if (value != null) {
+      await prefs.setString(key, value);
+    } else if (clear) {
+      await prefs.remove(key);
     }
   }
 
@@ -649,9 +698,10 @@ class AppStorage {
   }
 
   Future<void> saveCookieSnapshot(String cookie) async {
-    await _persistCookieSnapshot(cookie);
+    await _cookieSnapshotStore.persist(cookie);
     final prefs = await _prefs;
     await prefs.remove(_cookieSnapshotKey);
+    await prefs.remove(_syncInvalidationFlagKey);
   }
 
   Future<bool> loadSyncInvalidationFlag() async {
@@ -684,50 +734,10 @@ class AppStorage {
     await prefs.remove(_syncWritingLockKey);
   }
 
-  Future<String?> loadCookieSnapshot() async {
-    final prefs = await _prefs;
-    final invalidated = prefs.getBool(_cookieSnapshotInvalidatedKey) ?? false;
-    if (invalidated) {
-      await _clearCookieSnapshotFromNative();
-      await _secureStorage.delete(key: _cookieSnapshotKey);
-      await prefs.remove(_cookieSnapshotKey);
-      await prefs.remove(_cookieSnapshotInvalidatedKey);
-      return null;
-    }
+  Future<String?> loadCookieSnapshot() => _cookieSnapshotStore.load();
 
-    final native = await _loadCookieSnapshotFromNative();
-    if (native != null && native.isNotEmpty) {
-      await _secureStorage.write(key: _cookieSnapshotKey, value: native);
-      await prefs.remove(_cookieSnapshotKey);
-      await prefs.remove(_cookieSnapshotInvalidatedKey);
-      return native;
-    }
-
-    final secure = await _secureStorage.read(key: _cookieSnapshotKey);
-    if (secure != null && secure.isNotEmpty) {
-      await _saveCookieSnapshotToNative(secure);
-      await prefs.remove(_cookieSnapshotKey);
-      await prefs.remove(_cookieSnapshotInvalidatedKey);
-      return secure;
-    }
-
-    final legacy = prefs.getString(_cookieSnapshotKey);
-    if (legacy != null && legacy.isNotEmpty) {
-      await _persistCookieSnapshot(legacy);
-      await prefs.remove(_cookieSnapshotKey);
-      await prefs.remove(_cookieSnapshotInvalidatedKey);
-      return legacy;
-    }
-    return null;
-  }
-
-  Future<void> clearCookieSnapshot({bool strict = false}) async {
-    await _clearCookieSnapshotFromNative(strict: strict);
-    await _secureStorage.delete(key: _cookieSnapshotKey);
-    final prefs = await _prefs;
-    await prefs.remove(_cookieSnapshotKey);
-    await prefs.remove(_cookieSnapshotInvalidatedKey);
-  }
+  Future<void> clearCookieSnapshot({bool strict = false}) =>
+      _cookieSnapshotStore.clear(strict: strict);
 
   Future<void> saveStudentId(String studentId) async {
     await _secureStorage.write(key: _studentIdKey, value: studentId);
@@ -924,50 +934,8 @@ class AppStorage {
   }
 
   Future<void> _persistCookieSnapshot(String cookie) async {
-    await _saveCookieSnapshotToNative(cookie);
-    await _secureStorage.write(key: _cookieSnapshotKey, value: cookie);
+    await _cookieSnapshotStore.persist(cookie);
     final prefs = await _prefs;
-    await prefs.remove(_cookieSnapshotInvalidatedKey);
     await prefs.remove(_syncInvalidationFlagKey);
-  }
-
-  Future<bool> _saveCookieSnapshotToNative(String cookie) async {
-    if (!_isAndroid) return false;
-    try {
-      await _nativeSecureChannel.invokeMethod<void>('saveCookieSnapshot', {
-        'cookie': cookie,
-      });
-      return true;
-    } on MissingPluginException {
-      return false;
-    } on PlatformException {
-      return false;
-    }
-  }
-
-  Future<String?> _loadCookieSnapshotFromNative() async {
-    if (!_isAndroid) return null;
-    try {
-      final value = await _nativeSecureChannel.invokeMethod<String>(
-        'loadCookieSnapshot',
-      );
-      if (value == null || value.isEmpty) return null;
-      return value;
-    } on MissingPluginException {
-      return null;
-    } on PlatformException {
-      return null;
-    }
-  }
-
-  Future<void> _clearCookieSnapshotFromNative({bool strict = false}) async {
-    if (!_isAndroid) return;
-    try {
-      await _nativeSecureChannel.invokeMethod<void>('clearCookieSnapshot');
-    } on MissingPluginException {
-      if (strict) rethrow;
-    } on PlatformException {
-      if (strict) rethrow;
-    }
   }
 }

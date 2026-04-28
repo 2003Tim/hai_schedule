@@ -29,7 +29,7 @@ class ScheduleProvider extends ChangeNotifier {
   final SchoolTimeRepository _schoolTimeRepository = SchoolTimeRepository();
   final ScheduleStateLoader _stateLoader = ScheduleStateLoader();
   final ScheduleDerivedOutputCoordinator _derivedOutputCoordinator =
-      const ScheduleDerivedOutputCoordinator();
+      ScheduleDerivedOutputCoordinator();
 
   List<Course> _courses = [];
   List<ScheduleOverride> _overrides = [];
@@ -70,10 +70,11 @@ class ScheduleProvider extends ChangeNotifier {
     _applySemesterContext(null);
   }
 
-  @override
-  void notifyListeners() {
+  /// 仅在课程或 override 数据真正变更时调用，确保 [getDisplaySlotsForDay] /
+  /// [getDisplaySlotAt] 的缓存与最新数据保持一致。纯 UI 状态变化（如选中周次、
+  /// 显示天数）不应清空此缓存，避免不必要的重计算。
+  void _invalidateDisplaySlotCache() {
     _displaySlotCache.clear();
-    super.notifyListeners();
   }
 
   void selectWeek(int week) {
@@ -107,6 +108,8 @@ class ScheduleProvider extends ChangeNotifier {
 
   void toggleShowNonCurrentWeek() {
     _showNonCurrentWeek = !_showNonCurrentWeek;
+    // 该开关影响 ScheduleDisplaySlotResolver.resolve 的返回结果，必须清掉缓存。
+    _invalidateDisplaySlotCache();
     unawaited(_savePreferences());
     notifyListeners();
   }
@@ -209,6 +212,7 @@ class ScheduleProvider extends ChangeNotifier {
   Future<void> updateTimeConfig(SchoolTimeConfig config) async {
     _timeConfig = config;
     await _schoolTimeRepository.save(config);
+    _invalidateDisplaySlotCache();
     await _syncDerivedOutputs(forceReminderRebuild: true);
     notifyListeners();
   }
@@ -216,6 +220,7 @@ class ScheduleProvider extends ChangeNotifier {
   Future<void> resetTimeConfigToDefault() async {
     _timeConfig = SchoolTimeConfig.hainanuDefault();
     await _schoolTimeRepository.reset();
+    _invalidateDisplaySlotCache();
     await _syncDerivedOutputs(forceReminderRebuild: true);
     notifyListeners();
   }
@@ -323,6 +328,7 @@ class ScheduleProvider extends ChangeNotifier {
       overrides: _overrides,
     );
     await _revalidateOverridesForSemester(semesterCode);
+    _invalidateDisplaySlotCache();
     await _syncDerivedOutputs(forceReminderRebuild: true);
     notifyListeners();
   }
@@ -336,6 +342,7 @@ class ScheduleProvider extends ChangeNotifier {
       semesterCode: semesterCode,
       overrides: _overrides,
     );
+    _invalidateDisplaySlotCache();
     await _syncDerivedOutputs(forceReminderRebuild: true);
     notifyListeners();
   }
@@ -395,6 +402,7 @@ class ScheduleProvider extends ChangeNotifier {
         makeActive: true,
       );
       await _revalidateOverridesForSemester(resolvedSemester);
+      _invalidateDisplaySlotCache();
       await _syncDerivedOutputs(forceReminderRebuild: true);
       notifyListeners();
     } finally {
@@ -410,6 +418,7 @@ class ScheduleProvider extends ChangeNotifier {
     final state = await _stateLoader.load();
     _applyLoadedState(state);
     await _revalidateOverridesForSemester(state.currentSemesterCode);
+    _invalidateDisplaySlotCache();
     await _syncDerivedOutputs(forceReminderRebuild: true);
     notifyListeners();
   }

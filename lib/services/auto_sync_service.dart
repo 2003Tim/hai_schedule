@@ -1,18 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:hai_schedule/models/auto_sync_models.dart';
 import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/utils/auto_sync_course_diff.dart';
 import 'package:hai_schedule/utils/auto_sync_schedule_policy.dart';
 import 'package:hai_schedule/utils/auto_sync_text.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
 import 'package:hai_schedule/services/auth_credentials_service.dart';
+import 'package:hai_schedule/services/auto_sync_runner.dart';
 import 'package:hai_schedule/services/course_repository.dart';
 import 'package:hai_schedule/services/dio_client.dart';
 import 'package:hai_schedule/services/invalid_credentials_exception.dart';
@@ -42,13 +43,25 @@ class AutoSyncService {
   static final SyncRepository _syncRepository = SyncRepository();
   static final ScheduleSyncResultService _syncResultService =
       ScheduleSyncResultService();
-  static bool _isRunning = false;
+
+  /// 内部运行实例，承担"互斥锁"与"可注入依赖"职责。
+  /// 测试可以通过 [overrideRunnerForTesting] 替换为 mock 实例。
+  static AutoSyncRunner _runner = AutoSyncRunner();
+
+  @visibleForTesting
+  static void overrideRunnerForTesting(AutoSyncRunner? runner) {
+    _runner = runner ?? AutoSyncRunner();
+  }
+
   @visibleForTesting
   static bool? debugForceAndroid;
 
-  static bool get _supportsTimedAutoSync => _isAndroid || Platform.isWindows;
-  static bool get supportsForegroundDesktopAutoSync => Platform.isWindows;
-  static bool get _isAndroid => debugForceAndroid ?? Platform.isAndroid;
+  static bool get _supportsTimedAutoSync =>
+      _isAndroid || AppPlatform.instance.isWindows;
+  static bool get supportsForegroundDesktopAutoSync =>
+      AppPlatform.instance.supportsForegroundDesktopAutoSync;
+  static bool get _isAndroid =>
+      debugForceAndroid ?? AppPlatform.instance.isAndroid;
 
   static Future<AutoSyncSettings> loadSettings() async {
     final record = await _syncRepository.loadRecord();
@@ -248,7 +261,7 @@ class AutoSyncService {
     String source = 'desktop_foreground',
     String? message,
   }) async {
-    if (!Platform.isWindows) return;
+    if (!AppPlatform.instance.isWindows) return;
     await _syncRepository.saveStatus(
       lastAttemptTime: DateTime.now(),
       state: AutoSyncState.syncing.value,
@@ -262,7 +275,7 @@ class AutoSyncService {
     String source = 'desktop_foreground',
     String message = '桌面前台自动同步未完成',
   }) async {
-    if (!Platform.isWindows) return;
+    if (!AppPlatform.instance.isWindows) return;
     await _markFailed(message, source: source);
   }
 
@@ -275,10 +288,9 @@ class AutoSyncService {
       return AutoSyncResult.skipped('当前平台不需要自动同步', await loadSnapshot());
     }
 
-    if (_isRunning) {
+    if (!_runner.tryAcquire()) {
       return AutoSyncResult.skipped('已有同步任务正在进行', await loadSnapshot());
     }
-    _isRunning = true;
 
     try {
       final settings = await loadSettings();
@@ -381,7 +393,7 @@ class AutoSyncService {
       await _markFailed('自动同步失败: $e', source: source, error: e.toString());
       return AutoSyncResult.failed('自动同步失败: $e', await loadSnapshot());
     } finally {
-      _isRunning = false;
+      _runner.release();
     }
   }
 
@@ -513,7 +525,7 @@ class AutoSyncService {
     required bool afterSuccessfulSync,
     required bool preserveExistingCustomSchedule,
   }) async {
-    if (Platform.isWindows) {
+    if (AppPlatform.instance.isWindows) {
       if (!enabled || frequency == AutoSyncFrequency.manual) {
         await _syncRepository.saveStatus(clearNextSyncTime: true);
         return;
@@ -545,7 +557,7 @@ class AutoSyncService {
       return;
     }
 
-    if (!Platform.isAndroid) return;
+    if (!AppPlatform.instance.isAndroid) return;
     try {
       final next = await _channel
           .invokeMethod<String>('configureBackgroundSync', {

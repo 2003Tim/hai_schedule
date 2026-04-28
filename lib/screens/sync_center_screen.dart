@@ -1,11 +1,10 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:hai_schedule/services/auth_credentials_service.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/widgets/sync_center_sections.dart';
 import 'package:hai_schedule/screens/import_screen.dart';
 import 'package:hai_schedule/screens/login_router.dart';
@@ -69,7 +68,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
     }
     _lastManualSyncTime = DateTime.now();
 
-    if (!Platform.isAndroid) {
+    if (!AppPlatform.instance.isAndroid) {
       await _runDesktopForegroundSync(
         source: 'desktop_manual',
         showCompletionSnack: true,
@@ -399,7 +398,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
         );
     final statusColor = _statusColor(context, snapshot);
     final canEnableAutomatic = snapshot.credentialReady;
-    final isDesktop = !Platform.isAndroid;
+    final isDesktop = !AppPlatform.instance.isAndroid;
     final isWideDesktop =
         isDesktop && MediaQuery.of(context).size.width >= 1180;
 

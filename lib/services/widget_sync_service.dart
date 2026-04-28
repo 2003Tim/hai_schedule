@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
@@ -7,6 +6,7 @@ import 'package:home_widget/home_widget.dart';
 import 'package:hai_schedule/models/course.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/utils/schedule_projection_payload.dart';
 import 'package:hai_schedule/utils/week_calculator.dart';
 
@@ -27,7 +27,7 @@ class WidgetSyncService {
     required WeekCalculator weekCalc,
     required SchoolTimeConfig timeConfig,
   }) async {
-    if (!Platform.isAndroid) return;
+    if (!AppPlatform.instance.supportsHomeWidget) return;
 
     try {
       final payload = _buildPayload(
@@ -47,7 +47,7 @@ class WidgetSyncService {
   }
 
   static Future<void> refreshWidget() async {
-    if (!Platform.isAndroid) return;
+    if (!AppPlatform.instance.supportsHomeWidget) return;
     try {
       await HomeWidget.updateWidget(androidName: androidWidgetClassName);
     } catch (e, st) {
