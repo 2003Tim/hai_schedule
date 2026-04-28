@@ -67,8 +67,82 @@ void main() {
         find.textContaining('${tomorrow.month}/${tomorrow.day}'),
         findsOneWidget,
       );
+      expect(find.byIcon(Icons.access_time), findsOneWidget);
+      expect(find.byIcon(Icons.calendar_today), findsOneWidget);
+      expect(find.byIcon(Icons.location_on), findsOneWidget);
+      expect(find.byIcon(Icons.person), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('home.nextLesson.timeSectionScroller')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('home.nextLesson.teacherScroller')),
+        findsOneWidget,
+      );
+      final accessTimeIcon = tester.widget<Icon>(
+        find.byIcon(Icons.access_time),
+      );
+      final iconContext = tester.element(find.byIcon(Icons.access_time));
+      expect(
+        accessTimeIcon.color,
+        Theme.of(iconContext).colorScheme.primary.withValues(alpha: 0.76),
+      );
     },
   );
+
+  testWidgets('home next lesson card uses themed dark glass surface', (
+    tester,
+  ) async {
+    final provider = ScheduleProvider();
+    await provider.ready;
+    final themeProvider = ThemeProvider();
+    await themeProvider.ready;
+    themeProvider.setTheme('dark');
+
+    final tomorrow = DateTime.now().add(const Duration(days: 1));
+    await provider.createSemester(_semesterCoveringDate(tomorrow));
+    await provider.upsertOverride(
+      ScheduleOverride(
+        id: 'next-dark',
+        semesterCode: provider.currentSemesterCode!,
+        dateKey: _dateKey(tomorrow),
+        weekday: tomorrow.weekday,
+        startSection: 1,
+        endSection: 2,
+        type: ScheduleOverrideType.add,
+        courseName: '深色课',
+        teacher: '甲老师、乙老师、丙老师',
+        location: '教学楼A',
+      ),
+    );
+
+    final now = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+      21,
+    );
+
+    await tester.pumpWidget(
+      _TestShell(
+        scheduleProvider: provider,
+        themeProvider: themeProvider,
+        themeMode: ThemeMode.dark,
+        child: HomeNextLessonCard(nowFactory: () => now),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final shellFinder = find.byKey(const ValueKey('home.nextLesson.cardShell'));
+    final shell = tester.widget<Container>(shellFinder);
+    final shellContext = tester.element(shellFinder);
+    final decoration = shell.decoration! as BoxDecoration;
+
+    expect(
+      decoration.color,
+      Theme.of(shellContext).colorScheme.surface.withValues(alpha: 0.22),
+    );
+  });
 
   testWidgets('home next lesson card keeps a warm empty state for free days', (
     tester,
@@ -233,11 +307,13 @@ class _TestShell extends StatelessWidget {
     required this.scheduleProvider,
     required this.themeProvider,
     required this.child,
+    this.themeMode,
   });
 
   final ScheduleProvider scheduleProvider;
   final ThemeProvider themeProvider;
   final Widget child;
+  final ThemeMode? themeMode;
 
   @override
   Widget build(BuildContext context) {
@@ -249,6 +325,7 @@ class _TestShell extends StatelessWidget {
       child: MaterialApp(
         theme: themeProvider.themeData,
         darkTheme: themeProvider.darkThemeData,
+        themeMode: themeMode,
         home: Scaffold(body: child),
       ),
     );

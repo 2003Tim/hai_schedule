@@ -11,7 +11,6 @@ import 'package:hai_schedule/models/school_time.dart';
 import 'package:hai_schedule/services/class_reminder_service.dart';
 import 'package:hai_schedule/services/class_silence_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
-import 'package:hai_schedule/utils/constants.dart';
 import 'package:hai_schedule/utils/schedule_ui_tokens.dart';
 
 class HomeNextLessonCard extends StatefulWidget {
@@ -238,16 +237,31 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
     );
   }
 
-  Widget _buildStatusIcon({required IconData icon, required Color baseColor}) {
+  Widget _buildStatusIcon({
+    required BuildContext context,
+    required IconData icon,
+    required Color baseColor,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
       width: 18,
       height: 18,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.20),
+        color:
+            isDark
+                ? theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.46,
+                )
+                : Colors.white.withValues(alpha: 0.20),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.34),
+          color:
+              isDark
+                  ? theme.colorScheme.outlineVariant.withValues(alpha: 0.20)
+                  : Colors.white.withValues(alpha: 0.34),
           width: 0.5,
         ),
       ),
@@ -255,13 +269,23 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
     );
   }
 
-  Widget _buildCardShell({required Widget child}) {
+  Widget _buildCardShell(BuildContext context, {required Widget child}) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
+      key: const ValueKey('home.nextLesson.cardShell'),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.20),
+        color:
+            isDark
+                ? theme.colorScheme.surface.withValues(alpha: 0.22)
+                : Colors.white.withValues(alpha: 0.20),
         borderRadius: BorderRadius.circular(15),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.40),
+          color:
+              isDark
+                  ? theme.colorScheme.outlineVariant.withValues(alpha: 0.12)
+                  : Colors.white.withValues(alpha: 0.40),
           width: 0.5,
         ),
       ),
@@ -284,6 +308,7 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
           final badgeSize = isCompact ? 34.0 : 38.0;
 
           return _buildCardShell(
+            context,
             child: Row(
               key: const ValueKey('home.nextLesson.empty'),
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -355,7 +380,7 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
     if (info == null) return _buildEmptyStateCard(context);
 
     final theme = Theme.of(context);
-    final baseColor = CourseColors.getColor(info.slot.courseName);
+    final baseColor = theme.colorScheme.primary;
     final onSurfaceColor = theme.colorScheme.onSurface;
     final rawWeek = provider.weekCalc.getWeekNumber(widget.nowFactory());
     final displayWeek =
@@ -368,14 +393,20 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
         _silenceSnapshot?.settings.enabled == true &&
         _silenceSnapshot?.policyAccessGranted == true;
     final sectionText = '第${info.slot.startSection}-${info.slot.endSection}节';
-    final primaryMeta = [
+    final timeSectionText = [
       sectionText,
       if (info.timeText.isNotEmpty) info.timeText,
     ].join(' · ');
-    final secondaryMeta = [
-      if (info.slot.location.isNotEmpty) '@${info.slot.location}',
-      if (info.teacher.isNotEmpty) info.teacher,
+    final dateWeekText = [
+      if (info.dateText.isNotEmpty)
+        info.dateText
+      else
+        '今天 · ${info.lessonDate.month}/${info.lessonDate.day}',
+      '第${info.lessonWeek}周',
     ].join(' · ');
+    final locationText =
+        info.slot.location.isNotEmpty ? info.slot.location : '地点待定';
+    final teacherText = info.teacher.isNotEmpty ? info.teacher : '教师待定';
     final countdownText = info.label;
 
     return Padding(
@@ -385,11 +416,54 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
           final isCompact = constraints.maxWidth < 340;
           final horizontalGap = isCompact ? 8.0 : 9.0;
           final indicatorHeight = isCompact ? 14.0 : 16.0;
-          final supportMeta = [
-            primaryMeta,
-            if (info.dateText.isNotEmpty) info.dateText,
-            if (secondaryMeta.isNotEmpty) secondaryMeta,
-          ].join(' · ');
+          const iconSizeSmall = 11.0;
+          final metaStyle = TextStyle(
+            fontSize: 10.0,
+            fontWeight: FontWeight.w500,
+            height: 1.2,
+            color: onSurfaceColor.withValues(alpha: 0.72),
+          );
+          final metaIconColor = baseColor.withValues(alpha: 0.76);
+
+          Widget metaLine(
+            IconData icon,
+            String text, {
+            Key? textKey,
+            bool scrollOverflow = false,
+          }) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(icon, size: iconSizeSmall, color: metaIconColor),
+                const SizedBox(width: 3),
+                Expanded(
+                  child:
+                      scrollOverflow
+                          ? _SlowOverflowScrollText(
+                            key: textKey,
+                            text: text,
+                            style: metaStyle,
+                          )
+                          : Text(
+                            key: textKey,
+                            text,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: metaStyle,
+                          ),
+                ),
+              ],
+            );
+          }
+
+          Widget metaColumn(Widget first, Widget second) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [first, const SizedBox(height: 4), second],
+            );
+          }
+
           final progressRing = _ProgressRingButton(
             key: const ValueKey('home.nextLesson.progressRing'),
             currentWeek: displayWeek,
@@ -422,21 +496,34 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
                   color: onSurfaceColor.withValues(alpha: 0.94),
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 6),
               Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Text(
-                      supportMeta,
-                      maxLines: isCompact ? 2 : 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: isCompact,
-                      style: TextStyle(
-                        fontSize: 10.0,
-                        fontWeight: FontWeight.w600,
-                        height: 1.1,
-                        color: onSurfaceColor.withValues(alpha: 0.72),
+                    child: metaColumn(
+                      metaLine(
+                        Icons.access_time,
+                        timeSectionText,
+                        textKey: const ValueKey(
+                          'home.nextLesson.timeSectionScroller',
+                        ),
+                        scrollOverflow: true,
+                      ),
+                      metaLine(Icons.calendar_today, dateWeekText),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: metaColumn(
+                      metaLine(Icons.location_on, locationText),
+                      metaLine(
+                        Icons.person,
+                        teacherText,
+                        textKey: const ValueKey(
+                          'home.nextLesson.teacherScroller',
+                        ),
+                        scrollOverflow: true,
                       ),
                     ),
                   ),
@@ -459,6 +546,7 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
                       children: [
                         if (reminderEnabled)
                           _buildStatusIcon(
+                            context: context,
                             icon: Icons.notifications_active_rounded,
                             baseColor: baseColor,
                           ),
@@ -466,6 +554,7 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
                           const SizedBox(width: 4),
                         if (silenceEnabled)
                           _buildStatusIcon(
+                            context: context,
                             icon: Icons.volume_off_rounded,
                             baseColor: baseColor,
                           ),
@@ -495,6 +584,7 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
           );
 
           return _buildCardShell(
+            context,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -516,6 +606,116 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
         },
       ),
     );
+  }
+}
+
+class _SlowOverflowScrollText extends StatefulWidget {
+  const _SlowOverflowScrollText({
+    super.key,
+    required this.text,
+    required this.style,
+  });
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  State<_SlowOverflowScrollText> createState() =>
+      _SlowOverflowScrollTextState();
+}
+
+class _SlowOverflowScrollTextState extends State<_SlowOverflowScrollText> {
+  final ScrollController _controller = ScrollController();
+  var _scrollGeneration = 0;
+  var _syncScheduled = false;
+
+  @override
+  void didUpdateWidget(covariant _SlowOverflowScrollText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text || oldWidget.style != widget.style) {
+      _scrollGeneration++;
+      if (_controller.hasClients && _controller.offset != 0) {
+        _controller.jumpTo(0);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollGeneration++;
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _scheduleScrollSync();
+    return ClipRect(
+      child: SingleChildScrollView(
+        controller: _controller,
+        scrollDirection: Axis.horizontal,
+        physics: const NeverScrollableScrollPhysics(),
+        child: Text(
+          widget.text,
+          maxLines: 1,
+          softWrap: false,
+          style: widget.style,
+        ),
+      ),
+    );
+  }
+
+  void _scheduleScrollSync() {
+    if (_syncScheduled) return;
+    _syncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncScheduled = false;
+      if (!mounted || !_controller.hasClients) return;
+
+      final maxScrollExtent = _controller.position.maxScrollExtent;
+      if (maxScrollExtent <= 0.5) {
+        _scrollGeneration++;
+        if (_controller.offset != 0) _controller.jumpTo(0);
+        return;
+      }
+
+      final generation = ++_scrollGeneration;
+      unawaited(_scrollLoop(generation));
+    });
+  }
+
+  Future<void> _scrollLoop(int generation) async {
+    const edgePause = Duration(milliseconds: 900);
+    const endPause = Duration(milliseconds: 1200);
+
+    while (mounted && generation == _scrollGeneration) {
+      if (!_controller.hasClients) return;
+      final maxScrollExtent = _controller.position.maxScrollExtent;
+      if (maxScrollExtent <= 0.5) return;
+
+      await Future<void>.delayed(edgePause);
+      if (!mounted || generation != _scrollGeneration) return;
+      await _controller.animateTo(
+        maxScrollExtent,
+        duration: _scrollDuration(maxScrollExtent, forward: true),
+        curve: Curves.linear,
+      );
+
+      await Future<void>.delayed(endPause);
+      if (!mounted || generation != _scrollGeneration) return;
+      await _controller.animateTo(
+        0,
+        duration: _scrollDuration(maxScrollExtent, forward: false),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  Duration _scrollDuration(double extent, {required bool forward}) {
+    final rawMs = (extent * (forward ? 90 : 60)).round();
+    final minMs = forward ? 4200 : 2400;
+    final maxMs = forward ? 10000 : 7000;
+    return Duration(milliseconds: rawMs.clamp(minMs, maxMs).toInt());
   }
 }
 
