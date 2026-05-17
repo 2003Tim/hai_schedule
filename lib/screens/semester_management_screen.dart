@@ -112,6 +112,7 @@ class SemesterManagementScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ScheduleProvider>();
+    final semesterCatalog = provider.knownSemesterCatalog;
     final hasUnlockedEntry = provider.hasSyncedAtLeastOneSemester;
     final codes = [...provider.availableSemesterCodes]
       ..sort((a, b) => b.compareTo(a));
@@ -128,7 +129,7 @@ class SemesterManagementScreen extends StatelessWidget {
       return formatSemesterCode(code);
     }
 
-    final hasCatalog = provider.knownSemesterCatalog.isNotEmpty;
+    final hasCatalog = semesterCatalog.isNotEmpty;
     final canCreateSemester = hasUnlockedEntry && hasCatalog;
 
     return Scaffold(

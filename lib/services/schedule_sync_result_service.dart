@@ -18,10 +18,14 @@ class ScheduleSyncApplyResult {
 }
 
 class ScheduleSyncResultService {
-  ScheduleSyncResultService({SyncRepository? syncRepository})
-    : _syncRepository = syncRepository ?? SyncRepository();
+  ScheduleSyncResultService({
+    SyncRepository? syncRepository,
+    ScheduleRepository? scheduleRepository,
+  }) : _syncRepository = syncRepository ?? SyncRepository(),
+       _scheduleRepository = scheduleRepository ?? ScheduleRepository();
 
   final SyncRepository _syncRepository;
+  final ScheduleRepository _scheduleRepository;
 
   Future<ScheduleSyncApplyResult> applySuccessfulSync({
     required ScheduleProvider provider,
@@ -30,7 +34,15 @@ class ScheduleSyncResultService {
     required String source,
     String? semesterCode,
   }) async {
-    final previousCourses = List<Course>.from(provider.courses);
+    final targetSemester = semesterCode?.trim();
+    final previousCourses =
+        targetSemester == null || targetSemester.isEmpty
+            ? List<Course>.from(provider.courses)
+            : List<Course>.from(
+              (await _scheduleRepository.loadCache(
+                semesterCode: targetSemester,
+              )).courses,
+            );
     final now = DateTime.now();
     final diffSummary = AutoSyncCourseDiff.buildSummary(
       previousCourses,
@@ -47,7 +59,10 @@ class ScheduleSyncResultService {
       rawScheduleJson: rawScheduleJson,
     );
     await provider.markHasSyncedAtLeastOneSemester();
-    final resolvedSemesterCode = semesterCode ?? provider.currentSemesterCode;
+    final resolvedSemesterCode =
+        targetSemester?.isNotEmpty == true
+            ? targetSemester
+            : provider.currentSemesterCode;
     if (resolvedSemesterCode != null && resolvedSemesterCode.isNotEmpty) {
       await _syncRepository.saveSemesterSyncRecord(
         semesterCode: resolvedSemesterCode,

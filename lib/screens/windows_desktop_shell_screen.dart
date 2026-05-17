@@ -1,14 +1,13 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import 'package:hai_schedule/utils/app_platform.dart';
 
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/utils/semester_code_formatter.dart';
 import 'package:hai_schedule/widgets/windows_desktop_shell_sections.dart';
 import 'package:hai_schedule/screens/home_screen.dart';
-import 'package:hai_schedule/screens/import_screen.dart';
 import 'package:hai_schedule/screens/login_router.dart';
 import 'package:hai_schedule/screens/reminder_settings_screen.dart';
 import 'package:hai_schedule/screens/schedule_overrides_screen.dart';
@@ -61,7 +60,7 @@ class _WindowsDesktopShellScreenState extends State<WindowsDesktopShellScreen>
   }
 
   Future<void> _maybeRunDesktopForegroundAutoSync() async {
-    if (!Platform.isWindows ||
+    if (!AppPlatform.instance.isWindows ||
         !AutoSyncService.supportsForegroundDesktopAutoSync ||
         _isDesktopForegroundSyncRunning ||
         !mounted) {
@@ -114,17 +113,6 @@ class _WindowsDesktopShellScreenState extends State<WindowsDesktopShellScreen>
         builder:
             (_) =>
                 LoginRouter(initialSemesterCode: provider.currentSemesterCode),
-      ),
-    );
-  }
-
-  Future<void> _openImport() async {
-    final provider = context.read<ScheduleProvider>();
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder:
-            (_) =>
-                ImportScreen(initialSemesterCode: provider.currentSemesterCode),
       ),
     );
   }
@@ -319,9 +307,6 @@ class _WindowsDesktopShellScreenState extends State<WindowsDesktopShellScreen>
             overridesCount: overridesCount,
             onOpenLogin: () async {
               await _openLogin();
-            },
-            onOpenImport: () async {
-              await _openImport();
             },
             onEnterMiniMode: widget.onEnterMiniMode,
             onDisplayDaysChanged: _setDisplayDays,

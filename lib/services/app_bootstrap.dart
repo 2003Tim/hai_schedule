@@ -1,9 +1,9 @@
 import 'dart:async' show unawaited;
-import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/utils/app_titles.dart';
 import 'package:hai_schedule/services/class_reminder_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
@@ -25,11 +25,11 @@ class AppBootstrap {
   static Future<AppBootstrapResult> initialize() async {
     WidgetsFlutterBinding.ensureInitialized();
 
-    if (Platform.isAndroid) {
+    if (AppPlatform.instance.isAndroid) {
       await _initializeAndroid();
     }
 
-    if (Platform.isWindows) {
+    if (AppPlatform.instance.isWindows) {
       await _initializeWindows();
     }
 

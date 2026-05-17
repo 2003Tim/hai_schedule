@@ -1,14 +1,12 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/class_reminder_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/utils/semester_code_formatter.dart';
 import 'package:hai_schedule/widgets/home_screen_sections.dart';
-import 'package:hai_schedule/screens/import_screen.dart';
 import 'package:hai_schedule/screens/login_router.dart';
 import 'package:hai_schedule/screens/reminder_settings_screen.dart';
 import 'package:hai_schedule/screens/schedule_overrides_screen.dart';
@@ -45,19 +43,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _refreshSyncSnapshot();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (Platform.isAndroid) {
+      if (AppPlatform.instance.isAndroid) {
         await AutoSyncService.ensureBackgroundSchedule();
       }
       await _refreshSyncSnapshot();
+      // 触发一次自动同步，同步成功后 ScheduleProvider 会通过
+      // ScheduleDerivedOutputCoordinator 自动重建提醒；同步未发生时，
+      // didChangeAppLifecycleState 的 resumed 路径仍会做 ensureCoverage，
+      // 这里不再重复调用。
       await _triggerAutoSyncIfNeeded(silent: true);
-      if (!mounted) return;
-      final provider = context.read<ScheduleProvider>();
-      await ClassReminderService.ensureCoverage(
-        courses: provider.courses,
-        overrides: provider.overrides,
-        weekCalc: provider.weekCalc,
-        timeConfig: provider.timeConfig,
-      );
     });
   }
 
@@ -78,12 +72,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!mounted) return;
 
     final provider = context.read<ScheduleProvider>();
-    if (Platform.isAndroid) {
+    if (AppPlatform.instance.isAndroid) {
       await provider.reloadFromStorage();
     }
     await _refreshSyncSnapshot();
 
-    if (Platform.isAndroid) {
+    if (AppPlatform.instance.isAndroid) {
       await AutoSyncService.ensureBackgroundSchedule();
       await _triggerAutoSyncIfNeeded(silent: true);
     }
@@ -107,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     bool silent = false,
     bool force = false,
   }) async {
-    if (!Platform.isAndroid || !mounted || _isSyncing) return;
+    if (!AppPlatform.instance.isAndroid || !mounted || _isSyncing) return;
 
     _isSyncing = true;
     try {
@@ -207,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _wrapWindowsScheduleSemantics(Widget child, String label) {
-    if (!Platform.isWindows) return child;
+    if (!AppPlatform.instance.isWindows) return child;
 
     // Keep one stable semantic container on Windows to avoid noisy AXTree
     // updates while the schedule area rebuilds during paging and scrolling.
@@ -232,12 +226,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       LoginRouter(initialSemesterCode: provider.currentSemesterCode),
     );
     await _refreshSyncSnapshot();
-  }
-
-  Future<void> _openManualImport(ScheduleProvider provider) async {
-    await _pushPage(
-      ImportScreen(initialSemesterCode: provider.currentSemesterCode),
-    );
   }
 
   Future<void> _handleMenuAction(
@@ -274,9 +262,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         break;
       case HomeMenuAction.loginFetch:
         await _openLoginFetch(provider);
-        break;
-      case HomeMenuAction.manualImport:
-        await _openManualImport(provider);
         break;
     }
   }
@@ -364,9 +349,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onDaySelected: _selectDay,
           onLoginFetch: () async {
             await _openLoginFetch(provider);
-          },
-          onManualImport: () async {
-            await _openManualImport(provider);
           },
           wrapScheduleSemantics: _wrapWindowsScheduleSemantics,
         ),

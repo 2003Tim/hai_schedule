@@ -23,6 +23,18 @@ void main() {
         ),
         isTrue,
       );
+      expect(
+        service.shouldAutoFetch(
+          'https://jwxt.hainanu.edu.cn/jsxsd/framework/xsMain.jsp',
+        ),
+        isTrue,
+      );
+      expect(
+        service.shouldAutoFetch(
+          'https://ehall.hainanu.edu.cn/homepage/index.do',
+        ),
+        isTrue,
+      );
       expect(service.shouldAutoFetch('https://cas.example.edu/login'), isFalse);
     });
 

@@ -9,7 +9,6 @@
 ### 课表核心
 - 多学期归档与切换，支持手动新建学期
 - 教务系统（ehall.hainanu.edu.cn）WebView 登录抓取课表
-- 手动粘贴 JSON 导入
 - 周课表视图（左右滑动切周）和日课表视图（左右滑动切天）
 - 工作日 / 7 天列数切换，非本周课程灰显 / 隐藏
 - 临时加课、停课、调课（按学期维护，支持孤立状态检测）
@@ -18,7 +17,7 @@
 ### Android 专属
 - 课前提醒（本地通知，支持提前 5 / 10 / 15 / 30 分钟或关闭，7 天滚动窗口）
 - 上课自动静音 / 勿扰（AlarmManager 调度，支持精准模式）
-- 后台每日自动同步（WorkManager，支持会话续签与差量对比）
+- 后台每日自动同步（AlarmManager + BroadcastReceiver 调度，支持会话续签与差量对比）
 - 同步中心（查看同步历史、手动触发、频率配置）
 - 今日课表 4×2 桌面小组件（支持前一天 / 今天 / 后一天切换，空态 / 有课态，课程状态文案）
 
@@ -31,7 +30,6 @@
 - 主题系统（多套预设，跟随系统深浅色）
 - 自定义背景图（高斯模糊 + 透明度调节，毛玻璃卡片风格）
 - 作息时间自定义（11 节课结构，可编辑每节开始 / 结束时间，支持自动生成）
-- 备份与恢复（JSON 文件，恢复失败自动回滚）
 - 账号密码安全存储（FlutterSecureStorage，Android 额外同步到原生加密存储供后台同步使用）
 
 ---
@@ -40,11 +38,10 @@
 
 | 功能 | Android | Windows |
 |---|:---:|:---:|
-| 课表查看与导入 | ✓ | ✓ |
+| 课表查看与抓取 | ✓ | ✓ |
 | 教务系统 WebView 抓取 | ✓ | ✓ |
 | 临时覆盖 | ✓ | ✓ |
 | 主题 / 背景 | ✓ | ✓ |
-| 备份恢复 | ✓ | ✓ |
 | 首页课前提醒卡片 | ✓ | ✓ |
 | 课前提醒通知 | ✓ | — |
 | 课前提醒策略 / 未来预览 | ✓ | ✓ |
@@ -66,7 +63,7 @@
 | WebView | webview_flutter（Android）/ webview_windows（Windows）|
 | 通知 | flutter_local_notifications + timezone |
 | 小组件 | home_widget + Kotlin AppWidgetProvider |
-| 自动同步 | WorkManager（Android）+ 前台频率检查（Windows） |
+| 自动同步 | AlarmManager + BroadcastReceiver（Android）+ 前台频率检查（Windows） |
 | 自动静音 | AlarmManager + NotificationManager（Kotlin） |
 | 窗口管理 | window_manager（Windows） |
 
@@ -111,8 +108,7 @@ lib/
 │   ├── login_fetch_coordinator.dart      # 多步抓取状态机
 │   ├── portal_relogin_service.dart       # 会话过期恢复登录
 │   ├── course_repository.dart    # 课表抓取仓库（含静默续登）
-│   ├── api_service.dart           # HTTP 课表接口调用
-│   └── app_backup_service.dart    # 备份与恢复（含回滚）
+│   └── api_service.dart           # HTTP 课表接口调用
 │
 ├── screens/                       # 页面层
 │   ├── home_screen.dart           # 主页（课表 + 菜单）
@@ -120,14 +116,12 @@ lib/
 │   ├── login_screen.dart          # Windows 登录页
 │   ├── login_screen_android.dart  # Android 登录页
 │   ├── login_router.dart          # 平台路由
-│   ├── import_screen.dart         # 手动导入
 │   ├── sync_center_screen.dart    # 同步中心
 │   ├── semester_management_screen.dart   # 学期管理
 │   ├── schedule_overrides_screen.dart    # 临时覆盖管理
 │   ├── school_time_settings_screen.dart  # 作息时间设置
 │   ├── reminder_settings_screen.dart     # 课前提醒设置
 │   ├── theme_settings_screen.dart        # 主题与背景
-│   ├── backup_restore_screen.dart        # 备份恢复
 │   ├── windows_desktop_shell_screen.dart # Windows 主壳
 │   └── app_launch_splash_screen.dart     # 启动页（Android）
 │
@@ -161,7 +155,7 @@ lib/
 
 android/app/src/main/kotlin/com/hainanu/hai_schedule/
 ├── MainActivity.kt                # MethodChannel 注册中心
-├── AutoSyncScheduler.kt           # WorkManager 后台同步任务
+├── AutoSyncScheduler.kt           # AlarmManager/BroadcastReceiver 后台同步
 ├── ClassSilenceScheduler.kt       # AlarmManager 自动静音调度
 ├── TodayScheduleWidgetProvider.kt # 桌面小组件渲染
 ├── WidgetRefreshScheduler.kt      # 小组件定期刷新
@@ -235,7 +229,7 @@ LoginRouter（平台分发）
 
 所有课表数据按"学期归档"持久化：
 
-1. 登录抓取、手动导入、前台同步、后台同步均落到对应学期归档。
+1. 登录抓取、前台同步、后台同步均落到对应学期归档。
 2. App 启动时从活动学期归档恢复课表。
 3. 小组件、课前提醒、自动静音均基于当前归档 + 临时覆盖实时生成衍生数据。
 
@@ -254,7 +248,7 @@ LoginRouter（平台分发）
 
 Android 后台同步流程：
 
-1. WorkManager 按配置频率唤醒 `AutoSyncScheduler`
+1. AlarmManager 按配置频率唤醒 `AutoSyncScheduler`
 2. 读取活动学期和 Cookie 快照
 3. 会话失效时尝试用本机保存的凭据重新登录
 4. 调用教务系统 API 拉取课表，与本地做差量对比
@@ -270,31 +264,10 @@ Android 前台同步在 App 恢复时也会自动触发；Windows 则依赖前�
 
 ---
 
-## 备份与恢复
-
-备份内容（长期有意义的数据）：
-
-- 学期归档（课表 + 原始 JSON）
-- 临时覆盖
-- 作息时间配置
-- 自动同步频率与提醒设置偏好
-- 主题与显示偏好
-
-不导出以下数据：
-
-- Cookie 登录态快照
-- 最近同步错误与瞬时状态
-- 提醒 / 静音的构建缓存
-
-恢复流程先验证备份完整性，再执行覆盖；若遇到非法内容，自动回滚到恢复前的本地数据。
-
----
-
 ## 隐私与安全
 
 - 账号密码仅存储在本机，使用 `FlutterSecureStorage`
 - Android 后台同步需要续签时，凭据额外镜像到原生 `EncryptedSharedPreferences`，不上传至任何服务器
-- 备份文件不包含 Cookie 快照
 
 ---
 
@@ -315,16 +288,30 @@ version: 1.0.0+1
 确保 `android/local/key.properties` 和对应 keystore 文件已就位，然后：
 
 ```bash
-# 生成 APK（直接安装用）
-flutter build apk --release
+# 生成 split per ABI APK（直接安装用）
+flutter build apk --release --split-per-abi
 
 # 生成 AAB（上传 Google Play 用）
 flutter build appbundle --release
 ```
 
 产物路径：
-- APK：`build/app/outputs/flutter-apk/app-release.apk`
+- APK：
+  - `build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk`
+  - `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
+  - `build/app/outputs/flutter-apk/app-x86_64-release.apk`
 - AAB：`build/app/outputs/bundle/release/app-release.aab`
+
+推荐发布命名：
+- `HaiSchedule-vX.Y.Z-android-armeabi-v7a.apk`
+- `HaiSchedule-vX.Y.Z-android-arm64-v8a.apk`
+- `HaiSchedule-vX.Y.Z-android-x86_64.apk`
+- `HaiSchedule-vX.Y.Z.aab`
+
+下载说明：
+- 大多数 Android 手机优先下载 `arm64-v8a`
+- 较老的 32 位 Android 设备下载 `armeabi-v7a`
+- `x86_64` 主要用于模拟器或少数特殊环境
 
 未配置签名时会自动回退使用 debug key，产物无法发布到 Play Store。
 
@@ -336,7 +323,26 @@ flutter build windows --release
 
 产物路径：`build/windows/x64/runner/Release/`
 
-将整个 `Release/` 目录打包为 zip 即可分发，或使用 `msix` 工具生成安装包。
+将整个 `Release/` 目录复制到 `build/release-assets/vX.Y.Z/HaiSchedule-vX.Y.Z-windows-x64/`，再打包为：
+
+- `HaiSchedule-vX.Y.Z-windows-x64.zip`
+
+Windows 用户解压后直接运行 `hai_schedule.exe` 即可。
+
+### GitHub Release
+
+正式 release 建议统一包含：
+
+- 标题：`vX.Y.Z`
+- 正文：版本、对应 tag / commit、更新内容、发布资产、下载说明、构建校验
+- 资产：
+  - Windows x64 zip
+  - Android split per ABI APK
+  - AAB（如果本次需要商店分发）
+
+更完整的发布流程、正文模板和历史规范见：
+
+- [docs/release_workflow.md](docs/release_workflow.md)
 
 ---
 

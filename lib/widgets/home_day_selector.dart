@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:hai_schedule/utils/constants.dart';
+import 'package:hai_schedule/widgets/schedule_day_strip.dart';
 
 class HomeDaySelector extends StatelessWidget {
   const HomeDaySelector({
@@ -18,55 +18,15 @@ class HomeDaySelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 54,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        itemCount: displayDays,
-        itemBuilder: (context, index) {
-          final weekday = index + 1;
-          final date = dateForWeekday(weekday);
-          final isSelected = weekday == selectedDay;
-          final colorScheme = Theme.of(context).colorScheme;
-
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              selected: isSelected,
-              labelPadding: const EdgeInsets.symmetric(horizontal: 6),
-              label: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '周${WeekdayNames.getShort(weekday)}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color:
-                          isSelected
-                              ? colorScheme.primary
-                              : colorScheme.onSurface.withValues(alpha: 0.72),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${date.month}/${date.day}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color:
-                          isSelected
-                              ? colorScheme.primary
-                              : colorScheme.onSurface.withValues(alpha: 0.60),
-                    ),
-                  ),
-                ],
-              ),
-              onSelected: (_) => onSelected(weekday),
-            ),
-          );
-        },
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: ScheduleDayStrip(
+        surfaceKey: const ValueKey('home.daySelector.shell'),
+        dayKeyPrefix: 'home.daySelector.item',
+        displayDays: displayDays,
+        dateForWeekday: dateForWeekday,
+        highlightedWeekday: selectedDay,
+        onWeekdaySelected: onSelected,
       ),
     );
   }

@@ -45,4 +45,15 @@ class ScheduleLoginScriptBuilder {
     autoSubmit: autoSubmit,
     enableTrustOption: enableTrustOption,
   );
+
+  static String buildManualLoginObserverScript({required String bridgeCall}) =>
+      ScheduleLoginAutofillScript.buildManualLoginObserverScript(
+        bridgeCall: bridgeCall,
+      );
+
+  static String buildPostVerificationProbeScript({
+    required String bridgeCall,
+  }) => ScheduleLoginAutofillScript.buildPostVerificationProbeScript(
+    bridgeCall: bridgeCall,
+  );
 }

@@ -1,7 +1,7 @@
 ﻿name: hai_schedule
 description: "海南大学课表应用"
 publish_to: 'none'
-version: 1.0.6+6
+version: 1.0.7+7
 
 environment:
   sdk: ^3.7.0
@@ -32,11 +32,12 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - HaiSchedule_splash_v3.png
+    - images/HaiSchedule_splash_v3.png
+    - images/HaiSchedule_splash_v3_pad.png
 
 flutter_native_splash:
   color: "#EAF4FF"
-  background_image: HaiSchedule_splash_v3.png
+  background_image: images/HaiSchedule_splash_v3.png
   android: true
   ios: false
   web: false

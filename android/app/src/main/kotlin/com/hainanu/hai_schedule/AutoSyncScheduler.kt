@@ -39,6 +39,10 @@ private data class SyncExecutionResult(
 class AutoSyncScheduler : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (isInvalidated(context)) {
+            cancel(context, clearNextSyncTime = true)
+            return
+        }
         logd("收到广播: ${intent.action}")
         when (intent.action) {
             ACTION_RUN -> {
@@ -117,6 +121,8 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private const val KEY_NEXT_SYNC = "next_background_sync_time"
         private const val KEY_COOKIE_SNAPSHOT = "last_auto_sync_cookie"
         private const val KEY_COOKIE_SNAPSHOT_INVALIDATED = "last_auto_sync_cookie_invalidated"
+        private const val KEY_SYNC_INVALIDATION_FLAG = "sync_invalidation_flag"
+        private const val KEY_SYNC_WRITING_LOCK = "sync_writing_lock"
         private const val KEY_SCHEDULE_ARCHIVE = "schedule_archive_by_semester"
         private const val KEY_SCHEDULE_OVERRIDES = "schedule_overrides"
         private const val KEY_SCHOOL_TIME_CONFIG = "school_time_config"
@@ -126,34 +132,6 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private const val DEFAULT_CUSTOM_INTERVAL_MINUTES = 12 * 60
         private const val MIN_CUSTOM_INTERVAL_MINUTES = 60
         private const val MAX_CUSTOM_INTERVAL_MINUTES = 30 * 24 * 60
-
-        private val WEEKDAY_MAP = mapOf(
-            "一" to 1,
-            "二" to 2,
-            "三" to 3,
-            "四" to 4,
-            "五" to 5,
-            "六" to 6,
-            "日" to 7,
-            "天" to 7,
-        )
-
-        private val WEEK_REGEX = Pattern.compile("^(.+?周)\\s*")
-        private val DAY_REGEX = Pattern.compile("星期([一二三四五六日天])")
-        private val SECTION_REGEX = Pattern.compile("\\[(\\d+)-(\\d+)节\\]")
-
-        private val COURSE_COLORS = intArrayOf(
-            0xFF4E8DF5.toInt(),
-            0xFF43C59E.toInt(),
-            0xFFFC7B5D.toInt(),
-            0xFF9B7FE6.toInt(),
-            0xFFF5A623.toInt(),
-            0xFF5BC0EB.toInt(),
-            0xFFE85D75.toInt(),
-            0xFF2EC4B6.toInt(),
-            0xFFFF8A5C.toInt(),
-            0xFF7B68EE.toInt(),
-        )
 
         fun configure(
             context: Context,
@@ -174,8 +152,12 @@ class AutoSyncScheduler : BroadcastReceiver() {
             }
 
             if (!enabled || frequency == "manual") {
-                cancel(context)
-                prefs.edit().remove(flutterKey(KEY_NEXT_SYNC)).apply()
+                cancel(context, clearNextSyncTime = true)
+                return null
+            }
+
+            if (isInvalidated(context)) {
+                cancel(context, clearNextSyncTime = true)
                 return null
             }
 
@@ -196,6 +178,10 @@ class AutoSyncScheduler : BroadcastReceiver() {
             preserveExistingCustomSchedule: Boolean = true,
         ): String? {
             val prefs = flutterPrefs(context)
+            if (isInvalidated(context)) {
+                cancel(context, clearNextSyncTime = true)
+                return null
+            }
             val resolvedFrequency = frequency
                 ?: prefs.getString(flutterKey(KEY_FREQUENCY), "daily")
                 ?: "daily"
@@ -206,8 +192,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 )
 
             if (resolvedFrequency == "manual") {
-                cancel(context)
-                prefs.edit().remove(flutterKey(KEY_NEXT_SYNC)).apply()
+                cancel(context, clearNextSyncTime = true)
                 return null
             }
 
@@ -237,9 +222,16 @@ class AutoSyncScheduler : BroadcastReceiver() {
             return nextIso
         }
 
-        fun cancel(context: Context) {
+        fun cancel(context: Context, clearNextSyncTime: Boolean = false) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             alarmManager.cancel(createPendingIntent(context))
+            if (clearNextSyncTime) {
+                synchronized(PREFS_WRITE_LOCK) {
+                    flutterPrefs(context).edit()
+                        .remove(flutterKey(KEY_NEXT_SYNC))
+                        .commit()
+                }
+            }
         }
 
         private fun performSync(
@@ -247,6 +239,13 @@ class AutoSyncScheduler : BroadcastReceiver() {
             retryDepth: Int = 0,
         ): SyncExecutionResult {
             logd("开始执行后台同步")
+            if (isInvalidated(context)) {
+                logd("后台同步终止: 执行阶段命中凭据失效标记")
+                return SyncExecutionResult(
+                    succeeded = false,
+                    shouldReschedule = false,
+                )
+            }
             val prefs = flutterPrefs(context)
             val semester = prefs.getString(flutterKey(KEY_ACTIVE_SEMESTER), null)
                 ?: prefs.getString(flutterKey(KEY_LAST_SEMESTER), null)
@@ -395,26 +394,31 @@ class AutoSyncScheduler : BroadcastReceiver() {
             val message = buildSuccessMessage(courses.size, diffSummary)
             val nowIso = toIsoString(System.currentTimeMillis())
 
-            synchronized(PREFS_WRITE_LOCK) {
-                prefs.edit()
-                    .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), rawScheduleJson)
-                    .putString(flutterKey(KEY_LAST_FETCH), nowIso)
-                    .putString(flutterKey(KEY_LAST_STATE), "success")
-                    .putString(flutterKey(KEY_LAST_SOURCE), "background")
-                    .putString(flutterKey(KEY_LAST_MESSAGE), message)
-                    .putString(flutterKey(KEY_LAST_DIFF_SUMMARY), diffSummary)
-                    .putString(flutterKey(KEY_LAST_STATE_SEMESTER), semester)
-                    .remove(flutterKey(KEY_LAST_ERROR))
-                    .commit()
-            }
+            setSyncWritingLock(prefs, true)
+            try {
+                synchronized(PREFS_WRITE_LOCK) {
+                    prefs.edit()
+                        .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), rawScheduleJson)
+                        .putString(flutterKey(KEY_LAST_FETCH), nowIso)
+                        .putString(flutterKey(KEY_LAST_STATE), "success")
+                        .putString(flutterKey(KEY_LAST_SOURCE), "background")
+                        .putString(flutterKey(KEY_LAST_MESSAGE), message)
+                        .putString(flutterKey(KEY_LAST_DIFF_SUMMARY), diffSummary)
+                        .putString(flutterKey(KEY_LAST_STATE_SEMESTER), semester)
+                        .remove(flutterKey(KEY_LAST_ERROR))
+                        .commit()
+                }
 
-            persistSemesterSyncRecord(
-                prefs = prefs,
-                semester = semester,
-                count = courses.size,
-                lastSyncTimeIso = nowIso,
-            )
-            persistScheduleArchive(context, semester, rawScheduleJson, courses)
+                persistSemesterSyncRecord(
+                    prefs = prefs,
+                    semester = semester,
+                    count = courses.size,
+                    lastSyncTimeIso = nowIso,
+                )
+                persistScheduleArchive(context, semester, rawScheduleJson, courses)
+            } finally {
+                setSyncWritingLock(prefs, false)
+            }
             saveProjectionPayload(context, semester, courses)
             ClassReminderScheduler.rebuildFromStoredProjection(context)
             ClassSilenceScheduler.rebuildFromStoredProjection(context)
@@ -484,6 +488,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 prefs.edit()
                     .remove(flutterKey(KEY_COOKIE_SNAPSHOT))
                     .remove(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED))
+                    .remove(flutterKey(KEY_SYNC_INVALIDATION_FLAG))
                     .commit()
             }
         }
@@ -499,6 +504,28 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     .putBoolean(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED), true)
                     .commit()
             }
+        }
+
+        private fun setSyncWritingLock(
+            prefs: SharedPreferences,
+            writing: Boolean,
+        ) {
+            synchronized(PREFS_WRITE_LOCK) {
+                val editor = prefs.edit()
+                if (writing) {
+                    editor.putBoolean(flutterKey(KEY_SYNC_WRITING_LOCK), true)
+                } else {
+                    editor.remove(flutterKey(KEY_SYNC_WRITING_LOCK))
+                }
+                editor.commit()
+            }
+        }
+
+        fun isInvalidated(context: Context): Boolean {
+            return flutterPrefs(context).getBoolean(
+                flutterKey(KEY_SYNC_INVALIDATION_FLAG),
+                false,
+            )
         }
 
         private fun loadStoredCookieSnapshot(
@@ -1111,36 +1138,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
         }
 
         private fun parseCourses(root: JSONObject): List<ParsedCourse> {
-            val rows = extractRows(root) ?: JSONArray()
-            return buildList {
-                for (i in 0 until rows.length()) {
-                    val row = rows.optJSONObject(i) ?: continue
-                    val courseId = row.optString("WID")
-                    val courseName = row.optString("KCMC")
-                    val teacher = row.optString("RKJS")
-                    add(
-                        ParsedCourse(
-                            id = courseId,
-                            code = row.optString("KCDM"),
-                            name = courseName,
-                            className = row.optString("BJMC"),
-                            teacher = teacher,
-                            college = row.optString("KKDW_DISPLAY"),
-                            credits = row.optDouble("XF"),
-                            totalHours = row.optInt("ZXS"),
-                            semester = row.optString("XNXQDM_DISPLAY"),
-                            campus = row.optString("XQDM_DISPLAY"),
-                            teachingType = row.optString("SKFSDM_DISPLAY"),
-                            slots = parseScheduleSlots(
-                                courseId = courseId,
-                                courseName = courseName,
-                                teacher = teacher,
-                                raw = row.optString("PKSJDD"),
-                            ),
-                        ),
-                    )
-                }
-            }
+            return ScheduleNativeParser.parseCourses(root)
         }
 
         private fun loadArchivedCourses(
@@ -1168,62 +1166,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
         }
 
         private fun parseArchivedCourseArray(source: JSONArray): List<ParsedCourse> {
-            return buildList {
-                for (index in 0 until source.length()) {
-                    val item = source.optJSONObject(index) ?: continue
-                    add(
-                        ParsedCourse(
-                            id = item.optString("id"),
-                            code = item.optString("code"),
-                            name = item.optString("name"),
-                            className = item.optString("className"),
-                            teacher = item.optString("teacher"),
-                            college = item.optString("college"),
-                            credits = item.optDouble("credits"),
-                            totalHours = item.optInt("totalHours"),
-                            semester = item.optString("semester"),
-                            campus = item.optString("campus"),
-                            teachingType = item.optString("teachingType"),
-                            slots = buildList {
-                                val slotArray = item.optJSONArray("slots") ?: JSONArray()
-                                for (slotIndex in 0 until slotArray.length()) {
-                                    val slot = slotArray.optJSONObject(slotIndex) ?: continue
-                                    add(
-                                        ParsedSlot(
-                                            courseId = slot.optString("courseId"),
-                                            courseName = slot.optString("courseName"),
-                                            teacher = slot.optString("teacher"),
-                                            location = slot.optString("location"),
-                                            weekday = slot.optInt("weekday"),
-                                            startSection = slot.optInt("startSection"),
-                                            endSection = slot.optInt("endSection"),
-                                            activeWeeks = expandArchivedWeeks(slot.optJSONArray("weekRanges")),
-                                            color = pickColor(slot.optString("courseName")),
-                                        ),
-                                    )
-                                }
-                            },
-                        ),
-                    )
-                }
-            }
-        }
-
-        private fun expandArchivedWeeks(weekRanges: JSONArray?): List<Int> {
-            if (weekRanges == null) return emptyList()
-            val weeks = linkedSetOf<Int>()
-            for (index in 0 until weekRanges.length()) {
-                val range = weekRanges.optJSONObject(index) ?: continue
-                val start = range.optInt("start")
-                val end = range.optInt("end")
-                val type = range.optString("type", "all")
-                for (week in start..end) {
-                    if (matchesWeekType(week, type)) {
-                        weeks.add(week)
-                    }
-                }
-            }
-            return weeks.toList()
+            return ScheduleNativeParser.parseArchivedCourses(source)
         }
 
         private fun buildCourseDiffSummary(
@@ -1239,114 +1182,18 @@ class AutoSyncScheduler : BroadcastReceiver() {
             }
 
             if (added == 0 && removed == 0 && changed == 0) {
-                return "璇捐〃鏃犲彉鍖?"
+                return "课表无变化"
             }
 
             return buildList {
-                if (added > 0) add("鏂板 $added 闂?")
-                if (removed > 0) add("绉婚櫎 $removed 闂?")
-                if (changed > 0) add("璋冩暣 $changed 闂?")
-            }.joinToString("锛?")
+                if (added > 0) add("新增 $added 门")
+                if (removed > 0) add("移除 $removed 门")
+                if (changed > 0) add("调整 $changed 门")
+            }.joinToString("，")
         }
 
         private fun buildSuccessMessage(courseCount: Int, diffSummary: String): String {
-            return "宸插悓姝?$courseCount 闂ㄨ绋嬶紝$diffSummary"
-        }
-
-        private fun parseScheduleSlots(
-            courseId: String,
-            courseName: String,
-            teacher: String,
-            raw: String,
-        ): List<ParsedSlot> {
-            if (raw.isBlank()) return emptyList()
-            val result = mutableListOf<ParsedSlot>()
-            raw.split(";").map { it.trim() }.filter { it.isNotEmpty() }.forEach { segment ->
-                val weekMatch = WEEK_REGEX.matcher(segment)
-                if (!weekMatch.find()) return@forEach
-                val weekText = weekMatch.group(1) ?: return@forEach
-
-                val dayMatch = DAY_REGEX.matcher(segment)
-                if (!dayMatch.find()) return@forEach
-                val weekdayKey = dayMatch.group(1) ?: return@forEach
-                val weekday = WEEKDAY_MAP[weekdayKey] ?: return@forEach
-
-                val sectionMatch = SECTION_REGEX.matcher(segment)
-                if (!sectionMatch.find()) return@forEach
-                val startSection = sectionMatch.group(1)?.toIntOrNull() ?: return@forEach
-                val endSection = sectionMatch.group(2)?.toIntOrNull() ?: return@forEach
-                val locationStart = sectionMatch.end()
-                val location = if (locationStart < segment.length) {
-                    segment.substring(locationStart).trim()
-                } else {
-                    ""
-                }
-
-                val activeWeeks = expandWeeks(weekText)
-                result.add(
-                    ParsedSlot(
-                        courseId = courseId,
-                        courseName = courseName,
-                        teacher = teacher,
-                        location = location,
-                        weekday = weekday,
-                        startSection = startSection,
-                        endSection = endSection,
-                        activeWeeks = activeWeeks,
-                        color = pickColor(courseName),
-                    ),
-                )
-            }
-            return result
-        }
-
-        private fun expandWeeks(weekText: String): List<Int> {
-            val weekType = when {
-                weekText.contains("单") -> "odd"
-                weekText.contains("双") -> "even"
-                else -> "all"
-            }
-
-            val cleaned = weekText
-                .replace("单周", "")
-                .replace("双周", "")
-                .replace("周", "")
-                .trim()
-
-            val weeks = mutableSetOf<Int>()
-            cleaned.split(",")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .forEach { part ->
-                    if (part.contains("-")) {
-                        val pieces = part.split("-")
-                        if (pieces.size == 2) {
-                            val start = pieces[0].trim().toIntOrNull()
-                            val end = pieces[1].trim().toIntOrNull()
-                            if (start != null && end != null) {
-                                for (week in start..end) {
-                                    if (matchesWeekType(week, weekType)) {
-                                        weeks.add(week)
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        val week = part.toIntOrNull()
-                        if (week != null && matchesWeekType(week, weekType)) {
-                            weeks.add(week)
-                        }
-                    }
-                }
-            return weeks.toList().sorted()
-        }
-
-        private fun matchesWeekType(week: Int, type: String): Boolean {
-            return when (type) {
-                "odd" -> week % 2 == 1
-                "even" -> week % 2 == 0
-                else -> true
-            }
+            return "已同步 $courseCount 门课程，$diffSummary"
         }
 
         private fun extractRows(root: JSONObject): JSONArray? {
@@ -1371,17 +1218,6 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     targetRows.put(item)
                 }
             }
-        }
-
-        private fun pickColor(courseName: String): Int {
-            if (courseName.isBlank()) return COURSE_COLORS.first()
-            var hash = 0x811C9DC5.toInt()
-            courseName.forEach { ch ->
-                hash = hash xor ch.code
-                hash = (hash * 0x01000193).toInt()
-            }
-            val index = (hash.toLong() and 0xFFFFFFFFL).rem(COURSE_COLORS.size).toInt()
-            return COURSE_COLORS[index]
         }
 
         private fun normalizeCustomIntervalMinutes(minutes: Int?): Int {
@@ -1488,128 +1324,6 @@ class AutoSyncScheduler : BroadcastReceiver() {
             } catch (_: Throwable) {
                 null
             }
-        }
-
-        private data class ParsedSlot(
-            val courseId: String,
-            val courseName: String,
-            val teacher: String,
-            val location: String,
-            val weekday: Int,
-            val startSection: Int,
-            val endSection: Int,
-            val activeWeeks: List<Int>,
-            val color: Int,
-        )
-
-        private data class ParsedCourse(
-            val id: String,
-            val code: String,
-            val name: String,
-            val className: String,
-            val teacher: String,
-            val college: String,
-            val credits: Double,
-            val totalHours: Int,
-            val semester: String,
-            val campus: String,
-            val teachingType: String,
-            val slots: List<ParsedSlot>,
-        ) {
-            fun toJson(): JSONObject {
-                return JSONObject().apply {
-                    put("id", id)
-                    put("code", code)
-                    put("name", name)
-                    put("className", className)
-                    put("teacher", teacher)
-                    put("college", college)
-                    put("credits", credits)
-                    put("totalHours", totalHours)
-                    put("semester", semester)
-                    put("campus", campus)
-                    put("teachingType", teachingType)
-                    put(
-                        "slots",
-                        JSONArray().apply {
-                            slots.forEach { slot ->
-                                put(
-                                    JSONObject().apply {
-                                        put("courseId", slot.courseId)
-                                        put("courseName", slot.courseName)
-                                        put("teacher", slot.teacher)
-                                        put("weekday", slot.weekday)
-                                        put("startSection", slot.startSection)
-                                        put("endSection", slot.endSection)
-                                        put("location", slot.location)
-                                        put(
-                                            "weekRanges",
-                                            JSONArray().apply {
-                                                buildWeekRanges(slot.activeWeeks).forEach { range ->
-                                                    put(range)
-                                                }
-                                            },
-                                        )
-                                    },
-                                )
-                            }
-                        },
-                    )
-                }
-            }
-
-            fun identity(): String = "$code|$name|$teacher|$className"
-
-            fun signature(): String {
-                val slotSignatures = slots.map { slot ->
-                    listOf(
-                        slot.weekday,
-                        slot.startSection,
-                        slot.endSection,
-                        slot.location,
-                        slot.activeWeeks.joinToString("/"),
-                    ).joinToString("|")
-                }.sorted()
-                return listOf(
-                    college,
-                    credits,
-                    totalHours,
-                    semester,
-                    campus,
-                    teachingType,
-                    slotSignatures.joinToString(";"),
-                ).joinToString("|")
-            }
-        }
-
-        private fun buildWeekRanges(activeWeeks: List<Int>): List<JSONObject> {
-            if (activeWeeks.isEmpty()) return emptyList()
-            val ranges = mutableListOf<JSONObject>()
-            var start = activeWeeks.first()
-            var previous = start
-            activeWeeks.drop(1).forEach { week ->
-                if (week == previous + 1) {
-                    previous = week
-                } else {
-                    ranges.add(
-                        JSONObject().apply {
-                            put("start", start)
-                            put("end", previous)
-                            put("type", "all")
-                        },
-                    )
-                    start = week
-                    previous = week
-                }
-            }
-            ranges.add(
-                JSONObject().apply {
-                    put("start", start)
-                    put("end", previous)
-                    put("type", "all")
-                },
-            )
-            return ranges
         }
     }
 }

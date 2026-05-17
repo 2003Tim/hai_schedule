@@ -34,6 +34,8 @@ class AppStorageSchema {
   static const cookieSnapshotKey = 'last_auto_sync_cookie';
   static const cookieSnapshotInvalidatedKey =
       'last_auto_sync_cookie_invalidated';
+  static const syncInvalidationFlagKey = 'sync_invalidation_flag';
+  static const syncWritingLockKey = 'sync_writing_lock';
   static const studentIdKey = 'last_student_id';
 
   static const reminderLeadTimeKey = 'class_reminder_lead_minutes';
@@ -103,6 +105,8 @@ class AppStorageSchema {
     lastScheduleJsonKey,
     cookieSnapshotKey,
     cookieSnapshotInvalidatedKey,
+    syncInvalidationFlagKey,
+    syncWritingLockKey,
     studentIdKey,
     reminderLastBuildTimeKey,
     reminderHorizonEndKey,

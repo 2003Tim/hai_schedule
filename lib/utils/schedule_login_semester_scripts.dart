@@ -38,13 +38,25 @@ class ScheduleLoginSemesterScripts {
             var options = Array.prototype.slice.call(select.options || []);
             options.forEach(function(option) {
               var code = normalize(option.value);
-              if (!/^\\d{5}\$/.test(code) || seen[code]) {
+              var name = normalize(option.text || option.label || '');
+              var key = code || name;
+              if (!key) {
                 return;
               }
-              seen[code] = true;
+              if (
+                !/^\\d{5}\$/.test(code) &&
+                !/(20\\d{2})-(20\\d{2})\\u5b66\\u5e74\\s*\\u7b2c?[\\u4e00\\u4e8c12]\\u5b66\\u671f/.test(name) &&
+                name.indexOf('\\u5b66\\u671f') === -1
+              ) {
+                return;
+              }
+              if (seen[key]) {
+                return;
+              }
+              seen[key] = true;
               items.push({
                 code: code,
-                name: normalize(option.text || option.label || '')
+                name: name
               });
             });
           });

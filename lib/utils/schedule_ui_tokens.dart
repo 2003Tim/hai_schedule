@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 class ScheduleUiTokens {
@@ -21,6 +23,11 @@ class ScheduleUiTokens {
   static BorderRadius get cardRadius => BorderRadius.circular(16);
   static BorderRadius get sheetRadius => BorderRadius.circular(24);
   static BorderRadius get pillRadius => BorderRadius.circular(999);
+  static BorderRadius get adaptiveGlassRadius => BorderRadius.circular(18);
+
+  static ImageFilter get adaptiveGlassBlur {
+    return ImageFilter.blur(sigmaX: 18, sigmaY: 18);
+  }
 
   static LinearGradient get backgroundGradient => const LinearGradient(
     begin: Alignment.topLeft,
@@ -75,6 +82,71 @@ class ScheduleUiTokens {
       borderRadius: borderRadius ?? cardRadius,
       border: Border.all(color: borderColor ?? glassBorderFor(theme), width: 1),
       boxShadow: softShadow,
+    );
+  }
+
+  static Color adaptiveGlassTextFor(ThemeData theme) {
+    final alpha = theme.brightness == Brightness.dark ? 0.72 : 0.56;
+    return (theme.textTheme.bodyMedium?.color ?? theme.colorScheme.onSurface)
+        .withValues(alpha: alpha);
+  }
+
+  static Color adaptiveGlassMetadataTextFor(ThemeData theme) {
+    final alpha = theme.brightness == Brightness.dark ? 0.64 : 0.52;
+    return theme.colorScheme.onSurface.withValues(alpha: alpha);
+  }
+
+  static double adaptiveGlassBorderWidthFor(ThemeData theme) {
+    return theme.brightness == Brightness.dark ? 0.7 : 0.8;
+  }
+
+  static BoxDecoration adaptiveGlassDecoration(
+    ThemeData theme, {
+    BorderRadius? borderRadius,
+  }) {
+    final isDark = theme.brightness == Brightness.dark;
+    return BoxDecoration(
+      color:
+          isDark
+              ? theme.colorScheme.surface.withValues(alpha: 0.30)
+              : Colors.white.withValues(alpha: 0.34),
+      borderRadius: borderRadius ?? adaptiveGlassRadius,
+      border: Border.all(
+        color:
+            isDark
+                ? theme.colorScheme.outlineVariant.withValues(alpha: 0.16)
+                : Colors.white.withValues(alpha: 0.46),
+        width: adaptiveGlassBorderWidthFor(theme),
+      ),
+    );
+  }
+
+  static BoxDecoration adaptiveGlassStateDecoration(
+    ThemeData theme, {
+    required bool selected,
+    bool current = false,
+    BorderRadius? borderRadius,
+  }) {
+    final isDark = theme.brightness == Brightness.dark;
+    final colorScheme = theme.colorScheme;
+    final baseColor =
+        selected
+            ? colorScheme.primary.withValues(alpha: isDark ? 0.22 : 0.14)
+            : colorScheme.primary.withValues(alpha: isDark ? 0.14 : 0.08);
+    return BoxDecoration(
+      color: baseColor,
+      borderRadius: borderRadius ?? pillRadius,
+      border: Border.all(
+        color: colorScheme.primary.withValues(
+          alpha:
+              selected
+                  ? (isDark ? 0.34 : 0.22)
+                  : current
+                  ? 0.20
+                  : 0.12,
+        ),
+        width: adaptiveGlassBorderWidthFor(theme),
+      ),
     );
   }
 

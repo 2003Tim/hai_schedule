@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 import 'package:flutter/services.dart';
 
@@ -7,6 +6,7 @@ import 'package:hai_schedule/models/class_silence_models.dart';
 import 'package:hai_schedule/models/course.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/school_time.dart';
+import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/utils/schedule_projection_payload.dart';
 import 'package:hai_schedule/utils/week_calculator.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
@@ -23,7 +23,7 @@ class ClassSilenceService {
 
   static final ClassSilenceRepository _repository = ClassSilenceRepository();
 
-  static bool get isSupported => Platform.isAndroid;
+  static bool get isSupported => AppPlatform.instance.supportsClassSilence;
 
   static Future<ClassSilenceSettings> loadSettings() async {
     final record = await _repository.loadState();

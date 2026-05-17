@@ -1,9 +1,13 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:hai_schedule/models/course.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
+import 'package:hai_schedule/services/schedule_sync_result_service.dart';
 
 import '../test_helpers/secure_storage_mock.dart';
 
@@ -33,7 +37,10 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(autoSyncChannel, (call) async => null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(nativeCredentialsChannel, (call) async => null);
+        .setMockMethodCallHandler(
+          nativeCredentialsChannel,
+          (call) async => null,
+        );
   });
 
   tearDownAll(() {
@@ -49,75 +56,66 @@ void main() {
   });
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     AppStorage.instance.resetForTesting();
     SecureStorageMock.clear();
   });
 
-  group('ScheduleProvider.importFromJson error handling', () {
-    late ScheduleProvider provider;
+  test(
+    'applySuccessfulSync diffs against the target semester archive',
+    () async {
+      final provider = ScheduleProvider();
+      await provider.ready;
 
-    setUp(() {
-      provider = ScheduleProvider();
-    });
-
-    test('throws FormatException for invalid JSON string', () async {
-      await expectLater(
-        provider.importFromJson('not valid json'),
-        throwsA(
-          isA<FormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('JSON 格式无效'),
-          ),
-        ),
+      await provider.setCourses(
+        [_course(code: 'ACTIVE', name: '当前学期课程', location: 'A-101')],
+        semesterCode: '20251',
+        rawScheduleJson: jsonEncode({'semester': '20251'}),
       );
-    });
-
-    test('throws FormatException for JSON array at root', () async {
-      await expectLater(
-        provider.importFromJson('[]'),
-        throwsA(
-          isA<FormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('顶层结构必须是对象'),
-          ),
-        ),
+      await AppStorage.instance.saveSemesterArchive(
+        semesterCode: '20252',
+        rawScheduleJson: jsonEncode({'semester': '20252'}),
+        courses: [_course(code: 'MATH001', name: '高等数学', location: 'B-201')],
       );
-    });
 
-    test('throws FormatException for JSON null at root', () async {
-      await expectLater(
-        provider.importFromJson('null'),
-        throwsA(
-          isA<FormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('顶层结构必须是对象'),
-          ),
-        ),
+      final result = await ScheduleSyncResultService().applySuccessfulSync(
+        provider: provider,
+        courses: [_course(code: 'MATH001', name: '高等数学', location: 'B-202')],
+        rawScheduleJson: jsonEncode({'semester': '20252', 'updated': true}),
+        source: 'login_fetch',
+        semesterCode: '20252',
       );
-    });
 
-    test('throws FormatException for JSON number at root', () async {
-      await expectLater(
-        provider.importFromJson('42'),
-        throwsA(isA<FormatException>()),
-      );
-    });
+      expect(result.diffSummary, '调整 1 门');
+    },
+  );
+}
 
-    test('throws FormatException when no courses parsed from valid JSON', () async {
-      await expectLater(
-        provider.importFromJson('{}'),
-        throwsA(
-          isA<FormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('未解析到课程数据'),
-          ),
-        ),
-      );
-    });
-  });
+Course _course({
+  required String code,
+  required String name,
+  required String location,
+}) {
+  return Course(
+    id: code,
+    code: code,
+    name: name,
+    className: '测试班',
+    teacher: '张老师',
+    college: '理学院',
+    credits: 2,
+    totalHours: 32,
+    semester: '2025-2026学年 第二学期',
+    slots: [
+      ScheduleSlot(
+        courseId: code,
+        courseName: name,
+        weekday: DateTime.monday,
+        startSection: 1,
+        endSection: 2,
+        location: location,
+        weekRanges: [WeekRange(start: 1, end: 16)],
+      ),
+    ],
+  );
 }

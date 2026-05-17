@@ -1,7 +1,7 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import 'package:hai_schedule/utils/app_platform.dart';
 
 import 'package:hai_schedule/services/class_reminder_service.dart';
 import 'package:hai_schedule/services/class_silence_service.dart';
@@ -254,7 +254,7 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen>
           supported: false,
           policyAccessGranted: false,
         );
-    final isDesktop = !Platform.isAndroid;
+    final isDesktop = !AppPlatform.instance.isAndroid;
     final isWideDesktop =
         isDesktop && MediaQuery.of(context).size.width >= 1180;
     final reminderModeText =

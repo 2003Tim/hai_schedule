@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
@@ -7,7 +6,6 @@ import 'package:hai_schedule/models/course.dart';
 import 'package:hai_schedule/models/display_schedule_slot.dart';
 import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
-import 'package:hai_schedule/models/schedule_parser.dart';
 import 'package:hai_schedule/models/school_time.dart';
 import 'package:hai_schedule/utils/schedule_display_slot_resolver.dart';
 import 'package:hai_schedule/utils/schedule_override_validator.dart';
@@ -29,7 +27,7 @@ class ScheduleProvider extends ChangeNotifier {
   final SchoolTimeRepository _schoolTimeRepository = SchoolTimeRepository();
   final ScheduleStateLoader _stateLoader = ScheduleStateLoader();
   final ScheduleDerivedOutputCoordinator _derivedOutputCoordinator =
-      const ScheduleDerivedOutputCoordinator();
+      ScheduleDerivedOutputCoordinator();
 
   List<Course> _courses = [];
   List<ScheduleOverride> _overrides = [];
@@ -47,7 +45,7 @@ class ScheduleProvider extends ChangeNotifier {
 
   int _displayDays = 7;
   bool _showNonCurrentWeek = true;
-  bool _isSettingCourses = false;
+  Future<void> _setCoursesTail = Future<void>.value();
 
   List<Course> get courses => _courses;
   List<ScheduleOverride> get overrides => _overrides;
@@ -70,10 +68,11 @@ class ScheduleProvider extends ChangeNotifier {
     _applySemesterContext(null);
   }
 
-  @override
-  void notifyListeners() {
+  /// 仅在课程或 override 数据真正变更时调用，确保 [getDisplaySlotsForDay] /
+  /// [getDisplaySlotAt] 的缓存与最新数据保持一致。纯 UI 状态变化（如选中周次、
+  /// 显示天数）不应清空此缓存，避免不必要的重计算。
+  void _invalidateDisplaySlotCache() {
     _displaySlotCache.clear();
-    super.notifyListeners();
   }
 
   void selectWeek(int week) {
@@ -107,6 +106,8 @@ class ScheduleProvider extends ChangeNotifier {
 
   void toggleShowNonCurrentWeek() {
     _showNonCurrentWeek = !_showNonCurrentWeek;
+    // 该开关影响 ScheduleDisplaySlotResolver.resolve 的返回结果，必须清掉缓存。
+    _invalidateDisplaySlotCache();
     unawaited(_savePreferences());
     notifyListeners();
   }
@@ -209,6 +210,7 @@ class ScheduleProvider extends ChangeNotifier {
   Future<void> updateTimeConfig(SchoolTimeConfig config) async {
     _timeConfig = config;
     await _schoolTimeRepository.save(config);
+    _invalidateDisplaySlotCache();
     await _syncDerivedOutputs(forceReminderRebuild: true);
     notifyListeners();
   }
@@ -216,6 +218,7 @@ class ScheduleProvider extends ChangeNotifier {
   Future<void> resetTimeConfigToDefault() async {
     _timeConfig = SchoolTimeConfig.hainanuDefault();
     await _schoolTimeRepository.reset();
+    _invalidateDisplaySlotCache();
     await _syncDerivedOutputs(forceReminderRebuild: true);
     notifyListeners();
   }
@@ -323,6 +326,7 @@ class ScheduleProvider extends ChangeNotifier {
       overrides: _overrides,
     );
     await _revalidateOverridesForSemester(semesterCode);
+    _invalidateDisplaySlotCache();
     await _syncDerivedOutputs(forceReminderRebuild: true);
     notifyListeners();
   }
@@ -336,70 +340,62 @@ class ScheduleProvider extends ChangeNotifier {
       semesterCode: semesterCode,
       overrides: _overrides,
     );
+    _invalidateDisplaySlotCache();
     await _syncDerivedOutputs(forceReminderRebuild: true);
     notifyListeners();
-  }
-
-  Future<void> importFromJson(String jsonString, {String? semesterCode}) async {
-    final Object? decoded;
-    try {
-      decoded = json.decode(jsonString);
-    } catch (_) {
-      throw const FormatException('JSON 格式无效，请检查内容');
-    }
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('JSON 顶层结构必须是对象（{}），而非数组或其他类型');
-    }
-    final courses = ScheduleParser.parseApiResponse(decoded);
-    if (courses.isEmpty) {
-      throw const FormatException('未解析到课程数据');
-    }
-    await setCourses(
-      courses,
-      semesterCode: semesterCode,
-      rawScheduleJson: jsonString,
-    );
   }
 
   Future<void> setCourses(
     List<Course> courses, {
     String? semesterCode,
     String? rawScheduleJson,
-  }) async {
-    if (_isSettingCourses) return;
-    _isSettingCourses = true;
-    try {
-      final resolvedSemester = await _stateLoader.resolveTargetSemesterCode(
-        semesterCode,
-      );
-      final semesterStart = _stateLoader.inferSemesterStartFromRawScheduleJson(
-        rawScheduleJson,
-        semesterCode: resolvedSemester,
-      );
-      _courses = courses;
-      _currentSemesterCode = resolvedSemester;
-      _knownSemesterCatalog = await _scheduleRepository.loadSemesterCatalog();
-      _availableSemesterCodes = await _stateLoader.loadAvailableSemesterCodes(
-        additional: resolvedSemester,
-      );
-      _availableSemesterOptions = await _stateLoader
-          .loadAvailableSemesterOptions(additional: resolvedSemester);
-      _applySemesterContext(
-        resolvedSemester,
-        semesterStartOverride: semesterStart,
-      );
-      await _scheduleRepository.saveSemesterSchedule(
-        semesterCode: resolvedSemester,
+  }) {
+    final write = _setCoursesTail.then<void>((_) {
+      return _setCoursesNow(
+        courses,
+        semesterCode: semesterCode,
         rawScheduleJson: rawScheduleJson,
-        courses: courses,
-        makeActive: true,
       );
-      await _revalidateOverridesForSemester(resolvedSemester);
-      await _syncDerivedOutputs(forceReminderRebuild: true);
-      notifyListeners();
-    } finally {
-      _isSettingCourses = false;
-    }
+    });
+    _setCoursesTail = write.catchError((Object _) {});
+    return write;
+  }
+
+  Future<void> _setCoursesNow(
+    List<Course> courses, {
+    String? semesterCode,
+    String? rawScheduleJson,
+  }) async {
+    final resolvedSemester = await _stateLoader.resolveTargetSemesterCode(
+      semesterCode,
+    );
+    final semesterStart = _stateLoader.inferSemesterStartFromRawScheduleJson(
+      rawScheduleJson,
+      semesterCode: resolvedSemester,
+    );
+    _courses = courses;
+    _currentSemesterCode = resolvedSemester;
+    _knownSemesterCatalog = await _scheduleRepository.loadSemesterCatalog();
+    _availableSemesterCodes = await _stateLoader.loadAvailableSemesterCodes(
+      additional: resolvedSemester,
+    );
+    _availableSemesterOptions = await _stateLoader.loadAvailableSemesterOptions(
+      additional: resolvedSemester,
+    );
+    _applySemesterContext(
+      resolvedSemester,
+      semesterStartOverride: semesterStart,
+    );
+    await _scheduleRepository.saveSemesterSchedule(
+      semesterCode: resolvedSemester,
+      rawScheduleJson: rawScheduleJson,
+      courses: courses,
+      makeActive: true,
+    );
+    await _revalidateOverridesForSemester(resolvedSemester);
+    _invalidateDisplaySlotCache();
+    await _syncDerivedOutputs(forceReminderRebuild: true);
+    notifyListeners();
   }
 
   Future<void> _bootstrap() async {
@@ -410,6 +406,7 @@ class ScheduleProvider extends ChangeNotifier {
     final state = await _stateLoader.load();
     _applyLoadedState(state);
     await _revalidateOverridesForSemester(state.currentSemesterCode);
+    _invalidateDisplaySlotCache();
     await _syncDerivedOutputs(forceReminderRebuild: true);
     notifyListeners();
   }

@@ -79,51 +79,73 @@ class _WeekSelectorState extends State<WeekSelector> {
               width: 44,
               margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               decoration: BoxDecoration(
-                gradient: isSelected
-                    ? LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          cs.primary.withValues(alpha: isDark ? 0.92 : 0.84),
-                          cs.primary.withValues(alpha: isDark ? 0.74 : 0.70),
-                        ],
-                      )
-                    : null,
-                color: !isSelected
-                    ? (isCurrent
-                          ? cs.primary.withValues(alpha: isDark ? 0.18 : 0.10)
-                          : Colors.white.withValues(alpha: isDark ? 0.06 : 0.14))
-                    : null,
+                gradient:
+                    isSelected
+                        ? LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            cs.primary.withValues(alpha: isDark ? 0.92 : 0.84),
+                            cs.primary.withValues(alpha: isDark ? 0.74 : 0.70),
+                          ],
+                        )
+                        : null,
+                color:
+                    !isSelected
+                        ? (isCurrent
+                            ? cs.primary.withValues(alpha: isDark ? 0.18 : 0.10)
+                            : Colors.white.withValues(
+                              alpha: isDark ? 0.06 : 0.14,
+                            ))
+                        : null,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: isSelected
-                      ? Colors.white.withValues(alpha: isDark ? 0.12 : 0.22)
-                      : isCurrent
+                  color:
+                      isSelected
+                          ? Colors.white.withValues(alpha: isDark ? 0.12 : 0.22)
+                          : isCurrent
                           ? cs.primary.withValues(alpha: 0.24)
-                          : cs.outlineVariant.withValues(alpha: isDark ? 0.10 : 0.06),
+                          : cs.outlineVariant.withValues(
+                            alpha: isDark ? 0.10 : 0.06,
+                          ),
                   width: isSelected ? 0.9 : 1.0,
                 ),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: cs.primary.withValues(alpha: isDark ? 0.18 : 0.16),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ]
-                    : null,
+                boxShadow:
+                    isSelected
+                        ? [
+                          BoxShadow(
+                            color: cs.primary.withValues(
+                              alpha: isDark ? 0.18 : 0.16,
+                            ),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                        : null,
               ),
               alignment: Alignment.center,
-              child: Text(
-                '$week',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: isSelected || isCurrent ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected
-                      ? Colors.white
-                      : isCurrent
-                          ? cs.primary
-                          : theme.textTheme.bodyMedium?.color?.withValues(alpha: isDark ? 0.72 : 0.56),
+              child: SizedBox(
+                key: ValueKey('weekSelector.item.$week'),
+                width: 44,
+                child: Center(
+                  child: Text(
+                    '$week',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight:
+                          isSelected || isCurrent
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                      color:
+                          isSelected
+                              ? Colors.white
+                              : isCurrent
+                              ? cs.primary
+                              : theme.textTheme.bodyMedium?.color?.withValues(
+                                alpha: isDark ? 0.72 : 0.56,
+                              ),
+                    ),
+                  ),
                 ),
               ),
             ),

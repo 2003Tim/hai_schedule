@@ -1,9 +1,8 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 
 import 'package:hai_schedule/screens/login_screen.dart';
 import 'package:hai_schedule/screens/login_screen_android.dart';
+import 'package:hai_schedule/utils/app_platform.dart';
 
 class LoginRouter extends StatelessWidget {
   const LoginRouter({
@@ -17,7 +16,7 @@ class LoginRouter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (Platform.isWindows) {
+    if (AppPlatform.instance.isWindows) {
       return LoginScreen(
         initialSemesterCode: initialSemesterCode,
         openCredentialEditor: openCredentialEditor,

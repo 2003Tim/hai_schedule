@@ -2,7 +2,13 @@ class LoginFetchUrlPolicy {
   static const targetUrl =
       'https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/*default/index.do';
 
-  static const successPatterns = ['wdkbapp', 'yjsemaphome', 'portal/index.do'];
+  static const successPatterns = [
+    'wdkbapp',
+    'yjsemaphome',
+    'portal/index.do',
+    'jsxsd',
+    'homepage',
+  ];
   static const loginPatterns = ['cas', 'login', 'authserver'];
 
   static bool isLoginUrl(String url) {

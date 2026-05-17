@@ -17,7 +17,7 @@ class MainActivity : FlutterActivity() {
                 "getCookie" -> {
                     val url = call.argument<String>("url")
                     if (url.isNullOrBlank()) {
-                        result.error("INVALID_URL", "url 涓嶈兘涓虹┖", null)
+                        result.error("INVALID_URL", "url 不能为空", null)
                     } else {
                         val manager = CookieManager.getInstance()
                         manager.setAcceptCookie(true)
@@ -61,6 +61,14 @@ class MainActivity : FlutterActivity() {
                     result.success(next ?: "")
                 }
 
+                "cancelBackgroundSync" -> {
+                    AutoSyncScheduler.cancel(
+                        context = applicationContext,
+                        clearNextSyncTime = true,
+                    )
+                    result.success(true)
+                }
+
                 else -> result.notImplemented()
             }
         }
@@ -74,7 +82,7 @@ class MainActivity : FlutterActivity() {
                     val username = call.argument<String>("username")
                     val password = call.argument<String>("password")
                     if (username.isNullOrBlank() || password.isNullOrBlank()) {
-                        result.error("INVALID_ARGUMENT", "username/password 涓嶈兘涓虹┖", null)
+                        result.error("INVALID_ARGUMENT", "username/password 不能为空", null)
                     } else {
                         NativeCredentialStore.save(applicationContext, username, password)
                         result.success(true)
@@ -107,7 +115,7 @@ class MainActivity : FlutterActivity() {
                 "saveCookieSnapshot" -> {
                     val cookie = call.argument<String>("cookie")
                     if (cookie.isNullOrBlank()) {
-                        result.error("INVALID_ARGUMENT", "cookie 涓嶈兘涓虹┖", null)
+                        result.error("INVALID_ARGUMENT", "cookie 不能为空", null)
                     } else {
                         NativeCredentialStore.saveCookieSnapshot(applicationContext, cookie)
                         result.success(true)
@@ -205,4 +213,3 @@ class MainActivity : FlutterActivity() {
         }
     }
 }
-
