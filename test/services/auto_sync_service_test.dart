@@ -101,7 +101,7 @@ void main() {
   );
 
   test(
-    'handleCredentialCleared stops after alarm cancellation failure',
+    'handleCredentialCleared continues clearing after alarm cancellation failure',
     () async {
       await AuthCredentialsService.instance.save(
         username: '20250001',
@@ -111,15 +111,18 @@ void main() {
       channelCalls.clear();
       failCancelBackgroundSync = true;
 
-      await expectLater(
-        AutoSyncService.handleCredentialCleared(),
-        throwsA(isA<PlatformException>()),
-      );
+      await AutoSyncService.handleCredentialCleared();
 
-      expect(channelCalls, <String>['cancelBackgroundSync']);
+      expect(channelCalls, <String>[
+        'cancelBackgroundSync',
+        'clearCredential',
+        'clearCookieSnapshot',
+        'clearCookies',
+      ]);
       expect(await AppStorage.instance.loadSyncInvalidationFlag(), isTrue);
-      expect(SecureStorageMock.read('portal_username'), isNotNull);
-      expect(SecureStorageMock.read('last_auto_sync_cookie'), isNotNull);
+      expect(SecureStorageMock.read('portal_username'), isNull);
+      expect(SecureStorageMock.read('portal_password'), isNull);
+      expect(SecureStorageMock.read('last_auto_sync_cookie'), isNull);
     },
   );
 }

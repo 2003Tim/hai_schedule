@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_parser.dart';
 import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
-import 'package:hai_schedule/models/schedule_parser.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -22,9 +23,11 @@ void main() {
       final provider = ScheduleProvider();
       await provider.ready;
 
-      await provider.importFromJson(
-        jsonEncode(_samplePayload()),
+      final payload = _samplePayload();
+      await provider.setCourses(
+        ScheduleParser.parseApiResponse(payload),
         semesterCode: '20251',
+        rawScheduleJson: jsonEncode(payload),
       );
 
       expect(provider.weekCalc.semesterStart, DateTime(2025, 9, 8));
@@ -114,6 +117,41 @@ void main() {
       ]);
     },
   );
+
+  test(
+    'setCourses serializes overlapping writes and keeps the last result',
+    () async {
+      final provider = ScheduleProvider();
+      await provider.ready;
+
+      final firstWrite = provider.setCourses([
+        _course(id: 'first', code: 'FIRST001', name: '第一门课', semester: '20251'),
+      ], semesterCode: '20251');
+      final secondWrite = provider.setCourses([
+        _course(
+          id: 'second',
+          code: 'SECOND001',
+          name: '第二门课',
+          semester: '20252',
+        ),
+      ], semesterCode: '20252');
+
+      await Future.wait([firstWrite, secondWrite]);
+
+      expect(provider.currentSemesterCode, '20252');
+      expect(provider.courses, hasLength(1));
+      expect(provider.courses.single.id, 'second');
+
+      final firstArchive = await AppStorage.instance.loadSemesterArchive(
+        '20251',
+      );
+      final secondArchive = await AppStorage.instance.loadSemesterArchive(
+        '20252',
+      );
+      expect(firstArchive?.courses.single.id, 'first');
+      expect(secondArchive?.courses.single.id, 'second');
+    },
+  );
 }
 
 Map<String, dynamic> _samplePayload() {
@@ -143,4 +181,34 @@ Map<String, dynamic> _samplePayload() {
       },
     },
   };
+}
+
+Course _course({
+  required String id,
+  required String code,
+  required String name,
+  required String semester,
+}) {
+  return Course(
+    id: id,
+    code: code,
+    name: name,
+    className: '$name 班',
+    teacher: '测试老师',
+    college: '测试学院',
+    credits: 2,
+    totalHours: 32,
+    semester: semester,
+    slots: [
+      ScheduleSlot(
+        courseId: id,
+        courseName: name,
+        weekday: 1,
+        startSection: 1,
+        endSection: 2,
+        location: '测试教室',
+        weekRanges: [WeekRange(start: 1, end: 16)],
+      ),
+    ],
+  );
 }

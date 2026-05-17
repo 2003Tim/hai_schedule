@@ -19,7 +19,6 @@ class SyncCenterStatusCard extends StatelessWidget {
     required this.statusColor,
     required this.onSyncNow,
     required this.onOpenLoginPage,
-    this.onOpenManualImport,
   });
 
   final AutoSyncSnapshot snapshot;
@@ -30,7 +29,6 @@ class SyncCenterStatusCard extends StatelessWidget {
   final Color statusColor;
   final VoidCallback? onSyncNow;
   final VoidCallback? onOpenLoginPage;
-  final VoidCallback? onOpenManualImport;
 
   @override
   Widget build(BuildContext context) {
@@ -204,12 +202,6 @@ class SyncCenterStatusCard extends StatelessWidget {
                   ),
                 ),
               ),
-              if (isDesktop && onOpenManualImport != null)
-                OutlinedButton.icon(
-                  onPressed: onOpenManualImport,
-                  icon: const Icon(Icons.paste_rounded, size: 18),
-                  label: const Text('手动导入'),
-                ),
             ],
           ),
         ],

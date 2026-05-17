@@ -512,13 +512,27 @@ class _HomeNextLessonCardState extends State<HomeNextLessonCard>
                         ),
                         scrollOverflow: true,
                       ),
-                      metaLine(Icons.calendar_today, dateWeekText),
+                      metaLine(
+                        Icons.calendar_today,
+                        dateWeekText,
+                        textKey: const ValueKey(
+                          'home.nextLesson.dateWeekScroller',
+                        ),
+                        scrollOverflow: true,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: metaColumn(
-                      metaLine(Icons.location_on, locationText),
+                      metaLine(
+                        Icons.location_on,
+                        locationText,
+                        textKey: const ValueKey(
+                          'home.nextLesson.locationScroller',
+                        ),
+                        scrollOverflow: true,
+                      ),
                       metaLine(
                         Icons.person,
                         teacherText,

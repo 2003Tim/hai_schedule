@@ -6,7 +6,6 @@ import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/widgets/sync_center_sections.dart';
-import 'package:hai_schedule/screens/import_screen.dart';
 import 'package:hai_schedule/screens/login_router.dart';
 
 class SyncCenterScreen extends StatefulWidget {
@@ -188,19 +187,6 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
               initialSemesterCode: provider.currentSemesterCode,
               openCredentialEditor: true,
             ),
-      ),
-    );
-    await _refresh();
-  }
-
-  Future<void> _openManualImport() async {
-    final provider = context.read<ScheduleProvider>();
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) =>
-                ImportScreen(initialSemesterCode: provider.currentSemesterCode),
       ),
     );
     await _refresh();
@@ -411,7 +397,6 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
       statusColor: statusColor,
       onSyncNow: _isSyncing ? null : _syncNow,
       onOpenLoginPage: _openLoginPage,
-      onOpenManualImport: isDesktop ? _openManualImport : null,
     );
     final credentialCard = SyncCenterCredentialCard(
       savedCredential: _savedCredential,

@@ -24,6 +24,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       LoginFlowAutofillController();
   final LoginFetchChunkState _chunkState = LoginFetchChunkState();
   Timer? _verificationUrlPoller;
+  Timer? _verificationPageProbeTimer;
 
   bool _isWebviewReady = false;
   bool _isFetching = false;
@@ -31,6 +32,8 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   bool _rememberPassword = false;
   bool _suspendLoginAutomation = false;
   bool _awaitingSecurityVerification = false;
+  bool _awaitingManualWebLogin = false;
+  bool _verificationRedirecting = false;
   bool _credentialEditorOpened = false;
   String _statusText = '';
   String? _currentUrl;
@@ -65,7 +68,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   void disposeLoginFlow() {
-    _stopVerificationUrlPolling();
+    _stopVerificationWait(clearAwaiting: true);
     _autofillController.dispose();
     _webviewAdapter.dispose();
   }
@@ -124,14 +127,22 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     _currentUrl = url;
     if (_isFetching) return;
 
-    if (_awaitingSecurityVerification) {
+    if (loginFetchService.isLoginUrl(url) && mounted) {
+      unawaited(_installManualLoginObserver());
+    }
+
+    if (_awaitingVerificationContinuation) {
       _handleVerificationUrlCandidate(url);
+      if (loginFetchService.isLoginUrl(url)) {
+        unawaited(_runVerificationPageProbe());
+      }
       return;
     }
 
     if (!_isInteractingWithDialog &&
         !_suspendLoginAutomation &&
         loginFetchService.shouldAutoFetch(url)) {
+      _stopVerificationWait(clearAwaiting: true);
       _autofillController.stop(clearPending: true);
       unawaited(_autoFetch());
       return;
@@ -170,6 +181,9 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       }
     });
   }
+
+  bool get _awaitingVerificationContinuation =>
+      _awaitingSecurityVerification || _awaitingManualWebLogin;
 
   void _scheduleAutofillBurst() {
     if (_isInteractingWithDialog ||
@@ -220,10 +234,24 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     setState(() {
       _isFetching = false;
       _awaitingSecurityVerification = true;
+      _awaitingManualWebLogin = false;
       _suspendLoginAutomation = true;
       _statusText = LoginFlowText.securityVerificationRequired;
     });
     _startVerificationUrlPolling();
+    _startVerificationPageProbe();
+  }
+
+  void _enterManualWebLoginMode() {
+    _autofillController.stop(clearPending: true);
+    if (!mounted) return;
+    setState(() {
+      _isFetching = false;
+      _awaitingManualWebLogin = true;
+      _suspendLoginAutomation = true;
+    });
+    _startVerificationUrlPolling();
+    _startVerificationPageProbe();
   }
 
   void _startVerificationUrlPolling() {
@@ -236,7 +264,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _pollVerificationUrl() async {
-    if (!mounted || !_awaitingSecurityVerification) return;
+    if (!mounted || !_awaitingVerificationContinuation) return;
     try {
       final url = await _webviewAdapter.currentUrl();
       if (url == null || url.isEmpty) return;
@@ -250,16 +278,17 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     _currentUrl = url;
     if (_isInteractingWithDialog ||
         _isFetching ||
-        !_awaitingSecurityVerification ||
+        !_awaitingVerificationContinuation ||
         !loginFetchService.shouldAutoFetch(url)) {
       return;
     }
 
-    _stopVerificationUrlPolling();
+    _stopVerificationWait();
     _autofillController.stop(clearPending: true);
     if (!mounted) return;
     setState(() {
       _awaitingSecurityVerification = false;
+      _awaitingManualWebLogin = false;
       _suspendLoginAutomation = false;
       _statusText = LoginFlowText.securityVerificationCompleted;
     });
@@ -271,14 +300,130 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     _verificationUrlPoller = null;
   }
 
-  void _handleAutofillStatus(String status) {
-    if (status == 'VERIFICATION_REQUIRED') {
-      _enterSecurityVerificationMode();
+  void _startVerificationPageProbe() {
+    _verificationPageProbeTimer?.cancel();
+    _verificationPageProbeTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => unawaited(_runVerificationPageProbe()),
+    );
+    unawaited(_runVerificationPageProbe());
+  }
+
+  void _stopVerificationPageProbe() {
+    _verificationPageProbeTimer?.cancel();
+    _verificationPageProbeTimer = null;
+  }
+
+  void _stopVerificationWait({bool clearAwaiting = false}) {
+    _stopVerificationUrlPolling();
+    _stopVerificationPageProbe();
+    if (clearAwaiting) {
+      _awaitingSecurityVerification = false;
+      _awaitingManualWebLogin = false;
+    }
+  }
+
+  Future<void> _installManualLoginObserver() async {
+    if (!mounted || !_isWebviewReady) return;
+    try {
+      await _webviewAdapter.executeScript(
+        loginFetchService.buildManualLoginObserverScript(
+          bridgeCall: bridgeCall,
+        ),
+      );
+    } catch (_) {
+      // Best-effort observer for users who type directly into the web page.
+    }
+  }
+
+  Future<void> _runVerificationPageProbe() async {
+    if (!mounted ||
+        !_awaitingVerificationContinuation ||
+        _verificationRedirecting ||
+        !_isWebviewReady ||
+        _isFetching) {
       return;
     }
+    try {
+      await _webviewAdapter.executeScript(
+        loginFetchService.buildPostVerificationProbeScript(
+          bridgeCall: bridgeCall,
+        ),
+      );
+    } catch (_) {
+      // Best-effort probe while the user is completing verification.
+    }
+  }
+
+  Future<void> _resumeTargetAfterVerification() async {
+    if (!mounted ||
+        !_awaitingVerificationContinuation ||
+        _verificationRedirecting ||
+        !_isWebviewReady) {
+      return;
+    }
+    _verificationRedirecting = true;
+    _stopVerificationWait(clearAwaiting: true);
+    _autofillController.stop(clearPending: true);
+    if (mounted) {
+      setState(() {
+        _statusText = '认证后仍停留在二维码页，正在返回课表入口...';
+      });
+    }
+    try {
+      await _webviewAdapter.loadTargetUrl(ScheduleLoginFetchService.targetUrl);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _statusText = '验证已完成，但返回课表入口失败，请手动重试同步';
+        });
+      }
+    } finally {
+      _verificationRedirecting = false;
+    }
+  }
+
+  void _handleAutofillStatus(String status) {
     final message = _loginFlowCoordinator.messageForAutofillStatus(status);
-    if (message == null) return;
-    _applyState(LoginFetchUiStateUpdate(statusText: message));
+    if (message != null) {
+      _applyState(LoginFetchUiStateUpdate(statusText: message));
+    }
+
+    if (status == 'VERIFICATION_REQUIRED') {
+      if (!_awaitingSecurityVerification) {
+        _enterSecurityVerificationMode();
+      }
+      return;
+    }
+    if (status == 'MANUAL_LOGIN_SUBMITTED') {
+      if (!_awaitingManualWebLogin) {
+        _enterManualWebLoginMode();
+      }
+      return;
+    }
+    if (status == 'AUTH_PAGE_QR_LOGIN') {
+      if (_awaitingVerificationContinuation) {
+        unawaited(_resumeTargetAfterVerification());
+      }
+      return;
+    }
+    if (status == 'AUTH_PAGE_CREDENTIAL_LOGIN') {
+      if (_awaitingSecurityVerification && _activeCredential != null) {
+        _stopVerificationWait(clearAwaiting: true);
+        if (mounted) {
+          setState(() => _suspendLoginAutomation = false);
+        }
+        _autofillController.setPending(true);
+        _scheduleAutofillBurst();
+        return;
+      }
+      if (_awaitingManualWebLogin) {
+        _stopVerificationWait(clearAwaiting: true);
+        if (mounted) {
+          setState(() => _suspendLoginAutomation = false);
+        }
+      }
+    }
   }
 
   void _handleAutofillResult(LoginAutofillResult result) {
@@ -342,7 +487,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
         ),
       );
       if (mounted) {
-        if (!_awaitingSecurityVerification) {
+        if (!_awaitingVerificationContinuation) {
           setState(() {
             _suspendLoginAutomation = false;
           });
@@ -354,7 +499,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _handleLoginError(String errorText) async {
-    _stopVerificationUrlPolling();
+    _stopVerificationWait(clearAwaiting: true);
     _autofillController.stop(clearPending: true);
     try {
       await _webviewAdapter.stopLoading();
@@ -369,6 +514,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       _rememberPassword = false;
       _isFetching = false;
       _awaitingSecurityVerification = false;
+      _awaitingManualWebLogin = false;
       _suspendLoginAutomation = true;
       _statusText = errorText.isNotEmpty ? errorText : '检测到登录报错，已停止自动尝试，请核对账密';
     });
@@ -380,7 +526,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
 
   Future<void> _resetLoginSession({bool autofillAfterReload = true}) async {
     if (!_isWebviewReady) return;
-    _stopVerificationUrlPolling();
+    _stopVerificationWait(clearAwaiting: true);
     _autofillController.stop();
     try {
       await _webviewAdapter.clearSession();
@@ -392,6 +538,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     setState(() {
       _isFetching = false;
       _awaitingSecurityVerification = false;
+      _awaitingManualWebLogin = false;
       _statusText = LoginFlowText.sessionCleared;
     });
 
@@ -414,6 +561,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       _activeCredential = null;
       _rememberPassword = false;
       _awaitingSecurityVerification = false;
+      _awaitingManualWebLogin = false;
       _suspendLoginAutomation = false;
       _statusText = LoginFlowText.savedCredentialCleared;
     });
@@ -461,6 +609,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       _rememberPassword = result.rememberPassword;
       _autofillController.setPending(true);
       _awaitingSecurityVerification = false;
+      _awaitingManualWebLogin = false;
       _suspendLoginAutomation = false;
       _statusText =
           result.rememberPassword
@@ -488,6 +637,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
 
   Future<void> _autoFetch() async {
     if (_isFetching) return;
+    _stopVerificationWait(clearAwaiting: true);
     await _loginFlowCoordinator.startAutoFetch(
       selectedSemesterCode: _selectedSemesterCode,
       chunkState: _chunkState,
@@ -577,6 +727,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       context: context,
       jsonStr: jsonStr,
       semester: _lastDetectedSemester,
+      semesterOptions: _semesterOptions,
       persistLoginSession: _rememberPassword,
       applyState: _applyState,
     );

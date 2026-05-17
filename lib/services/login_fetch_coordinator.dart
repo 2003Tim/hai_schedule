@@ -207,6 +207,7 @@ class LoginFetchCoordinator {
     required BuildContext context,
     required String jsonStr,
     required String? semester,
+    List<SemesterOption> semesterOptions = const <SemesterOption>[],
     required bool persistLoginSession,
     required ValueChanged<LoginFetchUiStateUpdate> applyState,
   }) async {
@@ -215,6 +216,7 @@ class LoginFetchCoordinator {
         context: context,
         jsonStr: jsonStr,
         semester: semester,
+        semesterOptions: semesterOptions,
         persistLoginSession: persistLoginSession,
       );
 

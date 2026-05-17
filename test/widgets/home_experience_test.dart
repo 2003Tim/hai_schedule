@@ -76,6 +76,14 @@ void main() {
         findsOneWidget,
       );
       expect(
+        find.byKey(const ValueKey('home.nextLesson.dateWeekScroller')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('home.nextLesson.locationScroller')),
+        findsOneWidget,
+      );
+      expect(
         find.byKey(const ValueKey('home.nextLesson.teacherScroller')),
         findsOneWidget,
       );

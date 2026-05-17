@@ -35,6 +35,12 @@ class LoginFetchCoordinatorText {
     'SUBMITTED':
         '\u5df2\u81ea\u52a8\u63d0\u4ea4\u767b\u5f55\uff0c\u8bf7\u7a0d\u5019...',
     'VERIFICATION_REQUIRED': LoginFlowText.securityVerificationRequired,
+    'MANUAL_LOGIN_SUBMITTED':
+        '\u5df2\u63d0\u4ea4\u7f51\u9875\u767b\u5f55\uff0c\u6b63\u5728\u7b49\u5f85\u8ba4\u8bc1\u7ed3\u679c...',
+    'AUTH_PAGE_QR_LOGIN':
+        '\u8ba4\u8bc1\u540e\u4ecd\u505c\u7559\u5728\u4e8c\u7ef4\u7801\u9875\uff0c\u6b63\u5728\u8fd4\u56de\u8bfe\u8868\u5165\u53e3...',
+    'AUTH_PAGE_CREDENTIAL_LOGIN':
+        '\u8ba4\u8bc1\u9875\u56de\u5230\u8d26\u53f7\u767b\u5f55\uff0c\u8bf7\u7ee7\u7eed\u5b8c\u6210\u767b\u5f55...',
   };
 
   static String? messageForAutofillStatus(String status) {

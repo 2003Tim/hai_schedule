@@ -67,6 +67,16 @@ class ScheduleLoginFetchService {
     enableTrustOption: enableTrustOption,
   );
 
+  String buildManualLoginObserverScript({required String bridgeCall}) =>
+      ScheduleLoginScriptBuilder.buildManualLoginObserverScript(
+        bridgeCall: bridgeCall,
+      );
+
+  String buildPostVerificationProbeScript({required String bridgeCall}) =>
+      ScheduleLoginScriptBuilder.buildPostVerificationProbeScript(
+        bridgeCall: bridgeCall,
+      );
+
   void handleBridgeMessage({
     required String message,
     required LoginFetchChunkState chunkState,
@@ -97,10 +107,14 @@ class ScheduleLoginFetchService {
     required BuildContext context,
     required String jsonStr,
     String? semester,
+    List<SemesterOption> semesterOptions = const <SemesterOption>[],
     bool persistLoginSession = false,
   }) async {
     final provider = context.read<ScheduleProvider>();
     final courses = LoginFetchPayloadParser.parseCourses(jsonStr);
+    if (semesterOptions.isNotEmpty) {
+      await provider.mergeKnownSemesterOptions(semesterOptions);
+    }
 
     await _syncResultService.applySuccessfulSync(
       provider: provider,

@@ -25,7 +25,6 @@ class WindowsDesktopSidebar extends StatelessWidget {
     required this.showNonCurrentWeek,
     required this.overridesCount,
     required this.onOpenLogin,
-    required this.onOpenImport,
     required this.onEnterMiniMode,
     required this.onDisplayDaysChanged,
     required this.onShowNonCurrentWeekChanged,
@@ -41,7 +40,6 @@ class WindowsDesktopSidebar extends StatelessWidget {
   final bool showNonCurrentWeek;
   final int overridesCount;
   final VoidCallback onOpenLogin;
-  final VoidCallback onOpenImport;
   final VoidCallback onEnterMiniMode;
   final ValueChanged<int> onDisplayDaysChanged;
   final ValueChanged<bool> onShowNonCurrentWeekChanged;
@@ -99,11 +97,6 @@ class WindowsDesktopSidebar extends StatelessWidget {
                           onPressed: onOpenLogin,
                           icon: const Icon(Icons.login_rounded, size: 18),
                           label: const Text('登录刷新'),
-                        ),
-                        FilledButton.tonalIcon(
-                          onPressed: onOpenImport,
-                          icon: const Icon(Icons.paste_rounded, size: 18),
-                          label: const Text('手动导入'),
                         ),
                       ],
                     ),

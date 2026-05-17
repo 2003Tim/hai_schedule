@@ -56,5 +56,35 @@ void main() {
       expect(script, isNot(contains('postMessage(message);')));
       expect(script, contains('attempt(false);'));
     });
+
+    test(
+      'buildPostVerificationProbeScript reports authentication page state',
+      () {
+        final script =
+            ScheduleLoginScriptBuilder.buildPostVerificationProbeScript(
+              bridgeCall: 'FlutterBridge.postMessage',
+            );
+
+        expect(script, contains('FlutterBridge.postMessage'));
+        expect(script, contains('VERIFICATION_REQUIRED'));
+        expect(script, contains('AUTH_PAGE_QR_LOGIN'));
+        expect(script, contains('AUTH_PAGE_CREDENTIAL_LOGIN'));
+        expect(script, contains('right-header-title'));
+        expect(script, contains('dynamicCode'));
+        expect(script, contains('\\u964c\\u751f\\u8bbe\\u5907'));
+      },
+    );
+
+    test('buildManualLoginObserverScript reports direct web login submit', () {
+      final script = ScheduleLoginScriptBuilder.buildManualLoginObserverScript(
+        bridgeCall: 'FlutterBridge.postMessage',
+      );
+
+      expect(script, contains('FlutterBridge.postMessage'));
+      expect(script, contains('MANUAL_LOGIN_SUBMITTED'));
+      expect(script, contains('#login_submit'));
+      expect(script, contains('#reAuthSubmitBtn'));
+      expect(script, contains('document.addEventListener'));
+    });
   });
 }

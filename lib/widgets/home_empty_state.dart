@@ -1,14 +1,9 @@
 import 'package:flutter/material.dart';
 
 class HomeEmptyState extends StatelessWidget {
-  const HomeEmptyState({
-    super.key,
-    required this.onLoginFetch,
-    required this.onManualImport,
-  });
+  const HomeEmptyState({super.key, required this.onLoginFetch});
 
   final VoidCallback onLoginFetch;
-  final VoidCallback onManualImport;
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +43,7 @@ class HomeEmptyState extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '可以登录教务系统直接抓取，也可以手动粘贴导入。',
+                  '登录教务系统后会自动识别并抓取课表。',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
@@ -61,12 +56,6 @@ class HomeEmptyState extends StatelessWidget {
                   onPressed: onLoginFetch,
                   icon: const Icon(Icons.login_rounded),
                   label: const Text('登录并刷新课表'),
-                ),
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: onManualImport,
-                  icon: const Icon(Icons.paste_rounded),
-                  label: const Text('手动粘贴导入'),
                 ),
               ],
             ),

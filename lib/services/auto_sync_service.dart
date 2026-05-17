@@ -129,7 +129,7 @@ class AutoSyncService {
 
   static Future<void> handleCredentialCleared() async {
     await AppStorage.instance.setSyncInvalidationFlag(true);
-    await _cancelBackgroundSync(strict: true);
+    await _cancelBackgroundSync();
     await AuthCredentialsService.instance.clear(strict: true);
     await AppStorage.instance.clearCookieSnapshot(strict: true);
     await DioClient.clearAllSessions();

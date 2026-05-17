@@ -1,6 +1,155 @@
 import 'dart:convert';
 
 class ScheduleLoginAutofillScript {
+  static String buildManualLoginObserverScript({required String bridgeCall}) {
+    return '''
+      (function() {
+        if (window.__haiScheduleManualLoginObserverInstalled) return;
+        window.__haiScheduleManualLoginObserverInstalled = true;
+
+        function post(status) {
+          try {
+            $bridgeCall('AUTOFILL_STATUS:' + status);
+          } catch (_) {}
+        }
+
+        function isLoginSubmitTarget(node) {
+          if (!node || !node.closest) return false;
+          return !!node.closest('#login_submit, #reAuthSubmitBtn');
+        }
+
+        function isLoginForm(form) {
+          if (!form || !form.querySelector) return false;
+          return !!form.querySelector('#username, #password, #dynamicCode');
+        }
+
+        document.addEventListener('submit', function(event) {
+          if (isLoginForm(event.target)) {
+            post('MANUAL_LOGIN_SUBMITTED');
+          }
+        }, true);
+
+        document.addEventListener('click', function(event) {
+          if (isLoginSubmitTarget(event.target)) {
+            post('MANUAL_LOGIN_SUBMITTED');
+          }
+        }, true);
+      })();
+    ''';
+  }
+
+  static String buildPostVerificationProbeScript({required String bridgeCall}) {
+    return '''
+      (function() {
+        function post(status) {
+          try {
+            $bridgeCall('AUTOFILL_STATUS:' + status);
+          } catch (_) {}
+        }
+
+        function normalize(value) {
+          return (value || '').toString().trim().toLowerCase();
+        }
+
+        function visible(node) {
+          if (!node) return false;
+          if (node.disabled) return false;
+          var style = window.getComputedStyle(node);
+          if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+            return false;
+          }
+          var rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+          if (!rect) return true;
+          return rect.width > 0 || rect.height > 0;
+        }
+
+        function containsKeyword(value, keywords) {
+          var text = normalize(value);
+          for (var i = 0; i < keywords.length; i++) {
+            if (text.indexOf(normalize(keywords[i])) >= 0) {
+              return true;
+            }
+          }
+          return false;
+        }
+
+        function hasVisibleSelector(selectors) {
+          for (var i = 0; i < selectors.length; i++) {
+            var node = document.querySelector(selectors[i]);
+            if (node && visible(node)) {
+              return true;
+            }
+          }
+          return false;
+        }
+
+        function hasCredentialLoginForm() {
+          return hasVisibleSelector([
+            'input#username[name="username"]',
+            'input#username',
+            'input[name="username"]'
+          ]) && hasVisibleSelector([
+            'input#password[name="passwordText"]',
+            '#password[name="passwordText"]',
+            '#password',
+            'input#password',
+            'input[name="password"]',
+            'input[name="passwordText"]',
+            'input[type="password"]'
+          ]);
+        }
+
+        function hasQrLoginView() {
+          return hasVisibleSelector([
+            'img#qr_img[src*="/authserver/qrCode/getCode"]',
+            'img#qr_img'
+          ]) && !hasCredentialLoginForm();
+        }
+
+        function hasVerificationStep() {
+          var factorTitle = document.querySelector('span.right-header-title');
+          if (factorTitle && visible(factorTitle) && containsKeyword(factorTitle.innerText || factorTitle.textContent, ['\\u591a\\u56e0\\u5b50\\u8ba4\\u8bc1'])) {
+            return true;
+          }
+
+          if (hasVisibleSelector([
+            'input#dynamicCode[name="dynamicCode"]',
+            'input#dynamicCode',
+            'button#getDynamicCode',
+            'button#reAuthSubmitBtn'
+          ])) {
+            return true;
+          }
+
+          var bodyText = document.body ? (document.body.innerText || document.body.textContent || '') : '';
+          return containsKeyword(bodyText, [
+            '\\u8bbe\\u5907\\u9a8c\\u8bc1',
+            '\\u964c\\u751f\\u8bbe\\u5907',
+            '\\u77ed\\u4fe1\\u9a8c\\u8bc1',
+            '\\u77ed\\u4fe1\\u9a8c\\u8bc1\\u7801',
+            '\\u8bf7\\u8f93\\u5165\\u9a8c\\u8bc1\\u7801',
+            '\\u8bf7\\u8f93\\u5165\\u77ed\\u4fe1\\u9a8c\\u8bc1\\u7801',
+            '\\u8bf7\\u8f93\\u5165\\u6821\\u9a8c\\u7801'
+          ]);
+        }
+
+        if (hasVerificationStep()) {
+          post('VERIFICATION_REQUIRED');
+          return;
+        }
+        if (hasQrLoginView()) {
+          post('AUTH_PAGE_QR_LOGIN');
+          return;
+        }
+        if (hasCredentialLoginForm()) {
+          post('AUTH_PAGE_CREDENTIAL_LOGIN');
+          return;
+        }
+        post('AUTH_PAGE_UNKNOWN');
+      })();
+    ''';
+  }
+
   static String build({
     required String username,
     required String password,

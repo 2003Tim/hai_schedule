@@ -23,7 +23,6 @@ enum HomeMenuAction {
   toggleDays,
   currentWeek,
   loginFetch,
-  manualImport,
 }
 
 class HomeAppBarTitle extends StatelessWidget {
@@ -219,7 +218,6 @@ class HomeScheduleBody extends StatelessWidget {
     required this.selectedDay,
     required this.onDaySelected,
     required this.onLoginFetch,
-    required this.onManualImport,
     required this.wrapScheduleSemantics,
     this.navigationKey,
   });
@@ -229,7 +227,6 @@ class HomeScheduleBody extends StatelessWidget {
   final int selectedDay;
   final ValueChanged<int> onDaySelected;
   final VoidCallback onLoginFetch;
-  final VoidCallback onManualImport;
   final Widget Function(Widget child, String label) wrapScheduleSemantics;
   final Key? navigationKey;
 
@@ -269,10 +266,7 @@ class HomeScheduleBody extends StatelessWidget {
             Expanded(
               child:
                   provider.courses.isEmpty
-                      ? HomeEmptyState(
-                        onLoginFetch: onLoginFetch,
-                        onManualImport: onManualImport,
-                      )
+                      ? HomeEmptyState(onLoginFetch: onLoginFetch)
                       : showDayView
                       ? wrapScheduleSemantics(
                         SwipeableDailyScheduleView(

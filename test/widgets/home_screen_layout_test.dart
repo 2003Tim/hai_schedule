@@ -133,7 +133,6 @@ void main() {
                 selectedDay: 1,
                 onDaySelected: (_) {},
                 onLoginFetch: () {},
-                onManualImport: () {},
                 wrapScheduleSemantics: (child, _) => child,
               ),
             ),

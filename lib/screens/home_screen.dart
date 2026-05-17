@@ -7,7 +7,6 @@ import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/utils/semester_code_formatter.dart';
 import 'package:hai_schedule/widgets/home_screen_sections.dart';
-import 'package:hai_schedule/screens/import_screen.dart';
 import 'package:hai_schedule/screens/login_router.dart';
 import 'package:hai_schedule/screens/reminder_settings_screen.dart';
 import 'package:hai_schedule/screens/schedule_overrides_screen.dart';
@@ -229,12 +228,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _refreshSyncSnapshot();
   }
 
-  Future<void> _openManualImport(ScheduleProvider provider) async {
-    await _pushPage(
-      ImportScreen(initialSemesterCode: provider.currentSemesterCode),
-    );
-  }
-
   Future<void> _handleMenuAction(
     HomeMenuAction action,
     ScheduleProvider provider,
@@ -269,9 +262,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         break;
       case HomeMenuAction.loginFetch:
         await _openLoginFetch(provider);
-        break;
-      case HomeMenuAction.manualImport:
-        await _openManualImport(provider);
         break;
     }
   }
@@ -359,9 +349,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onDaySelected: _selectDay,
           onLoginFetch: () async {
             await _openLoginFetch(provider);
-          },
-          onManualImport: () async {
-            await _openManualImport(provider);
           },
           wrapScheduleSemantics: _wrapWindowsScheduleSemantics,
         ),
