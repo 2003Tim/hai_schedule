@@ -78,19 +78,9 @@ class _NewSemesterDialogState extends State<NewSemesterDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (hasCandidates) ...[
-            DropdownButtonFormField<String>(
-              key: const ValueKey('semester_management.new_semester_dropdown'),
-              initialValue: _selectedCode,
-              decoration: const InputDecoration(labelText: '选择学期'),
-              items:
-                  _candidates
-                      .map(
-                        (option) => DropdownMenuItem<String>(
-                          value: option.normalizedCode,
-                          child: Text(_optionLabel(option)),
-                        ),
-                      )
-                      .toList(),
+            _SemesterSelector(
+              candidates: _candidates,
+              selectedCode: _selectedCode,
               onChanged: (value) {
                 if (value == null) return;
                 setState(() => _selectedCode = value);
@@ -559,4 +549,136 @@ String _optionLabel(SemesterOption option) {
   return option.normalizedName.isNotEmpty
       ? option.normalizedName
       : formatSemesterCode(option.code);
+}
+
+class _SemesterSelector extends StatelessWidget {
+  const _SemesterSelector({
+    required this.candidates,
+    required this.selectedCode,
+    required this.onChanged,
+  });
+
+  final List<SemesterOption> candidates;
+  final String? selectedCode;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final selectedOption = candidates.firstWhere(
+      (o) => o.normalizedCode == selectedCode,
+      orElse: () => candidates.first,
+    );
+
+    return GestureDetector(
+      onTap: () => _showSemesterPicker(context),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: colorScheme.outlineVariant,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_month_rounded,
+              size: 20,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '选择学期',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface.withValues(alpha: 0.65),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _optionLabel(selectedOption),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 22,
+              color: colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSemesterPicker(BuildContext context) {
+    final result = showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                child: Text(
+                  '${candidates.length} 个可选学期',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                ),
+              ),
+              ...candidates.map((option) {
+                final isSelected = option.normalizedCode == selectedCode;
+                return ListTile(
+                  leading: Icon(
+                    Icons.school_rounded,
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                  ),
+                  title: Text(
+                    _optionLabel(option),
+                    style: TextStyle(
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                  subtitle: Text(option.code),
+                  trailing: isSelected
+                      ? Icon(
+                          Icons.check_circle_rounded,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () => Navigator.of(sheetContext).pop(option.normalizedCode),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+    result.then((code) {
+      if (code != null) onChanged(code);
+    });
+  }
 }

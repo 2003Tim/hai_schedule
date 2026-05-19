@@ -94,118 +94,147 @@ class HomeOverflowMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final colorScheme = theme.colorScheme;
+
     return PopupMenuButton<HomeMenuAction>(
       tooltip: '更多设置',
       icon: showLabel ? null : const Icon(Icons.more_vert, size: 22),
       onSelected: onSelected,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      color: isDark
+          ? colorScheme.surface.withValues(alpha: 0.72)
+          : Colors.white.withValues(alpha: 0.78),
+      elevation: 8,
+      shadowColor: Colors.black26,
+      surfaceTintColor: Colors.transparent,
       itemBuilder: (context) {
         final currentSemesterCode = provider.currentSemesterCode;
         return [
+          _buildGroupTitle(context, '数据管理'),
           PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.syncCenter,
-            child: _HomeMenuTile(
-              leading: const Icon(Icons.sync_rounded, size: 20),
+            child: _GlassMenuTile(
+              icon: Icons.sync_rounded,
               title: '课表同步',
-              subtitle:
-                  syncSnapshot?.lastFetchTime != null
-                      ? '上次：${AutoSyncService.formatDateTime(syncSnapshot!.lastFetchTime)}'
-                      : null,
+              subtitle: syncSnapshot?.lastFetchTime != null
+                  ? '上次：${AutoSyncService.formatDateTime(syncSnapshot!.lastFetchTime)}'
+                  : null,
             ),
           ),
           if (provider.hasSyncedAtLeastOneSemester)
             PopupMenuItem<HomeMenuAction>(
               value: HomeMenuAction.semesterManagement,
-              child: _HomeMenuTile(
-                leading: const Icon(Icons.school_outlined, size: 20),
+              child: _GlassMenuTile(
+                icon: Icons.school_outlined,
                 title: '学期管理',
-                subtitle:
-                    currentSemesterCode == null
-                        ? '新建、切换或删除学期'
-                        : formatSemesterCode(currentSemesterCode),
+                subtitle: currentSemesterCode == null
+                    ? '新建、切换或删除学期'
+                    : formatSemesterCode(currentSemesterCode),
               ),
             ),
-          const PopupMenuDivider(),
+          _buildGroupTitle(context, '偏好设置'),
           const PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.reminderSettings,
-            child: _HomeMenuTile(
-              leading: Icon(Icons.notifications_active_outlined, size: 20),
+            child: _GlassMenuTile(
+              icon: Icons.notifications_active_outlined,
               title: '课前提醒',
             ),
           ),
           const PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.schoolTimeSettings,
-            child: _HomeMenuTile(
-              leading: Icon(Icons.schedule_outlined, size: 20),
+            child: _GlassMenuTile(
+              icon: Icons.schedule_outlined,
               title: '作息时间设置',
             ),
           ),
           PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.scheduleOverrides,
-            child: _HomeMenuTile(
-              leading: const Icon(Icons.edit_calendar_outlined, size: 20),
+            child: _GlassMenuTile(
+              icon: Icons.edit_calendar_outlined,
               title: '临时安排',
-              subtitle:
-                  provider.overrides.isEmpty
-                      ? null
-                      : '${provider.overrides.length} 条记录',
+              subtitle: provider.overrides.isEmpty
+                  ? null
+                  : '${provider.overrides.length} 条记录',
             ),
           ),
-          const PopupMenuDivider(),
           const PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.themeSettings,
-            child: _HomeMenuTile(
-              leading: Icon(Icons.palette_outlined, size: 20),
+            child: _GlassMenuTile(
+              icon: Icons.palette_outlined,
               title: '主题设置',
             ),
           ),
+          _buildGroupTitle(context, '快捷操作'),
           PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.toggleNonCurrent,
-            child: _HomeMenuTile(
-              leading: Icon(
-                provider.showNonCurrentWeek
-                    ? Icons.visibility_rounded
-                    : Icons.visibility_off_rounded,
-                size: 20,
-              ),
-              title: provider.showNonCurrentWeek ? '隐藏非本周课程' : '显示非本周课程',
+            child: _GlassMenuTile(
+              icon: provider.showNonCurrentWeek
+                  ? Icons.visibility_rounded
+                  : Icons.visibility_off_rounded,
+              title: provider.showNonCurrentWeek
+                  ? '隐藏非本周课程'
+                  : '显示非本周课程',
             ),
           ),
           PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.toggleDays,
-            child: _HomeMenuTile(
-              leading: const Icon(Icons.view_week_rounded, size: 20),
+            child: _GlassMenuTile(
+              icon: Icons.view_week_rounded,
               title: provider.displayDays == 7 ? '仅显示工作日' : '显示全部 7 天',
             ),
           ),
           const PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.currentWeek,
-            child: _HomeMenuTile(
-              leading: Icon(Icons.today_rounded, size: 20),
+            child: _GlassMenuTile(
+              icon: Icons.today_rounded,
               title: '回到今天',
             ),
           ),
         ];
       },
-      child:
-          showLabel
-              ? Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Text(
-                      '更多设置',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    SizedBox(width: 4),
-                    Icon(Icons.expand_more_rounded, size: 18),
-                  ],
-                ),
-              )
-              : null,
+      child: showLabel
+          ? Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Text(
+                    '更多设置',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  SizedBox(width: 4),
+                  Icon(Icons.expand_more_rounded, size: 18),
+                ],
+              ),
+            )
+          : null,
+    );
+  }
+
+  static PopupMenuEntry<HomeMenuAction> _buildGroupTitle(
+    BuildContext context,
+    String title,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return PopupMenuItem<HomeMenuAction>(
+      enabled: false,
+      height: 36,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.onSurface.withValues(
+              alpha: isDark ? 0.45 : 0.48,
+            ),
+            letterSpacing: 0.3,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -305,28 +334,74 @@ class HomeScheduleBody extends StatelessWidget {
   }
 }
 
-class _HomeMenuTile extends StatelessWidget {
-  const _HomeMenuTile({
-    required this.leading,
+class _GlassMenuTile extends StatelessWidget {
+  const _GlassMenuTile({
+    required this.icon,
     required this.title,
     this.subtitle,
   });
 
-  final Widget leading;
+  final IconData icon;
   final String title;
   final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: leading,
-      title: Text(title),
-      subtitle:
-          subtitle == null
-              ? null
-              : Text(subtitle!, style: const TextStyle(fontSize: 11)),
-      dense: true,
-      contentPadding: EdgeInsets.zero,
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onSurface = colorScheme.onSurface;
+
+    return Row(
+      children: [
+        // Icon with soft tinted background
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isDark
+                ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.6)
+                : colorScheme.primary.withValues(alpha: 0.08),
+          ),
+          child: Icon(
+            icon,
+            size: 19,
+            color: isDark
+                ? onSurface.withValues(alpha: 0.72)
+                : colorScheme.primary.withValues(alpha: 0.78),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                  letterSpacing: 0.1,
+                ),
+              ),
+              if (subtitle != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    subtitle!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colorScheme.onSurface.withValues(alpha: 0.54),
+                      letterSpacing: 0.1,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
