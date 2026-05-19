@@ -1,7 +1,7 @@
 ﻿name: hai_schedule
 description: "海南大学课表应用"
 publish_to: 'none'
-version: 1.0.8+8
+version: 1.0.9+9
 
 environment:
   sdk: ^3.7.0
