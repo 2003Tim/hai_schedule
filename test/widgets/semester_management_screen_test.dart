@@ -94,7 +94,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('semester_management.new_semester_dropdown')),
+        find.byKey(const ValueKey('semester_management.new_semester_selector')),
         findsOneWidget,
       );
       expect(find.byType(TextField), findsNothing);

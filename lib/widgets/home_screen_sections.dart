@@ -103,9 +103,10 @@ class HomeOverflowMenu extends StatelessWidget {
       icon: showLabel ? null : const Icon(Icons.more_vert, size: 22),
       onSelected: onSelected,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      color: isDark
-          ? colorScheme.surface.withValues(alpha: 0.72)
-          : Colors.white.withValues(alpha: 0.78),
+      color:
+          isDark
+              ? colorScheme.surface.withValues(alpha: 0.72)
+              : Colors.white.withValues(alpha: 0.78),
       elevation: 8,
       shadowColor: Colors.black26,
       surfaceTintColor: Colors.transparent,
@@ -118,9 +119,10 @@ class HomeOverflowMenu extends StatelessWidget {
             child: _GlassMenuTile(
               icon: Icons.sync_rounded,
               title: '课表同步',
-              subtitle: syncSnapshot?.lastFetchTime != null
-                  ? '上次：${AutoSyncService.formatDateTime(syncSnapshot!.lastFetchTime)}'
-                  : null,
+              subtitle:
+                  syncSnapshot?.lastFetchTime != null
+                      ? '上次：${AutoSyncService.formatDateTime(syncSnapshot!.lastFetchTime)}'
+                      : null,
             ),
           ),
           if (provider.hasSyncedAtLeastOneSemester)
@@ -129,9 +131,10 @@ class HomeOverflowMenu extends StatelessWidget {
               child: _GlassMenuTile(
                 icon: Icons.school_outlined,
                 title: '学期管理',
-                subtitle: currentSemesterCode == null
-                    ? '新建、切换或删除学期'
-                    : formatSemesterCode(currentSemesterCode),
+                subtitle:
+                    currentSemesterCode == null
+                        ? '新建、切换或删除学期'
+                        : formatSemesterCode(currentSemesterCode),
               ),
             ),
           _buildGroupTitle(context, '偏好设置'),
@@ -154,28 +157,25 @@ class HomeOverflowMenu extends StatelessWidget {
             child: _GlassMenuTile(
               icon: Icons.edit_calendar_outlined,
               title: '临时安排',
-              subtitle: provider.overrides.isEmpty
-                  ? null
-                  : '${provider.overrides.length} 条记录',
+              subtitle:
+                  provider.overrides.isEmpty
+                      ? null
+                      : '${provider.overrides.length} 条记录',
             ),
           ),
           const PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.themeSettings,
-            child: _GlassMenuTile(
-              icon: Icons.palette_outlined,
-              title: '主题设置',
-            ),
+            child: _GlassMenuTile(icon: Icons.palette_outlined, title: '主题设置'),
           ),
           _buildGroupTitle(context, '快捷操作'),
           PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.toggleNonCurrent,
             child: _GlassMenuTile(
-              icon: provider.showNonCurrentWeek
-                  ? Icons.visibility_rounded
-                  : Icons.visibility_off_rounded,
-              title: provider.showNonCurrentWeek
-                  ? '隐藏非本周课程'
-                  : '显示非本周课程',
+              icon:
+                  provider.showNonCurrentWeek
+                      ? Icons.visibility_rounded
+                      : Icons.visibility_off_rounded,
+              title: provider.showNonCurrentWeek ? '隐藏非本周课程' : '显示非本周课程',
             ),
           ),
           PopupMenuItem<HomeMenuAction>(
@@ -187,29 +187,30 @@ class HomeOverflowMenu extends StatelessWidget {
           ),
           const PopupMenuItem<HomeMenuAction>(
             value: HomeMenuAction.currentWeek,
-            child: _GlassMenuTile(
-              icon: Icons.today_rounded,
-              title: '回到今天',
-            ),
+            child: _GlassMenuTile(icon: Icons.today_rounded, title: '回到今天'),
           ),
         ];
       },
-      child: showLabel
-          ? Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Text(
-                    '更多设置',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(width: 4),
-                  Icon(Icons.expand_more_rounded, size: 18),
-                ],
-              ),
-            )
-          : null,
+      child:
+          showLabel
+              ? Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Text(
+                      '更多设置',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(Icons.expand_more_rounded, size: 18),
+                  ],
+                ),
+              )
+              : null,
     );
   }
 
@@ -228,9 +229,9 @@ class HomeOverflowMenu extends StatelessWidget {
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: Theme.of(context).colorScheme.onSurface.withValues(
-              alpha: isDark ? 0.45 : 0.48,
-            ),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: isDark ? 0.45 : 0.48),
             letterSpacing: 0.3,
           ),
         ),
@@ -359,16 +360,18 @@ class _GlassMenuTile extends StatelessWidget {
           height: 36,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isDark
-                ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.6)
-                : colorScheme.primary.withValues(alpha: 0.08),
+            color:
+                isDark
+                    ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.6)
+                    : colorScheme.primary.withValues(alpha: 0.08),
           ),
           child: Icon(
             icon,
             size: 19,
-            color: isDark
-                ? onSurface.withValues(alpha: 0.72)
-                : colorScheme.primary.withValues(alpha: 0.78),
+            color:
+                isDark
+                    ? onSurface.withValues(alpha: 0.72)
+                    : colorScheme.primary.withValues(alpha: 0.78),
           ),
         ),
         const SizedBox(width: 14),

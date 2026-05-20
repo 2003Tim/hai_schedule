@@ -572,6 +572,7 @@ class _SemesterSelector extends StatelessWidget {
     );
 
     return GestureDetector(
+      key: const ValueKey('semester_management.new_semester_selector'),
       onTap: () => _showSemesterPicker(context),
       child: Container(
         width: double.infinity,
@@ -579,10 +580,7 @@ class _SemesterSelector extends StatelessWidget {
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: colorScheme.outlineVariant,
-            width: 1,
-          ),
+          border: Border.all(color: colorScheme.outlineVariant, width: 1),
         ),
         child: Row(
           children: [
@@ -642,7 +640,9 @@ class _SemesterSelector extends StatelessWidget {
                   '${candidates.length} 个可选学期',
                   style: TextStyle(
                     fontSize: 13,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.55),
                   ),
                 ),
               ),
@@ -651,25 +651,32 @@ class _SemesterSelector extends StatelessWidget {
                 return ListTile(
                   leading: Icon(
                     Icons.school_rounded,
-                    color: isSelected
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                    color:
+                        isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.54),
                   ),
                   title: Text(
                     _optionLabel(option),
                     style: TextStyle(
-                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      fontWeight:
+                          isSelected ? FontWeight.w700 : FontWeight.w500,
                     ),
                   ),
                   subtitle: Text(option.code),
-                  trailing: isSelected
-                      ? Icon(
-                          Icons.check_circle_rounded,
-                          size: 20,
-                          color: Theme.of(context).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: () => Navigator.of(sheetContext).pop(option.normalizedCode),
+                  trailing:
+                      isSelected
+                          ? Icon(
+                            Icons.check_circle_rounded,
+                            size: 20,
+                            color: Theme.of(context).colorScheme.primary,
+                          )
+                          : null,
+                  onTap:
+                      () =>
+                          Navigator.of(sheetContext).pop(option.normalizedCode),
                 );
               }),
             ],
