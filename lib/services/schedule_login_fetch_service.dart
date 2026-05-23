@@ -114,6 +114,10 @@ class ScheduleLoginFetchService {
     final courses = LoginFetchPayloadParser.parseCourses(jsonStr);
     if (semesterOptions.isNotEmpty) {
       await provider.mergeKnownSemesterOptions(semesterOptions);
+    } else {
+      // semesterOptions 为空时（教务系统未返回学期列表、或走自动同步路径），
+      // 至少从磁盘刷新一次内存 catalog，保证 provider 数据与磁盘一致。
+      await provider.refreshKnownSemesterCatalog();
     }
 
     await _syncResultService.applySuccessfulSync(

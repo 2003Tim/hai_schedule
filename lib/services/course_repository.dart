@@ -74,10 +74,10 @@ class CourseRepository {
       updateCookie(cookie);
     }
 
-    final semesterCatalog = await _storage.loadSemesterCatalog();
-    if (semesterCatalog.isEmpty) {
-      await fetchSemesterCatalog(onCatalogUpdated: onSemesterCatalogUpdated);
-    }
+    // 每次同步都主动拉取最新的学期目录，确保 provider 回调被调用、
+    // 内存与磁盘数据保持最新。不再依赖"catalog 为空"才抓取的条件判断，
+    // 否则自动同步路径里 onSemesterCatalogUpdated 永远不会被执行。
+    await fetchSemesterCatalog(onCatalogUpdated: onSemesterCatalogUpdated);
 
     return fetchGraduateSchedule(semester: semester);
   }
