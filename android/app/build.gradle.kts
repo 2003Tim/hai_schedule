@@ -82,4 +82,21 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+
+    // home_widget 0.9.0 传递依赖了 glance-appwidget 1.3.0-alpha01（要求 AGP 9.1.0 / compileSdk 37）。
+    // 在升级 AGP 之前，强制锁定到兼容当前工具链的稳定版本。
+    constraints {
+        implementation("androidx.glance:glance-appwidget") {
+            version { strictly("1.1.1") }
+            because("glance-appwidget 1.3.0-alpha01 requires AGP 9.1.0 and compileSdk 37; pin to 1.1.1 which is compatible with AGP 8.x / compileSdk 36")
+        }
+        implementation("androidx.glance:glance") {
+            version { strictly("1.1.1") }
+            because("keep glance family versions in sync")
+        }
+        implementation("androidx.glance:glance-material3") {
+            version { strictly("1.1.1") }
+            because("keep glance family versions in sync")
+        }
+    }
 }
