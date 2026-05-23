@@ -51,15 +51,23 @@ void main() {
   );
 
   test(
-    'syncCourse skips semester catalog preflight when cache already exists',
+    'syncCourse refreshes semester catalog when cache already exists',
     () async {
       await AppStorage.instance.saveKnownSemesterOptions(const [
         SemesterOption(code: '20252', name: '2025-2026学年 第二学期'),
       ]);
       final apiService = _FakeApiService(
         portalPage: const PortalPageResult(
-          body: '<html></html>',
-          contentType: 'text/html',
+          body: '''
+          <html>
+            <body>
+              <select>
+                <option value="20253">2026-2027学年 第一学期</option>
+              </select>
+            </body>
+          </html>
+        ''',
+          contentType: 'text/html; charset=utf-8',
         ),
         schedulePayload: _sampleSchedulePayload(),
       );
@@ -69,9 +77,11 @@ void main() {
       );
 
       await repository.syncCourse(semester: '20252');
+      final options = await AppStorage.instance.loadKnownSemesterOptions();
 
-      expect(apiService.fetchPortalHomePageCount, 0);
+      expect(apiService.fetchPortalHomePageCount, 1);
       expect(apiService.fetchGraduateScheduleCount, 1);
+      expect(options.map((item) => item.code), ['20253']);
     },
   );
 

@@ -1,4 +1,4 @@
-v1.0.10 正式发布，对应标签 v1.0.10，对应提交 49bb5be。
+v1.0.10 正式发布，对应标签 `v1.0.10`。
 
 更新内容：
 - 修复：已同步课表后，新建学期时仍提示"请先同步课表以更新学期列表"的问题
@@ -9,6 +9,7 @@ v1.0.10 正式发布，对应标签 v1.0.10，对应提交 49bb5be。
 发布资产：
 - Windows x64 便携包（zip）
 - Android split-per-abi APK：`armeabi-v7a`、`arm64-v8a`、`x86_64`
+- 本次不附带 Android AAB，与 v1.0.9 的资产策略保持一致
 
 下载说明：
 - 大多数 Android 手机请选择 `arm64-v8a`
@@ -19,5 +20,7 @@ v1.0.10 正式发布，对应标签 v1.0.10，对应提交 49bb5be。
 构建校验：
 - `flutter pub get` 通过
 - `flutter analyze` 通过
+- `flutter test` 155 项通过
+- `android/gradlew.bat :app:testDebugUnitTest` 通过
 - `flutter build apk --release --split-per-abi` 通过
 - `flutter build windows --release` 通过
