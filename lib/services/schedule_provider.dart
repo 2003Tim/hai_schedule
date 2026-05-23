@@ -375,7 +375,12 @@ class ScheduleProvider extends ChangeNotifier {
     );
     _courses = courses;
     _currentSemesterCode = resolvedSemester;
-    _knownSemesterCatalog = await _scheduleRepository.loadSemesterCatalog();
+    // 只在磁盘有有效数据时才覆盖内存 catalog，避免磁盘空值覆盖
+    // mergeKnownSemesterOptions 刚写入的内存数据（竞态防御）。
+    final diskCatalog = await _scheduleRepository.loadSemesterCatalog();
+    if (diskCatalog.isNotEmpty) {
+      _knownSemesterCatalog = diskCatalog;
+    }
     _availableSemesterCodes = await _stateLoader.loadAvailableSemesterCodes(
       additional: resolvedSemester,
     );
