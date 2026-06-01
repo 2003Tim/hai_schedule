@@ -57,6 +57,7 @@ class MainActivity : FlutterActivity() {
                         customIntervalMinutes = customIntervalMinutes,
                         afterSuccessfulSync = afterSuccessfulSync,
                         preserveExistingCustomSchedule = preserveExistingCustomSchedule,
+                        source = call.argument<String>("source"),
                     )
                     result.success(next ?: "")
                 }
@@ -65,6 +66,7 @@ class MainActivity : FlutterActivity() {
                     AutoSyncScheduler.cancel(
                         context = applicationContext,
                         clearNextSyncTime = true,
+                        source = call.argument<String>("source"),
                     )
                     result.success(true)
                 }
@@ -81,25 +83,37 @@ class MainActivity : FlutterActivity() {
                 "saveCredential" -> {
                     val username = call.argument<String>("username")
                     val password = call.argument<String>("password")
+                    val source = call.argument<String>("source")
                     if (username.isNullOrBlank() || password.isNullOrBlank()) {
                         result.error("INVALID_ARGUMENT", "username/password 不能为空", null)
                     } else {
-                        NativeCredentialStore.save(applicationContext, username, password)
+                        NativeCredentialStore.save(applicationContext, username, password, source)
                         result.success(true)
                     }
                 }
 
                 "clearCredential" -> {
-                    NativeCredentialStore.clear(applicationContext)
+                    NativeCredentialStore.clear(
+                        context = applicationContext,
+                        source = call.argument<String>("source"),
+                    )
                     result.success(true)
                 }
 
                 "hasCredential" -> {
-                    result.success(NativeCredentialStore.load(applicationContext) != null)
+                    result.success(
+                        NativeCredentialStore.load(
+                            context = applicationContext,
+                            source = call.argument<String>("source"),
+                        ) != null,
+                    )
                 }
 
                 "loadCredential" -> {
-                    val credential = NativeCredentialStore.load(applicationContext)
+                    val credential = NativeCredentialStore.load(
+                        context = applicationContext,
+                        source = call.argument<String>("source"),
+                    )
                     if (credential == null) {
                         result.success(null)
                     } else {
@@ -117,17 +131,29 @@ class MainActivity : FlutterActivity() {
                     if (cookie.isNullOrBlank()) {
                         result.error("INVALID_ARGUMENT", "cookie 不能为空", null)
                     } else {
-                        NativeCredentialStore.saveCookieSnapshot(applicationContext, cookie)
+                        NativeCredentialStore.saveCookieSnapshot(
+                            context = applicationContext,
+                            cookie = cookie,
+                            source = call.argument<String>("source"),
+                        )
                         result.success(true)
                     }
                 }
 
                 "loadCookieSnapshot" -> {
-                    result.success(NativeCredentialStore.loadCookieSnapshot(applicationContext))
+                    result.success(
+                        NativeCredentialStore.loadCookieSnapshot(
+                            context = applicationContext,
+                            source = call.argument<String>("source"),
+                        ),
+                    )
                 }
 
                 "clearCookieSnapshot" -> {
-                    NativeCredentialStore.clearCookieSnapshot(applicationContext)
+                    NativeCredentialStore.clearCookieSnapshot(
+                        context = applicationContext,
+                        source = call.argument<String>("source"),
+                    )
                     result.success(true)
                 }
 

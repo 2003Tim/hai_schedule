@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/services/auth_credentials_service.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
+import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/login_fetch_coordinator.dart';
 import 'package:hai_schedule/services/schedule_login_fetch_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
@@ -15,8 +17,8 @@ import 'package:hai_schedule/widgets/login_flow_sections.dart';
 import 'package:hai_schedule/widgets/login_webview_adapters.dart';
 
 mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
-  final ScheduleLoginFetchService loginFetchService =
-      ScheduleLoginFetchService();
+  late final ScheduleLoginFetchService loginFetchService =
+      ScheduleLoginFetchService(source: scheduleSource);
   late final LoginFetchCoordinator _loginFlowCoordinator =
       LoginFetchCoordinator(loginFetchService: loginFetchService);
   late final LoginWebviewAdapter _webviewAdapter = createWebviewAdapter();
@@ -35,6 +37,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   bool _awaitingManualWebLogin = false;
   bool _verificationRedirecting = false;
   bool _credentialEditorOpened = false;
+  bool _semesterManuallySelected = false;
   String _statusText = '';
   String? _currentUrl;
   String? _lastDetectedSemester;
@@ -57,9 +60,13 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
 
   bool get shouldOpenCredentialEditor;
 
+  ScheduleSource get scheduleSource;
+
   void initLoginFlow() {
+    unawaited(AppStorage.instance.saveActiveScheduleSource(scheduleSource));
     _statusText = initialStatusText;
     _selectedSemesterCode = initialSemesterCode;
+    _semesterManuallySelected = initialSemesterCode != null;
     _suspendLoginAutomation = shouldOpenCredentialEditor;
     _semesterOptions =
         context.read<ScheduleProvider>().availableSemesterOptions;
@@ -74,7 +81,9 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _loadSavedCredential() async {
-    final credential = await AuthCredentialsService.instance.load();
+    final credential = await AuthCredentialsService.instance.load(
+      source: scheduleSource,
+    );
     if (!mounted) return;
     setState(() {
       _savedCredential = credential;
@@ -103,10 +112,11 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   Future<void> _initWebview() async {
     try {
       await _webviewAdapter.start(
-        targetUrl: ScheduleLoginFetchService.targetUrl,
+        targetUrl: loginFetchService.resolvedInitialUrl,
         clearSessionOnStart: shouldOpenCredentialEditor,
         onMessage: _handleMessage,
         onUrlChanged: _onUrlChanged,
+        normalizeNavigationUrl: loginFetchService.normalizeNavigationUrl,
       );
 
       if (!mounted) return;
@@ -136,6 +146,13 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       if (loginFetchService.isLoginUrl(url)) {
         unawaited(_runVerificationPageProbe());
       }
+      return;
+    }
+
+    if (!_isInteractingWithDialog &&
+        !_suspendLoginAutomation &&
+        loginFetchService.shouldProbePageState(url)) {
+      unawaited(_probeUndergraduatePageState());
       return;
     }
 
@@ -276,6 +293,14 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
 
   void _handleVerificationUrlCandidate(String url) {
     _currentUrl = url;
+    if (!_isInteractingWithDialog &&
+        !_isFetching &&
+        _awaitingVerificationContinuation &&
+        loginFetchService.shouldProbePageState(url)) {
+      unawaited(_probeUndergraduatePageState());
+      return;
+    }
+
     if (_isInteractingWithDialog ||
         _isFetching ||
         !_awaitingVerificationContinuation ||
@@ -346,13 +371,40 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     }
     try {
       await _webviewAdapter.executeScript(
-        loginFetchService.buildPostVerificationProbeScript(
-          bridgeCall: bridgeCall,
-        ),
+        scheduleSource.isUndergraduate
+            ? loginFetchService.buildPageStateProbeScript(
+              bridgeCall: bridgeCall,
+            )
+            : loginFetchService.buildPostVerificationProbeScript(
+              bridgeCall: bridgeCall,
+            ),
       );
     } catch (_) {
       // Best-effort probe while the user is completing verification.
     }
+  }
+
+  Future<void> _probeUndergraduatePageState() async {
+    if (!mounted ||
+        _isInteractingWithDialog ||
+        _isFetching ||
+        !_isWebviewReady ||
+        !scheduleSource.isUndergraduate) {
+      return;
+    }
+    try {
+      await _webviewAdapter.executeScript(
+        loginFetchService.buildPageStateProbeScript(bridgeCall: bridgeCall),
+      );
+    } catch (_) {
+      // Best-effort probe for undergraduate pages that reuse target URLs.
+    }
+  }
+
+  Future<void> _probeUndergraduatePageStateAfterDelay() async {
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+    await _probeUndergraduatePageState();
   }
 
   Future<void> _resumeTargetAfterVerification() async {
@@ -371,7 +423,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       });
     }
     try {
-      await _webviewAdapter.loadTargetUrl(ScheduleLoginFetchService.targetUrl);
+      await _webviewAdapter.loadTargetUrl(loginFetchService.resolvedTargetUrl);
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -423,6 +475,86 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
           setState(() => _suspendLoginAutomation = false);
         }
       }
+    }
+    if (status == 'UNDERGRAD_SCHEDULE_READY') {
+      _stopVerificationWait(clearAwaiting: true);
+      _autofillController.stop(clearPending: true);
+      if (mounted) {
+        setState(() {
+          _awaitingSecurityVerification = false;
+          _awaitingManualWebLogin = false;
+          _suspendLoginAutomation = false;
+        });
+      }
+      unawaited(_autoFetch());
+      return;
+    }
+    if (status == 'UNDERGRAD_HOME_READY') {
+      _stopVerificationWait(clearAwaiting: true);
+      _autofillController.stop(clearPending: true);
+      if (mounted) {
+        setState(() {
+          _awaitingSecurityVerification = false;
+          _awaitingManualWebLogin = false;
+          _suspendLoginAutomation = false;
+        });
+      }
+      unawaited(
+        _webviewAdapter.loadTargetUrl(loginFetchService.resolvedTargetUrl),
+      );
+      return;
+    }
+    if (status == 'UNDERGRAD_NOT_FOUND') {
+      _stopVerificationWait(clearAwaiting: true);
+      _autofillController.stop(clearPending: true);
+      if (mounted) {
+        setState(() {
+          _awaitingSecurityVerification = false;
+          _awaitingManualWebLogin = false;
+          _suspendLoginAutomation = false;
+          _statusText = '本科教务返回页面未找到，正在重新打开课表入口...';
+        });
+      }
+      unawaited(
+        _webviewAdapter.loadTargetUrl(loginFetchService.resolvedTargetUrl),
+      );
+      return;
+    }
+    if (status == 'UNDERGRAD_LOGIN_RESPONSE') {
+      _stopVerificationWait(clearAwaiting: true);
+      _autofillController.stop(clearPending: true);
+      if (mounted) {
+        setState(() {
+          _awaitingSecurityVerification = false;
+          _awaitingManualWebLogin = false;
+          _suspendLoginAutomation = false;
+        });
+      }
+      unawaited(
+        _webviewAdapter.loadTargetUrl(loginFetchService.resolvedLoginEntryUrl),
+      );
+      unawaited(_probeUndergraduatePageStateAfterDelay());
+      return;
+    }
+    if (status == 'UNDERGRAD_LOGIN_PAGE') {
+      _stopVerificationWait(clearAwaiting: true);
+      if (mounted) {
+        setState(() {
+          _awaitingSecurityVerification = false;
+          _awaitingManualWebLogin = false;
+          _suspendLoginAutomation = false;
+          _statusText =
+              _activeCredential == null
+                  ? LoginFlowText.manualLoginPrompt
+                  : LoginFlowText.undergraduateCaptchaPrompt;
+        });
+      }
+      unawaited(_installManualLoginObserver());
+      if (_activeCredential != null) {
+        _autofillController.setPending(true);
+        _scheduleAutofillBurst();
+      }
+      return;
     }
   }
 
@@ -499,6 +631,53 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _handleLoginError(String errorText) async {
+    if (scheduleSource.isUndergraduate) {
+      _stopVerificationWait(clearAwaiting: true);
+      _autofillController.stop(clearPending: true);
+      if (!mounted) return;
+      // The probe at undergraduate_schedule_login_scripts.dart reports both
+      // captcha errors (验证码错误/不正确/不能为空) and credential errors
+      // (用户名密码有误 / 密码错误 / ...). Only the captcha variants should
+      // re-prompt the user for a new captcha; credential variants must stop
+      // automation and surface the raw error like the graduate branch, so
+      // the user doesn't get steered toward the wrong fix.
+      final isCaptchaError = errorText.contains('验证码');
+      setState(() {
+        _isFetching = false;
+        _awaitingSecurityVerification = false;
+        _awaitingManualWebLogin = false;
+        _suspendLoginAutomation = !isCaptchaError;
+        if (isCaptchaError) {
+          _statusText =
+              errorText.isNotEmpty
+                  ? '$errorText，请重新输入验证码'
+                  : '本科登录失败，请重新输入验证码';
+        } else {
+          _statusText =
+              errorText.isNotEmpty
+                  ? errorText
+                  : '本科登录失败，已停止自动尝试，请核对账密';
+        }
+      });
+      if (isCaptchaError) {
+        await _webviewAdapter.loadTargetUrl(
+          loginFetchService.resolvedLoginEntryUrl,
+        );
+        if (!mounted) return;
+        if (_activeCredential != null) {
+          _autofillController.setPending(true);
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          await _autofillSavedCredential(autoSubmit: false);
+        }
+      } else {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('本科登录失败，已停止自动尝试，请核对账密')),
+        );
+      }
+      return;
+    }
+
     _stopVerificationWait(clearAwaiting: true);
     _autofillController.stop(clearPending: true);
     try {
@@ -543,7 +722,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
     });
 
     try {
-      await _webviewAdapter.loadTargetUrl(ScheduleLoginFetchService.targetUrl);
+      await _webviewAdapter.loadTargetUrl(loginFetchService.resolvedInitialUrl);
       if (autofillAfterReload) {
         await Future.delayed(const Duration(milliseconds: 600));
         _scheduleAutofillBurst();
@@ -598,6 +777,7 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       await AuthCredentialsService.instance.save(
         username: username,
         password: password,
+        source: scheduleSource,
       );
     } else {
       await AutoSyncService.handleCredentialCleared();
@@ -650,7 +830,10 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _fetchWithSemester(String semester) async {
-    final targetSemester = _selectedSemesterCode ?? semester;
+    final targetSemester =
+        _semesterManuallySelected
+            ? _selectedSemesterCode ?? semester
+            : semester;
     await _loginFlowCoordinator.fetchWithSemester(
       semester: targetSemester,
       chunkState: _chunkState,
@@ -681,14 +864,16 @@ mixin LoginFlowStateMixin<T extends StatefulWidget> on State<T> {
       ),
     );
     if (selection == null || !mounted) return;
-    setState(() => _selectedSemesterCode = selection.semesterCode);
+    setState(() {
+      _selectedSemesterCode = selection.semesterCode;
+      _semesterManuallySelected = selection.semesterCode != null;
+    });
   }
 
   void _cacheSemesterOptions(List<SemesterOption> options) {
     if (!mounted || options.isEmpty) return;
     setState(() {
       _semesterOptions = options;
-      _selectedSemesterCode ??= options.first.code;
     });
   }
 

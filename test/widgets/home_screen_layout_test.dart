@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/screens/home_screen.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
@@ -54,6 +55,23 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('更多设置'), findsOneWidget);
+  });
+
+  testWidgets('empty home lets first import choose undergraduate source', (
+    tester,
+  ) async {
+    await _pumpHome(tester, const Size(390, 844));
+
+    expect(find.text('研究生'), findsOneWidget);
+    expect(find.text('本科'), findsOneWidget);
+
+    await tester.tap(find.text('本科'));
+    await tester.pumpAndSettle();
+
+    expect(
+      await AppStorage.instance.loadActiveScheduleSource(),
+      ScheduleSource.undergraduate,
+    );
   });
 
   testWidgets(
@@ -133,6 +151,8 @@ void main() {
                 selectedDay: 1,
                 onDaySelected: (_) {},
                 onLoginFetch: () {},
+                selectedSource: ScheduleSource.graduate,
+                onSourceChanged: (_) {},
                 wrapScheduleSemantics: (child, _) => child,
               ),
             ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/widgets/login_webview_adapters.dart';
 import 'package:hai_schedule/screens/login_flow_state_mixin.dart';
 
@@ -8,10 +9,12 @@ class LoginScreenAndroid extends StatefulWidget {
     super.key,
     this.initialSemesterCode,
     this.openCredentialEditor = false,
+    this.source = ScheduleSource.graduate,
   });
 
   final String? initialSemesterCode;
   final bool openCredentialEditor;
+  final ScheduleSource source;
 
   @override
   State<LoginScreenAndroid> createState() => _LoginScreenAndroidState();
@@ -33,6 +36,9 @@ class _LoginScreenAndroidState extends State<LoginScreenAndroid>
 
   @override
   bool get shouldOpenCredentialEditor => widget.openCredentialEditor;
+
+  @override
+  ScheduleSource get scheduleSource => widget.source;
 
   @override
   LoginWebviewAdapter createWebviewAdapter() => AndroidLoginWebviewAdapter();

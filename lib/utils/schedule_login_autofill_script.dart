@@ -15,12 +15,14 @@ class ScheduleLoginAutofillScript {
 
         function isLoginSubmitTarget(node) {
           if (!node || !node.closest) return false;
-          return !!node.closest('#login_submit, #reAuthSubmitBtn');
+          return !!node.closest('#login_submit, #reAuthSubmitBtn, #btn-login');
         }
 
         function isLoginForm(form) {
           if (!form || !form.querySelector) return false;
-          return !!form.querySelector('#username, #password, #dynamicCode');
+          return !!form.querySelector(
+            '#username, #password, #dynamicCode, #userAccount, #userPassword, #RANDOMCODE'
+          );
         }
 
         document.addEventListener('submit', function(event) {

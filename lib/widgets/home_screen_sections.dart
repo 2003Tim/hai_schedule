@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/widgets/daily_schedule_view.dart';
@@ -248,6 +249,8 @@ class HomeScheduleBody extends StatelessWidget {
     required this.selectedDay,
     required this.onDaySelected,
     required this.onLoginFetch,
+    required this.selectedSource,
+    required this.onSourceChanged,
     required this.wrapScheduleSemantics,
     this.navigationKey,
   });
@@ -257,6 +260,8 @@ class HomeScheduleBody extends StatelessWidget {
   final int selectedDay;
   final ValueChanged<int> onDaySelected;
   final VoidCallback onLoginFetch;
+  final ScheduleSource selectedSource;
+  final ValueChanged<ScheduleSource> onSourceChanged;
   final Widget Function(Widget child, String label) wrapScheduleSemantics;
   final Key? navigationKey;
 
@@ -296,7 +301,11 @@ class HomeScheduleBody extends StatelessWidget {
             Expanded(
               child:
                   provider.courses.isEmpty
-                      ? HomeEmptyState(onLoginFetch: onLoginFetch)
+                      ? HomeEmptyState(
+                        onLoginFetch: onLoginFetch,
+                        selectedSource: selectedSource,
+                        onSourceChanged: onSourceChanged,
+                      )
                       : showDayView
                       ? wrapScheduleSemantics(
                         SwipeableDailyScheduleView(

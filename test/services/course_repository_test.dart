@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hai_schedule/models/semester_option.dart';
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/services/api_service.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/course_repository.dart';
@@ -204,15 +205,67 @@ void main() {
       );
     },
   );
+
+  test('syncCourse routes undergraduate source through HTML parser', () async {
+    final apiService = _FakeApiService(
+      portalPage: const PortalPageResult(
+        body: '''
+          <html>
+            <body>
+              <select id="xnxq01id">
+                <option value="2024-2025-2">2024-2025-2</option>
+              </select>
+            </body>
+          </html>
+        ''',
+        contentType: 'text/html; charset=utf-8',
+      ),
+      schedulePayload: _sampleSchedulePayload(),
+      undergraduateHtml: _undergraduateHtml,
+    );
+    final repository = CourseRepository(
+      apiService: apiService,
+      storage: AppStorage.instance,
+    );
+    List<SemesterOption> notified = const <SemesterOption>[];
+
+    final result = await repository.syncCourse(
+      semester: '20242',
+      source: ScheduleSource.undergraduate,
+      onSemesterCatalogUpdated: (options) async {
+        notified = options;
+      },
+    );
+
+    expect(apiService.fetchPortalHomePageCount, 0);
+    expect(apiService.fetchGraduateScheduleCount, 0);
+    expect(apiService.fetchUndergraduateScheduleCount, 1);
+    expect(result.rawJson, _undergraduateHtml);
+    expect(result.rawData['source'], 'undergraduate');
+    expect(result.courses.single.name, '形势与政策8');
+    expect(notified.map((item) => item.code), ['20242']);
+    expect(
+      (await AppStorage.instance.loadSemesterCatalog()).map(
+        (item) => item.code,
+      ),
+      ['20242'],
+    );
+  });
 }
 
 class _FakeApiService extends ApiService {
-  _FakeApiService({required this.portalPage, required this.schedulePayload});
+  _FakeApiService({
+    required this.portalPage,
+    required this.schedulePayload,
+    this.undergraduateHtml = '',
+  });
 
   final PortalPageResult portalPage;
   final Map<String, dynamic> schedulePayload;
+  final String undergraduateHtml;
   int fetchPortalHomePageCount = 0;
   int fetchGraduateScheduleCount = 0;
+  int fetchUndergraduateScheduleCount = 0;
   String? _cookie;
 
   @override
@@ -235,6 +288,17 @@ class _FakeApiService extends ApiService {
   }) async {
     fetchGraduateScheduleCount += 1;
     return schedulePayload;
+  }
+
+  @override
+  Future<PortalPageResult> fetchUndergraduateSchedulePage({
+    required String semester,
+  }) async {
+    fetchUndergraduateScheduleCount += 1;
+    return PortalPageResult(
+      body: undergraduateHtml,
+      contentType: 'text/html; charset=utf-8',
+    );
   }
 }
 
@@ -263,3 +327,22 @@ Map<String, dynamic> _sampleSchedulePayload() {
     },
   };
 }
+
+const _undergraduateHtml = '''
+<html>
+<body>
+<select id="xnxq01id"><option selected value="2024-2025-2">2024-2025-2</option></select>
+<table id="timetable">
+  <tr><th></th><th>星期一</th><th>星期二</th></tr>
+  <tr><th>9、10、11节<br>(09,10,11小节)<br>19:20-21:55</th><td></td><td>
+    <div class="kbcontent">
+      <font>形势与政策8</font><font title="教师">郎筱宇()</font>
+      <font title="周次(节次)">10-11(周)[09-10节]</font>
+      <font title="教室">(海甸)3-308</font>
+      <font title="通知单编号">通知单编号：202420252012135</font>
+    </div>
+  </td></tr>
+</table>
+</body>
+</html>
+''';

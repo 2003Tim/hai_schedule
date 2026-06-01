@@ -17,6 +17,10 @@ void main() {
         LoginFlowText.autofillIncomplete,
         '\u81ea\u52a8\u767b\u5f55\u672a\u5b8c\u5168\u5b8c\u6210\uff0c\u5982\u9875\u9762\u5df2\u5207\u5230\u8d26\u5bc6\u767b\u5f55\u53ef\u624b\u52a8\u70b9\u767b\u5f55',
       );
+      expect(
+        LoginFlowText.undergraduateCaptchaPrompt,
+        '\u5df2\u81ea\u52a8\u586b\u5145\u672c\u79d1\u8d26\u53f7\u5bc6\u7801\uff0c\u8bf7\u8f93\u5165\u9875\u9762\u9a8c\u8bc1\u7801\u540e\u70b9\u51fb\u767b\u5f55',
+      );
     });
 
     test('formats saved credential snackbar text', () {

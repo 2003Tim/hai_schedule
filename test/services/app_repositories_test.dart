@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/services/app_repositories.dart';
 import 'package:hai_schedule/services/app_storage.dart';
@@ -143,6 +144,87 @@ void main() {
         expect(springCache.courses.single.name, '大学物理');
       },
     );
+
+    test('keeps same semester code isolated by schedule source', () async {
+      final repository = ScheduleRepository();
+      final graduateCourse = Course(
+        id: 'graduate-20242',
+        code: 'G001',
+        name: '研究生课程',
+        className: '研究生班',
+        teacher: '张老师',
+        college: '研究生院',
+        credits: 2,
+        totalHours: 32,
+        semester: '20242',
+        slots: [
+          ScheduleSlot(
+            courseId: 'graduate-20242',
+            courseName: '研究生课程',
+            weekday: 1,
+            startSection: 1,
+            endSection: 2,
+            location: '研楼-101',
+            weekRanges: [WeekRange(start: 1, end: 16)],
+          ),
+        ],
+      );
+      final undergraduateCourse = Course(
+        id: 'undergraduate-20242',
+        code: 'U001',
+        name: '本科课程',
+        className: '本科班',
+        teacher: '李老师',
+        college: '本科生院',
+        credits: 2,
+        totalHours: 32,
+        semester: '2024-2025-2',
+        slots: [
+          ScheduleSlot(
+            courseId: 'undergraduate-20242',
+            courseName: '本科课程',
+            weekday: 2,
+            startSection: 9,
+            endSection: 10,
+            location: '(海甸)3-308',
+            weekRanges: [WeekRange(start: 10, end: 11)],
+          ),
+        ],
+      );
+
+      await AppStorage.instance.saveActiveScheduleSource(
+        ScheduleSource.graduate,
+      );
+      await repository.saveSemesterSchedule(
+        semesterCode: '20242',
+        rawScheduleJson: '{"source":"graduate"}',
+        courses: [graduateCourse],
+        makeActive: true,
+      );
+
+      await AppStorage.instance.saveActiveScheduleSource(
+        ScheduleSource.undergraduate,
+      );
+      await repository.saveSemesterSchedule(
+        semesterCode: '20242',
+        rawScheduleJson: '<html>undergraduate</html>',
+        courses: [undergraduateCourse],
+        makeActive: true,
+      );
+
+      final undergraduateCache = await repository.loadCache();
+      expect(undergraduateCache.semesterCode, '20242');
+      expect(undergraduateCache.rawScheduleJson, '<html>undergraduate</html>');
+      expect(undergraduateCache.courses.single.name, '本科课程');
+
+      await AppStorage.instance.saveActiveScheduleSource(
+        ScheduleSource.graduate,
+      );
+      final graduateCache = await repository.loadCache();
+      expect(graduateCache.semesterCode, '20242');
+      expect(graduateCache.rawScheduleJson, '{"source":"graduate"}');
+      expect(graduateCache.courses.single.name, '研究生课程');
+    });
 
     test(
       'switching to an empty semester clears mirrored active cache',

@@ -183,7 +183,7 @@ class ScheduleStateLoader {
   }
 
   Future<List<Course>> _resolveCourses(ScheduleCache cache) async {
-    if (cache.rawScheduleJson != null && cache.rawScheduleJson!.isNotEmpty) {
+    if (_looksLikeJson(cache.rawScheduleJson)) {
       try {
         final data =
             json.decode(cache.rawScheduleJson!) as Map<String, dynamic>;
@@ -213,6 +213,12 @@ class ScheduleStateLoader {
     }
 
     return const <Course>[];
+  }
+
+  bool _looksLikeJson(String? rawScheduleJson) {
+    if (rawScheduleJson == null) return false;
+    final trimmed = rawScheduleJson.trimLeft();
+    return trimmed.startsWith('{') || trimmed.startsWith('[');
   }
 
   Future<_ConsistentScheduleCache> _loadConsistentCache() async {

@@ -41,6 +41,14 @@ class LoginFetchCoordinatorText {
         '\u8ba4\u8bc1\u540e\u4ecd\u505c\u7559\u5728\u4e8c\u7ef4\u7801\u9875\uff0c\u6b63\u5728\u8fd4\u56de\u8bfe\u8868\u5165\u53e3...',
     'AUTH_PAGE_CREDENTIAL_LOGIN':
         '\u8ba4\u8bc1\u9875\u56de\u5230\u8d26\u53f7\u767b\u5f55\uff0c\u8bf7\u7ee7\u7eed\u5b8c\u6210\u767b\u5f55...',
+    'UNDERGRAD_LOGIN_PAGE':
+        '\u8bf7\u5728\u672c\u79d1\u6559\u52a1\u9875\u8f93\u5165\u9a8c\u8bc1\u7801\u5e76\u70b9\u51fb\u767b\u5f55...',
+    'UNDERGRAD_LOGIN_RESPONSE':
+        '\u672c\u79d1\u767b\u5f55\u672a\u8df3\u8f6c\u5230\u8bfe\u8868\u9875\uff0c\u8bf7\u8fd4\u56de\u91cd\u65b0\u8f93\u5165\u9a8c\u8bc1\u7801',
+    'UNDERGRAD_HOME_READY':
+        '\u672c\u79d1\u767b\u5f55\u5df2\u5b8c\u6210\uff0c\u6b63\u5728\u6253\u5f00\u8bfe\u8868\u9875...',
+    'UNDERGRAD_SCHEDULE_READY':
+        '\u5df2\u8fdb\u5165\u672c\u79d1\u8bfe\u8868\u9875\uff0c\u6b63\u5728\u540c\u6b65...',
   };
 
   static String? messageForAutofillStatus(String status) {
@@ -87,6 +95,38 @@ class LoginFetchCoordinatorText {
     return const LoginAutofillStateResolution(
       statusText:
           '\u6682\u672a\u547d\u4e2d\u8d26\u53f7\u5bc6\u7801\u8f93\u5165\u6846\uff0c\u6b63\u5728\u7ee7\u7eed\u5c1d\u8bd5...',
+    );
+  }
+
+  static LoginAutofillStateResolution resolveUndergraduateAutofillResult(
+    LoginAutofillResult result,
+  ) {
+    if (result.verificationRequired) {
+      return const LoginAutofillStateResolution(
+        statusText: LoginFlowText.undergraduateCaptchaPrompt,
+        stopAutofillLoop: true,
+        clearPendingAutofill: true,
+      );
+    }
+
+    if (result.usernameFilled && result.passwordFilled) {
+      return const LoginAutofillStateResolution(
+        statusText: LoginFlowText.undergraduateCaptchaPrompt,
+        stopAutofillLoop: true,
+        clearPendingAutofill: true,
+      );
+    }
+
+    if (result.usernameFilled || result.passwordFilled) {
+      return const LoginAutofillStateResolution(
+        statusText:
+            '\u5df2\u8bc6\u522b\u5230\u90e8\u5206\u672c\u79d1\u767b\u5f55\u8868\u5355\uff0c\u6b63\u5728\u8865\u5168...',
+      );
+    }
+
+    return const LoginAutofillStateResolution(
+      statusText:
+          '\u6682\u672a\u547d\u4e2d\u672c\u79d1\u767b\u5f55\u8f93\u5165\u6846\uff0c\u6b63\u5728\u7ee7\u7eed\u5c1d\u8bd5...',
     );
   }
 

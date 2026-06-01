@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
 
+import 'package:hai_schedule/models/schedule_source.dart';
+
 class HomeEmptyState extends StatelessWidget {
-  const HomeEmptyState({super.key, required this.onLoginFetch});
+  const HomeEmptyState({
+    super.key,
+    required this.onLoginFetch,
+    required this.selectedSource,
+    required this.onSourceChanged,
+  });
 
   final VoidCallback onLoginFetch;
+  final ScheduleSource selectedSource;
+  final ValueChanged<ScheduleSource> onSourceChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +60,27 @@ class HomeEmptyState extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 18),
+                SegmentedButton<ScheduleSource>(
+                  segments: ScheduleSource.values
+                      .map(
+                        (source) => ButtonSegment<ScheduleSource>(
+                          value: source,
+                          label: Text(source.label),
+                          icon: Icon(
+                            source.isGraduate
+                                ? Icons.school_rounded
+                                : Icons.badge_outlined,
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  selected: {selectedSource},
+                  onSelectionChanged: (values) {
+                    final next = values.firstOrNull;
+                    if (next != null) onSourceChanged(next);
+                  },
+                ),
+                const SizedBox(height: 14),
                 FilledButton.icon(
                   style: loginButtonStyle,
                   onPressed: onLoginFetch,

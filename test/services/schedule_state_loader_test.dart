@@ -67,6 +67,27 @@ void main() {
       expect(stopwatch.elapsed, lessThan(const Duration(milliseconds: 200)));
     },
   );
+
+  test(
+    'load uses archived courses when raw schedule cache is undergraduate html',
+    () async {
+      final repository = ScheduleRepository();
+      final loader = ScheduleStateLoader();
+
+      await repository.saveSemesterSchedule(
+        semesterCode: '20252',
+        rawScheduleJson: '<html><table id="timetable"></table></html>',
+        courses: <Course>[_sampleCourse()],
+        makeActive: true,
+      );
+
+      final state = await loader.load();
+
+      expect(state.currentSemesterCode, '20252');
+      expect(state.courses, hasLength(1));
+      expect(state.courses.single.name, '软件工程');
+    },
+  );
 }
 
 Course _sampleCourse() {

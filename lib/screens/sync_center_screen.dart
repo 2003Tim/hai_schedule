@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:hai_schedule/models/schedule_source.dart';
+import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/auth_credentials_service.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
@@ -20,6 +22,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
 
   AutoSyncSnapshot? _snapshot;
   SavedPortalCredential? _savedCredential;
+  ScheduleSource _selectedSource = ScheduleSource.graduate;
   bool _isSyncing = false;
   DateTime? _lastManualSyncTime;
   String? _observedSemesterCode;
@@ -43,17 +46,40 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
   }
 
   Future<void> _refresh() async {
-    final semesterCode = context.read<ScheduleProvider>().currentSemesterCode;
+    final provider = context.read<ScheduleProvider>();
+    final source = await AppStorage.instance.loadActiveScheduleSource();
+    if (!mounted) return;
+    _selectedSource = source;
+    final semesterCode = provider.currentSemesterCode;
     final snapshot = await AutoSyncService.loadSnapshot(
       semesterCode: semesterCode,
     );
-    final credential = await AuthCredentialsService.instance.load();
+    final credential = await AuthCredentialsService.instance.load(
+      source: source,
+    );
     if (!mounted) return;
     setState(() {
+      _selectedSource = source;
       _snapshot = snapshot;
       _savedCredential = credential;
       _observedSemesterCode = semesterCode;
     });
+  }
+
+  Future<void> _changeSource(ScheduleSource source) async {
+    if (source == _selectedSource && mounted) return;
+    await AppStorage.instance.saveActiveScheduleSource(source);
+    if (!mounted) return;
+    setState(() {
+      _selectedSource = source;
+      _snapshot = null;
+      _savedCredential = null;
+      _observedSemesterCode = null;
+    });
+    final provider = context.read<ScheduleProvider>();
+    await provider.reloadFromStorage();
+    await AutoSyncService.ensureBackgroundSchedule();
+    await _refresh();
   }
 
   Future<void> _syncNow() async {
@@ -96,6 +122,7 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
     if (_isSyncing) return;
 
     final provider = context.read<ScheduleProvider>();
+    await AppStorage.instance.saveActiveScheduleSource(_selectedSource);
     final semesterCode = provider.currentSemesterCode;
     final beforeSnapshot = await AutoSyncService.loadSnapshot(
       semesterCode: semesterCode,
@@ -117,7 +144,8 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
         MaterialPageRoute(
           builder:
               (_) => LoginRouter(
-                initialSemesterCode: provider.currentSemesterCode,
+                initialSemesterCode: _initialSemesterForLogin(provider),
+                source: _selectedSource,
               ),
         ),
       );
@@ -166,12 +194,16 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
 
   Future<void> _openLoginPage() async {
     final provider = context.read<ScheduleProvider>();
+    await AppStorage.instance.saveActiveScheduleSource(_selectedSource);
+    if (!mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder:
-            (_) =>
-                LoginRouter(initialSemesterCode: provider.currentSemesterCode),
+            (_) => LoginRouter(
+              initialSemesterCode: _initialSemesterForLogin(provider),
+              source: _selectedSource,
+            ),
       ),
     );
     await _refresh();
@@ -179,18 +211,24 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
 
   Future<void> _switchAccount() async {
     final provider = context.read<ScheduleProvider>();
+    await AppStorage.instance.saveActiveScheduleSource(_selectedSource);
+    if (!mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder:
             (_) => LoginRouter(
-              initialSemesterCode: provider.currentSemesterCode,
+              initialSemesterCode: _initialSemesterForLogin(provider),
               openCredentialEditor: true,
+              source: _selectedSource,
             ),
       ),
     );
     await _refresh();
   }
+
+  String? _initialSemesterForLogin(ScheduleProvider provider) =>
+      provider.courses.isEmpty ? null : provider.currentSemesterCode;
 
   Future<void> _clearSavedCredential() async {
     await AutoSyncService.handleCredentialCleared();
@@ -398,6 +436,10 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
       onSyncNow: _isSyncing ? null : _syncNow,
       onOpenLoginPage: _openLoginPage,
     );
+    final sourceCard = SyncCenterSourceCard(
+      selectedSource: _selectedSource,
+      onChanged: _isSyncing ? (_) {} : (source) => _changeSource(source),
+    );
     final credentialCard = SyncCenterCredentialCard(
       savedCredential: _savedCredential,
       onSwitchAccount: _switchAccount,
@@ -427,6 +469,8 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
+              sourceCard,
+              const SizedBox(height: 12),
               statusCard,
               const SizedBox(height: 12),
               if (isWideDesktop)

@@ -6,6 +6,7 @@ import 'package:webview_windows/webview_windows.dart';
 
 typedef LoginWebviewMessageHandler = void Function(String message);
 typedef LoginWebviewUrlHandler = void Function(String url);
+typedef LoginWebviewUrlNormalizer = String? Function(String url);
 
 abstract class LoginWebviewAdapter {
   bool get isReady;
@@ -15,6 +16,7 @@ abstract class LoginWebviewAdapter {
     required bool clearSessionOnStart,
     required LoginWebviewMessageHandler onMessage,
     required LoginWebviewUrlHandler onUrlChanged,
+    LoginWebviewUrlNormalizer? normalizeNavigationUrl,
   });
 
   Future<void> executeScript(String script);
@@ -48,6 +50,7 @@ class WindowsLoginWebviewAdapter implements LoginWebviewAdapter {
     required bool clearSessionOnStart,
     required LoginWebviewMessageHandler onMessage,
     required LoginWebviewUrlHandler onUrlChanged,
+    LoginWebviewUrlNormalizer? normalizeNavigationUrl,
   }) async {
     await _controller.initialize();
 
@@ -152,9 +155,20 @@ class AndroidLoginWebviewAdapter implements LoginWebviewAdapter {
     required bool clearSessionOnStart,
     required LoginWebviewMessageHandler onMessage,
     required LoginWebviewUrlHandler onUrlChanged,
+    LoginWebviewUrlNormalizer? normalizeNavigationUrl,
   }) async {
     await _controller.setNavigationDelegate(
-      NavigationDelegate(onPageFinished: onUrlChanged),
+      NavigationDelegate(
+        onNavigationRequest: (request) {
+          final normalizedUrl = normalizeNavigationUrl?.call(request.url);
+          if (!request.isMainFrame || normalizedUrl == null) {
+            return NavigationDecision.navigate;
+          }
+          unawaited(loadTargetUrl(normalizedUrl));
+          return NavigationDecision.prevent;
+        },
+        onPageFinished: onUrlChanged,
+      ),
     );
     await _controller.addJavaScriptChannel(
       'FlutterBridge',

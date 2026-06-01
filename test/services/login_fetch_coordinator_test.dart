@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/services/login_fetch_coordinator.dart';
 import 'package:hai_schedule/services/schedule_login_fetch_service.dart';
 
@@ -64,6 +65,34 @@ void main() {
         '\u5df2\u81ea\u52a8\u586b\u5145\u8d26\u53f7\u5bc6\u7801\uff0c\u6b63\u5728\u5c1d\u8bd5\u81ea\u52a8\u767b\u5f55...',
       );
     });
+
+    test(
+      'resolves undergraduate filled credentials as manual captcha prompt',
+      () {
+        final undergraduateCoordinator = LoginFetchCoordinator(
+          loginFetchService: ScheduleLoginFetchService(
+            source: ScheduleSource.undergraduate,
+          ),
+        );
+
+        final resolution = undergraduateCoordinator.resolveAutofillResult(
+          const LoginAutofillResult(
+            usernameFilled: true,
+            passwordFilled: true,
+            submitted: false,
+            verificationRequired: false,
+          ),
+          attemptCount: 3,
+        );
+
+        expect(resolution.stopAutofillLoop, isTrue);
+        expect(resolution.clearPendingAutofill, isTrue);
+        expect(
+          resolution.statusText,
+          '\u5df2\u81ea\u52a8\u586b\u5145\u672c\u79d1\u8d26\u53f7\u5bc6\u7801\uff0c\u8bf7\u8f93\u5165\u9875\u9762\u9a8c\u8bc1\u7801\u540e\u70b9\u51fb\u767b\u5f55',
+        );
+      },
+    );
 
     test('validates and formats semester codes', () {
       expect(coordinator.looksLikeSemesterCode('20251'), isTrue);

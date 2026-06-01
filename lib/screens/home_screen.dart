@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:hai_schedule/models/schedule_source.dart';
+import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/class_reminder_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
@@ -34,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   AutoSyncSnapshot? _syncSnapshot;
   bool _isSyncing = false;
+  ScheduleSource _selectedSource = ScheduleSource.graduate;
   _ScheduleViewMode _viewMode = _ScheduleViewMode.week;
   int? _selectedDay;
 
@@ -92,9 +97,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshSyncSnapshot() async {
+    final source = await AppStorage.instance.loadActiveScheduleSource();
     final snapshot = await AutoSyncService.loadSnapshot();
     if (!mounted) return;
-    setState(() => _syncSnapshot = snapshot);
+    setState(() {
+      _selectedSource = source;
+      _syncSnapshot = snapshot;
+    });
   }
 
   Future<void> _triggerAutoSyncIfNeeded({
@@ -222,9 +231,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _openLoginFetch(ScheduleProvider provider) async {
+    final source = _selectedSource;
+    await AppStorage.instance.saveActiveScheduleSource(source);
     await _pushPage(
-      LoginRouter(initialSemesterCode: provider.currentSemesterCode),
+      LoginRouter(
+        initialSemesterCode: _initialSemesterForLogin(provider),
+        source: source,
+      ),
     );
+    await _refreshSyncSnapshot();
+  }
+
+  String? _initialSemesterForLogin(ScheduleProvider provider) =>
+      provider.courses.isEmpty ? null : provider.currentSemesterCode;
+
+  Future<void> _changeSource(ScheduleSource source) async {
+    await AppStorage.instance.saveActiveScheduleSource(source);
+    if (!mounted) return;
+    setState(() => _selectedSource = source);
+    final provider = context.read<ScheduleProvider>();
+    await provider.reloadFromStorage();
     await _refreshSyncSnapshot();
   }
 
@@ -347,6 +373,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           selectedDay: _effectiveSelectedDay(provider),
           navigationKey: const ValueKey('home.panel.navigation'),
           onDaySelected: _selectDay,
+          selectedSource: _selectedSource,
+          onSourceChanged: (source) {
+            unawaited(_changeSource(source));
+          },
           onLoginFetch: () async {
             await _openLoginFetch(provider);
           },

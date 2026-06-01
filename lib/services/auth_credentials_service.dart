@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/utils/app_logger.dart';
 import 'package:hai_schedule/utils/app_platform.dart';
@@ -32,21 +33,29 @@ class AuthCredentialsService {
   static const _usernameKey = 'portal_username';
   static const _passwordKey = 'portal_password';
 
-  static bool get _isAndroid => debugForceAndroid ?? AppPlatform.instance.isAndroid;
+  static bool get _isAndroid =>
+      debugForceAndroid ?? AppPlatform.instance.isAndroid;
 
-  Future<SavedPortalCredential?> load() async {
-    final username = await _storage.read(key: _usernameKey);
-    final password = await _storage.read(key: _passwordKey);
+  static String _keyForSource(String key, ScheduleSource source) =>
+      source.isGraduate ? key : '${source.value}.$key';
+
+  Future<SavedPortalCredential?> load({
+    ScheduleSource source = ScheduleSource.graduate,
+  }) async {
+    final usernameKey = _keyForSource(_usernameKey, source);
+    final passwordKey = _keyForSource(_passwordKey, source);
+    final username = await _storage.read(key: usernameKey);
+    final password = await _storage.read(key: passwordKey);
     if (username == null ||
         username.isEmpty ||
         password == null ||
         password.isEmpty) {
-      final native = await _loadFromNative();
+      final native = await _loadFromNative(source: source);
       if (native == null) {
         return null;
       }
-      await _storage.write(key: _usernameKey, value: native.username);
-      await _storage.write(key: _passwordKey, value: native.password);
+      await _storage.write(key: usernameKey, value: native.username);
+      await _storage.write(key: passwordKey, value: native.password);
       return native;
     }
     if (_isAndroid) {
@@ -54,6 +63,7 @@ class AuthCredentialsService {
         await _nativeChannel.invokeMethod('saveCredential', {
           'username': username,
           'password': password,
+          'source': source.value,
         });
       } catch (e) {
         AppLogger.warn('AuthCredentials', 'Native 凭据镜像同步失败（不影响功能）', e);
@@ -65,14 +75,22 @@ class AuthCredentialsService {
   Future<void> save({
     required String username,
     required String password,
+    ScheduleSource source = ScheduleSource.graduate,
   }) async {
-    await _storage.write(key: _usernameKey, value: username);
-    await _storage.write(key: _passwordKey, value: password);
+    await _storage.write(
+      key: _keyForSource(_usernameKey, source),
+      value: username,
+    );
+    await _storage.write(
+      key: _keyForSource(_passwordKey, source),
+      value: password,
+    );
     if (_isAndroid) {
       try {
         await _nativeChannel.invokeMethod('saveCredential', {
           'username': username,
           'password': password,
+          'source': source.value,
         });
       } catch (e) {
         AppLogger.warn('AuthCredentials', 'Native 凭据镜像写入失败（不影响功能）', e);
@@ -81,27 +99,37 @@ class AuthCredentialsService {
     await AppStorage.instance.clearSyncInvalidationFlag();
   }
 
-  Future<void> clear({bool strict = false}) async {
+  Future<void> clear({
+    bool strict = false,
+    ScheduleSource source = ScheduleSource.graduate,
+  }) async {
     if (_isAndroid) {
       if (strict) {
-        await _nativeChannel.invokeMethod<void>('clearCredential');
+        await _nativeChannel.invokeMethod<void>('clearCredential', {
+          'source': source.value,
+        });
       } else {
         try {
-          await _nativeChannel.invokeMethod('clearCredential');
+          await _nativeChannel.invokeMethod('clearCredential', {
+            'source': source.value,
+          });
         } catch (e) {
           AppLogger.warn('AuthCredentials', 'Native 凭据镜像清除失败（不影响功能）', e);
         }
       }
     }
-    await _storage.delete(key: _usernameKey);
-    await _storage.delete(key: _passwordKey);
+    await _storage.delete(key: _keyForSource(_usernameKey, source));
+    await _storage.delete(key: _keyForSource(_passwordKey, source));
   }
 
-  Future<SavedPortalCredential?> _loadFromNative() async {
+  Future<SavedPortalCredential?> _loadFromNative({
+    required ScheduleSource source,
+  }) async {
     if (!_isAndroid) return null;
     try {
       final raw = await _nativeChannel.invokeMapMethod<String, dynamic>(
         'loadCredential',
+        {'source': source.value},
       );
       final username = raw?['username']?.toString() ?? '';
       final password = raw?['password']?.toString() ?? '';

@@ -29,10 +29,12 @@ class LoginFetchCoordinator {
     LoginAutofillResult result, {
     required int attemptCount,
   }) {
-    return LoginFetchCoordinatorText.resolveAutofillResult(
-      result,
-      attemptCount: attemptCount,
-    );
+    return _loginFetchService.source.isUndergraduate
+        ? LoginFetchCoordinatorText.resolveUndergraduateAutofillResult(result)
+        : LoginFetchCoordinatorText.resolveAutofillResult(
+          result,
+          attemptCount: attemptCount,
+        );
   }
 
   bool looksLikeSemesterCode(String value) {

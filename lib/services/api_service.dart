@@ -21,6 +21,9 @@ class ApiService {
       'https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/*default/index.do';
   static const _graduateSchedulePath =
       '/gsapp/sys/wdkbapp/modules/xskcb/xsjxrwcx.do';
+  static const _undergraduateBaseUrl = 'https://jxgl.hainanu.edu.cn';
+  static const _undergraduateScheduleUrl =
+      'https://jxgl.hainanu.edu.cn/jsxsd/xskb/xskb_list.do';
   static const _pageSize = 100;
   static const _maxPages = 20;
 
@@ -187,6 +190,76 @@ class ApiService {
     }
   }
 
+  Future<PortalPageResult> fetchUndergraduateSchedulePage({
+    required String semester,
+  }) async {
+    try {
+      final response = await _dio.getUri<String>(
+        Uri.parse(_undergraduateScheduleUrl).replace(
+          queryParameters: <String, String>{
+            'xnxq01id': _toUndergraduateSemester(semester),
+            'zc': '',
+            'kbjcmsid': '',
+            'sfFD': '1',
+            'wkbkc': '1',
+            'xstzd': '1',
+            'xswk': '1',
+          },
+        ),
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: <String, dynamic>{
+            'Accept':
+                'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Origin': _undergraduateBaseUrl,
+            'Referer': _undergraduateScheduleUrl,
+            'X-Requested-With': null,
+          },
+        ),
+      );
+
+      if (PortalSessionExpiryDetector.isExpiredResponse(response)) {
+        throw const LoginExpiredException();
+      }
+
+      if (response.statusCode != 200) {
+        throw ApiException('请求失败: HTTP ${response.statusCode}');
+      }
+
+      final body = response.data;
+      if (body == null || body.trim().isEmpty) {
+        throw ApiException('本科课表返回空响应');
+      }
+      if (_looksLikeUndergraduateLoginPage(body)) {
+        throw const LoginExpiredException();
+      }
+
+      return PortalPageResult(
+        body: body,
+        contentType: response.headers.value(Headers.contentTypeHeader),
+      );
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        throw ApiException('连接超时，请检查网络');
+      }
+      if (e.error is LoginExpiredException) {
+        throw e.error as LoginExpiredException;
+      }
+      if (e.error is InvalidCredentialsException) {
+        throw e.error as InvalidCredentialsException;
+      }
+      if (e.response != null &&
+          PortalSessionExpiryDetector.isExpiredResponse(e.response!)) {
+        throw const LoginExpiredException();
+      }
+      if (e.response?.statusCode != null) {
+        throw ApiException('请求失败: HTTP ${e.response!.statusCode}');
+      }
+      throw ApiException('网络错误: ${e.message}');
+    }
+  }
+
   static List<dynamic>? _extractRows(Map<String, dynamic> root) {
     final datas = root['datas'];
     if (datas is! Map) return null;
@@ -245,6 +318,26 @@ class ApiService {
           int.tryParse(payload['code']?.toString() ?? ''),
         ) ||
         PortalSessionExpiryDetector.isExpiredBody(message);
+  }
+
+  static String _toUndergraduateSemester(String semester) {
+    final normalized = semester.trim();
+    if (RegExp(r'^20\d{2}-20\d{2}-[12]$').hasMatch(normalized)) {
+      return normalized;
+    }
+    final match = RegExp(r'^(20\d{2})([12])$').firstMatch(normalized);
+    if (match == null) return normalized;
+    final startYear = int.parse(match.group(1)!);
+    return '${match.group(1)}-${startYear + 1}-${match.group(2)}';
+  }
+
+  static bool _looksLikeUndergraduateLoginPage(String body) {
+    final lower = body.toLowerCase();
+    return lower.contains('id="loginform"') ||
+        lower.contains("id='loginform'") ||
+        lower.contains('id="useraccount"') ||
+        lower.contains("id='useraccount'") ||
+        lower.contains('/jsxsd/xk/logintoxkldap');
   }
 }
 

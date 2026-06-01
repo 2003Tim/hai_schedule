@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'package:hai_schedule/utils/app_platform.dart';
 
+import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/utils/semester_code_formatter.dart';
@@ -81,12 +82,15 @@ class _WindowsDesktopShellScreenState extends State<WindowsDesktopShellScreen>
     try {
       await AutoSyncService.recordDesktopForegroundSyncStart();
       if (!mounted) return;
+      final source = await AppStorage.instance.loadActiveScheduleSource();
+      if (!mounted) return;
 
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder:
               (_) => LoginRouter(
                 initialSemesterCode: provider.currentSemesterCode,
+                source: source,
               ),
         ),
       );
@@ -108,11 +112,15 @@ class _WindowsDesktopShellScreenState extends State<WindowsDesktopShellScreen>
 
   Future<void> _openLogin() async {
     final provider = context.read<ScheduleProvider>();
+    final source = await AppStorage.instance.loadActiveScheduleSource();
+    if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder:
-            (_) =>
-                LoginRouter(initialSemesterCode: provider.currentSemesterCode),
+            (_) => LoginRouter(
+              initialSemesterCode: provider.currentSemesterCode,
+              source: source,
+            ),
       ),
     );
   }

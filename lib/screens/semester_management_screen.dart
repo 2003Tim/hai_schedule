@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/screens/login_router.dart';
 import 'package:hai_schedule/screens/sync_center_screen.dart';
+import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/schedule_provider.dart';
 import 'package:hai_schedule/widgets/semester_management_sections.dart';
 
@@ -94,10 +95,14 @@ class SemesterManagementScreen extends StatelessWidget {
     BuildContext context, {
     required String semesterCode,
   }) async {
+    final source = await AppStorage.instance.loadActiveScheduleSource();
+    if (!context.mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => LoginRouter(initialSemesterCode: semesterCode),
+        builder:
+            (_) =>
+                LoginRouter(initialSemesterCode: semesterCode, source: source),
       ),
     );
   }

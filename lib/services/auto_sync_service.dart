@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -30,6 +29,9 @@ class AutoSyncService {
       'https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/*default/index.do';
   static const String _apiUrl =
       'https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/modules/xskcb/xsjxrwcx.do';
+  static const String _undergraduateBaseUrl = 'https://jxgl.hainanu.edu.cn';
+  static const String _undergraduateScheduleUrl =
+      'https://jxgl.hainanu.edu.cn/jsxsd/xskb/xskb_list.do';
 
   static const Duration retryBackoff = AutoSyncSchedulePolicy.retryBackoff;
   static const int defaultCustomIntervalMinutes =
@@ -128,9 +130,10 @@ class AutoSyncService {
   }
 
   static Future<void> handleCredentialCleared() async {
+    final source = await AppStorage.instance.loadActiveScheduleSource();
     await AppStorage.instance.setSyncInvalidationFlag(true);
     await _cancelBackgroundSync();
-    await AuthCredentialsService.instance.clear(strict: true);
+    await AuthCredentialsService.instance.clear(strict: true, source: source);
     await AppStorage.instance.clearCookieSnapshot(strict: true);
     await DioClient.clearAllSessions();
     await _clearLiveWebViewCookies(strict: true);
@@ -199,7 +202,8 @@ class AutoSyncService {
     final hasSemester = record.semesterCode?.isNotEmpty ?? false;
     if (!hasSemester) return false;
     if (record.cookieSnapshot?.isNotEmpty ?? false) return true;
-    return await AuthCredentialsService.instance.load() != null;
+    final source = await AppStorage.instance.loadActiveScheduleSource();
+    return await AuthCredentialsService.instance.load(source: source) != null;
   }
 
   static Future<bool> captureCookieSnapshot({int retries = 3}) async {
@@ -307,6 +311,8 @@ class AutoSyncService {
       }
 
       final now = DateTime.now();
+      final scheduleSource =
+          await AppStorage.instance.loadActiveScheduleSource();
       final semester = await _scheduleRepository.loadActiveSemesterCode();
       if (semester == null || semester.isEmpty) {
         await _markLoginRequired('缺少学期信息，请先手动登录抓取一次', source: source);
@@ -330,6 +336,7 @@ class AutoSyncService {
           .syncCourse(
             semester: semester,
             cookie: cookie,
+            source: scheduleSource,
             onSemesterCatalogUpdated: provider.refreshKnownSemesterCatalog,
           )
           .timeout(
@@ -342,7 +349,7 @@ class AutoSyncService {
         await _storeCookieSnapshot(latestCookie);
       }
       await _persistSuccess(
-        rawData: fetchResult.rawData,
+        rawScheduleJson: fetchResult.rawJson,
         semester: semester,
         courses: fetchResult.courses,
         provider: provider,
@@ -418,7 +425,7 @@ class AutoSyncService {
   }
 
   static Future<void> _persistSuccess({
-    required Map<String, dynamic> rawData,
+    required String rawScheduleJson,
     required String semester,
     required List<Course> courses,
     required ScheduleProvider provider,
@@ -428,7 +435,7 @@ class AutoSyncService {
       provider: provider,
       courses: courses,
       semesterCode: semester,
-      rawScheduleJson: jsonEncode(rawData),
+      rawScheduleJson: rawScheduleJson,
       source: source,
     );
 
@@ -558,6 +565,12 @@ class AutoSyncService {
     }
 
     if (!AppPlatform.instance.isAndroid) return;
+    final activeSource = await AppStorage.instance.loadActiveScheduleSource();
+    if (activeSource.isUndergraduate) {
+      await _cancelBackgroundSync();
+      await _syncRepository.saveStatus(clearNextSyncTime: true);
+      return;
+    }
     try {
       final next = await _channel
           .invokeMethod<String>('configureBackgroundSync', {
@@ -566,6 +579,7 @@ class AutoSyncService {
             'customIntervalMinutes': customIntervalMinutes,
             'afterSuccessfulSync': afterSuccessfulSync,
             'preserveExistingCustomSchedule': preserveExistingCustomSchedule,
+            'source': activeSource.value,
           });
       if (next == null || next.isEmpty) {
         await _syncRepository.saveStatus(clearNextSyncTime: true);
@@ -584,8 +598,11 @@ class AutoSyncService {
 
   static Future<void> _cancelBackgroundSync({bool strict = false}) async {
     if (!_isAndroid) return;
+    final activeSource = await AppStorage.instance.loadActiveScheduleSource();
     try {
-      await _channel.invokeMethod<void>('cancelBackgroundSync');
+      await _channel.invokeMethod<void>('cancelBackgroundSync', {
+        'source': activeSource.value,
+      });
     } on PlatformException catch (e) {
       if (strict) rethrow;
       debugPrint('取消后台同步失败: ${e.message}');
@@ -629,8 +646,13 @@ class AutoSyncService {
   }
 
   static Future<String?> _readLiveCookieBundle() async {
+    final source = await AppStorage.instance.loadActiveScheduleSource();
     final cookies = <String>[];
-    for (final url in [_apiUrl, _indexUrl, _baseUrl]) {
+    final urls =
+        source.isUndergraduate
+            ? [_undergraduateScheduleUrl, _undergraduateBaseUrl]
+            : [_apiUrl, _indexUrl, _baseUrl];
+    for (final url in urls) {
       final value = await _invokeGetCookie(url);
       if (value != null && value.isNotEmpty) {
         cookies.add(value);

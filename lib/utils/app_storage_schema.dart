@@ -4,6 +4,7 @@ class AppStorageSchema {
   static const coursesKey = 'courses';
   static const displayDaysKey = 'display_days';
   static const showNonCurrentWeekKey = 'show_non_current_week';
+  static const activeScheduleSourceKey = 'active_schedule_source';
 
   static const lastFetchTimeKey = 'last_fetch_time';
   static const lastAttemptTimeKey = 'last_auto_sync_attempt_time';
@@ -65,6 +66,7 @@ class AppStorageSchema {
   static const backupKeys = <String>[
     displayDaysKey,
     showNonCurrentWeekKey,
+    activeScheduleSourceKey,
     frequencyKey,
     customIntervalMinutesKey,
     semesterKey,
@@ -93,6 +95,7 @@ class AppStorageSchema {
 
   static const transientKeys = <String>[
     coursesKey,
+    activeScheduleSourceKey,
     lastFetchTimeKey,
     lastAttemptTimeKey,
     lastErrorKey,

@@ -3,10 +3,59 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/services/auth_credentials_service.dart';
 import 'package:hai_schedule/services/auto_sync_service.dart';
 import 'package:hai_schedule/services/login_expired_exception.dart';
 import 'package:hai_schedule/services/theme_provider.dart';
+
+class SyncCenterSourceCard extends StatelessWidget {
+  const SyncCenterSourceCard({
+    super.key,
+    required this.selectedSource,
+    required this.onChanged,
+  });
+
+  final ScheduleSource selectedSource;
+  final ValueChanged<ScheduleSource> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SyncCenterGlassCard(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '课表类型',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          SegmentedButton<ScheduleSource>(
+            segments: ScheduleSource.values
+                .map(
+                  (source) => ButtonSegment<ScheduleSource>(
+                    value: source,
+                    label: Text(source.label),
+                    icon: Icon(
+                      source.isGraduate
+                          ? Icons.school_rounded
+                          : Icons.badge_outlined,
+                    ),
+                  ),
+                )
+                .toList(growable: false),
+            selected: {selectedSource},
+            onSelectionChanged: (values) {
+              final next = values.firstOrNull;
+              if (next != null) onChanged(next);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class SyncCenterStatusCard extends StatelessWidget {
   const SyncCenterStatusCard({
