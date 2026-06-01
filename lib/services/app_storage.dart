@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hai_schedule/models/course.dart';
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/models/semester_option.dart';
 import 'package:hai_schedule/models/schedule_override.dart';
 import 'package:hai_schedule/models/school_time.dart';
@@ -37,6 +38,8 @@ class AppStorage {
   static const String _displayDaysKey = AppStorageSchema.displayDaysKey;
   static const String _showNonCurrentWeekKey =
       AppStorageSchema.showNonCurrentWeekKey;
+  static const String _activeScheduleSourceKey =
+      AppStorageSchema.activeScheduleSourceKey;
 
   static const String _lastFetchTimeKey = AppStorageSchema.lastFetchTimeKey;
   static const String _lastAttemptTimeKey = AppStorageSchema.lastAttemptTimeKey;
@@ -89,14 +92,35 @@ class AppStorage {
   Future<SharedPreferences> get _prefs =>
       _prefsFuture ??= SharedPreferences.getInstance();
 
-  static bool get _isAndroid => debugForceAndroid ?? AppPlatform.instance.isAndroid;
+  static bool get _isAndroid =>
+      debugForceAndroid ?? AppPlatform.instance.isAndroid;
+
+  static String _sourceScopedKey(String key, ScheduleSource source) =>
+      source.isGraduate ? key : '${source.value}.$key';
+
+  static String _keyForPrefs(SharedPreferences prefs, String key) =>
+      _sourceScopedKey(key, _readActiveScheduleSource(prefs));
+
+  static ScheduleSource _readActiveScheduleSource(SharedPreferences prefs) =>
+      ScheduleSource.fromValue(prefs.getString(_activeScheduleSourceKey));
 
   void resetForTesting() {
     _prefsFuture = null;
   }
 
+  Future<ScheduleSource> loadActiveScheduleSource() async {
+    final prefs = await _reloadedPrefs();
+    return _readActiveScheduleSource(prefs);
+  }
+
+  Future<void> saveActiveScheduleSource(ScheduleSource source) async {
+    final prefs = await _prefs;
+    await prefs.setString(_activeScheduleSourceKey, source.value);
+  }
+
   Future<List<Course>> loadCourses() async {
     final prefs = await _reloadedPrefs();
+    final coursesKey = _keyForPrefs(prefs, _coursesKey);
     final activeSemester = _readActiveSemesterCode(prefs);
     if (activeSemester != null && activeSemester.isNotEmpty) {
       final archive = AppStorageCodec.readSemesterArchive(
@@ -107,15 +131,16 @@ class AppStorage {
     }
 
     return AppStorageCodec.decodeGlobalCourseMirror(
-      prefs.getStringList(_coursesKey),
+      prefs.getStringList(coursesKey),
     );
   }
 
   Future<void> saveCourses(List<Course> courses) async {
     final prefs = await _prefs;
+    final coursesKey = _keyForPrefs(prefs, _coursesKey);
     final jsonList =
         courses.map((course) => json.encode(course.toJson())).toList();
-    await prefs.setStringList(_coursesKey, jsonList);
+    await prefs.setStringList(coursesKey, jsonList);
 
     final activeSemester = await loadActiveSemesterCode();
     if (activeSemester != null && activeSemester.isNotEmpty) {
@@ -134,12 +159,12 @@ class AppStorage {
       return archive?.rawScheduleJson;
     }
 
-    return prefs.getString(_lastScheduleJsonKey);
+    return prefs.getString(_keyForPrefs(prefs, _lastScheduleJsonKey));
   }
 
   Future<void> saveRawScheduleJson(String jsonValue) async {
     final prefs = await _prefs;
-    await prefs.setString(_lastScheduleJsonKey, jsonValue);
+    await prefs.setString(_keyForPrefs(prefs, _lastScheduleJsonKey), jsonValue);
 
     final activeSemester = await loadActiveSemesterCode();
     if (activeSemester != null && activeSemester.isNotEmpty) {
@@ -174,7 +199,7 @@ class AppStorage {
   Future<List<String>> loadAvailableSemesterCodes() async {
     final prefs = await _reloadedPrefs();
     final archive = AppStorageCodec.decodeScheduleArchiveMap(
-      prefs.getString(_scheduleArchiveKey),
+      prefs.getString(_keyForPrefs(prefs, _scheduleArchiveKey)),
     );
     final codes = archive.keys.toList()..sort((a, b) => b.compareTo(a));
     if (codes.isEmpty) {
@@ -186,7 +211,8 @@ class AppStorage {
 
   Future<List<SemesterOption>> loadSemesterCatalog() async {
     final prefs = await _reloadedPrefs();
-    final rawItems = prefs.getStringList(_semesterCatalogKey);
+    final semesterCatalogKey = _keyForPrefs(prefs, _semesterCatalogKey);
+    final rawItems = prefs.getStringList(semesterCatalogKey);
     if (rawItems != null) {
       try {
         return _decodeSemesterCatalogItems(rawItems.map(json.decode));
@@ -195,7 +221,7 @@ class AppStorage {
       }
     }
 
-    final legacyRaw = prefs.getString(_semesterCatalogKey);
+    final legacyRaw = prefs.getString(semesterCatalogKey);
     if (legacyRaw == null || legacyRaw.isEmpty) {
       return const <SemesterOption>[];
     }
@@ -216,6 +242,7 @@ class AppStorage {
 
   Future<void> saveSemesterCatalog(List<SemesterOption> options) async {
     final prefs = await _prefs;
+    final semesterCatalogKey = _keyForPrefs(prefs, _semesterCatalogKey);
     final encodedItems = options
         .where((item) => item.isValid)
         .map((item) => json.encode(item.toJson()))
@@ -224,11 +251,11 @@ class AppStorage {
       description: '学期目录',
       maxAttempts: 4,
       delay: const Duration(milliseconds: 200),
-      write: () => prefs.setStringList(_semesterCatalogKey, encodedItems),
+      write: () => prefs.setStringList(semesterCatalogKey, encodedItems),
       verify: () async {
         await prefs.reload();
         return _sameStringList(
-          prefs.getStringList(_semesterCatalogKey),
+          prefs.getStringList(semesterCatalogKey),
           encodedItems,
         );
       },
@@ -260,7 +287,8 @@ class AppStorage {
 
   Future<bool> loadHasSyncedAtLeastOneSemester() async {
     final prefs = await _reloadedPrefs();
-    final stored = prefs.getBool(_hasSyncedAtLeastOneSemesterKey);
+    final hasSyncedKey = _keyForPrefs(prefs, _hasSyncedAtLeastOneSemesterKey);
+    final stored = prefs.getBool(hasSyncedKey);
     if (stored != null) {
       return stored;
     }
@@ -271,7 +299,10 @@ class AppStorage {
 
   Future<void> saveHasSyncedAtLeastOneSemester(bool value) async {
     final prefs = await _prefs;
-    await prefs.setBool(_hasSyncedAtLeastOneSemesterKey, value);
+    await prefs.setBool(
+      _keyForPrefs(prefs, _hasSyncedAtLeastOneSemesterKey),
+      value,
+    );
   }
 
   Future<SemesterSyncRecord?> loadSemesterSyncRecord(
@@ -279,8 +310,9 @@ class AppStorage {
   ) async {
     final prefs = await _reloadedPrefs();
     await _migrateLegacySemesterSyncRecord(prefs, semesterCode: semesterCode);
+    final semesterSyncRecordsKey = _keyForPrefs(prefs, _semesterSyncRecordsKey);
     final records = AppStorageCodec.decodeSemesterSyncRecordMap(
-      prefs.getString(_semesterSyncRecordsKey),
+      prefs.getString(semesterSyncRecordsKey),
     );
     return records[semesterCode];
   }
@@ -291,15 +323,16 @@ class AppStorage {
     required DateTime lastSyncTime,
   }) async {
     final prefs = await _reloadedPrefs();
+    final semesterSyncRecordsKey = _keyForPrefs(prefs, _semesterSyncRecordsKey);
     final records = AppStorageCodec.decodeSemesterSyncRecordMap(
-      prefs.getString(_semesterSyncRecordsKey),
+      prefs.getString(semesterSyncRecordsKey),
     );
     records[semesterCode] = SemesterSyncRecord(
       count: count,
       lastSyncTime: lastSyncTime,
     );
     await prefs.setString(
-      _semesterSyncRecordsKey,
+      semesterSyncRecordsKey,
       AppStorageCodec.encodeSemesterSyncRecordMap(records),
     );
   }
@@ -322,6 +355,7 @@ class AppStorage {
   }) async {
     final prefs = await _reloadedPrefs();
     final archive = await _loadScheduleArchiveMapFromPrefs(prefs);
+    final scheduleArchiveKey = _keyForPrefs(prefs, _scheduleArchiveKey);
     final previous = archive[semesterCode];
     final previousMap =
         previous is Map<String, dynamic>
@@ -339,7 +373,7 @@ class AppStorage {
     archive[semesterCode] = previousMap;
 
     await prefs.setString(
-      _scheduleArchiveKey,
+      scheduleArchiveKey,
       AppStorageCodec.encodeScheduleArchiveMap(archive),
     );
 
@@ -355,30 +389,32 @@ class AppStorage {
   Future<void> deleteSemesterArchive(String semesterCode) async {
     final prefs = await _reloadedPrefs();
     final archive = await _loadScheduleArchiveMapFromPrefs(prefs);
+    final semesterSyncRecordsKey = _keyForPrefs(prefs, _semesterSyncRecordsKey);
+    final scheduleOverridesKey = _keyForPrefs(prefs, _scheduleOverridesKey);
     archive.remove(semesterCode);
 
     await prefs.setString(
-      _scheduleArchiveKey,
+      _keyForPrefs(prefs, _scheduleArchiveKey),
       AppStorageCodec.encodeScheduleArchiveMap(archive),
     );
 
     final syncRecords = AppStorageCodec.decodeSemesterSyncRecordMap(
-      prefs.getString(_semesterSyncRecordsKey),
+      prefs.getString(semesterSyncRecordsKey),
     );
     if (syncRecords.remove(semesterCode) != null) {
       await prefs.setString(
-        _semesterSyncRecordsKey,
+        semesterSyncRecordsKey,
         AppStorageCodec.encodeSemesterSyncRecordMap(syncRecords),
       );
     }
 
     final overrides = AppStorageCodec.decodeScheduleOverrides(
-      prefs.getString(_scheduleOverridesKey),
+      prefs.getString(scheduleOverridesKey),
     );
     final retainedOverrides =
         overrides.where((item) => item.semesterCode != semesterCode).toList();
     await prefs.setString(
-      _scheduleOverridesKey,
+      scheduleOverridesKey,
       AppStorageCodec.encodeScheduleOverrides(retainedOverrides),
     );
 
@@ -414,7 +450,7 @@ class AppStorage {
   }) async {
     final prefs = await _reloadedPrefs();
     final allOverrides = AppStorageCodec.decodeScheduleOverrides(
-      prefs.getString(_scheduleOverridesKey),
+      prefs.getString(_keyForPrefs(prefs, _scheduleOverridesKey)),
     );
     final activeSemester = semesterCode ?? _readActiveSemesterCode(prefs);
     return allOverrides
@@ -430,8 +466,9 @@ class AppStorage {
     required String semesterCode,
   }) async {
     final prefs = await _reloadedPrefs();
+    final scheduleOverridesKey = _keyForPrefs(prefs, _scheduleOverridesKey);
     final existing = AppStorageCodec.decodeScheduleOverrides(
-      prefs.getString(_scheduleOverridesKey),
+      prefs.getString(scheduleOverridesKey),
     );
 
     final merged =
@@ -439,7 +476,7 @@ class AppStorage {
           ..addAll(overrides);
 
     await prefs.setString(
-      _scheduleOverridesKey,
+      scheduleOverridesKey,
       AppStorageCodec.encodeScheduleOverrides(merged),
     );
   }
@@ -447,25 +484,28 @@ class AppStorage {
   Future<SchoolTimeConfig> loadSchoolTimeConfig() async {
     final prefs = await _prefs;
     return AppStorageCodec.decodeSchoolTimeConfig(
-      prefs.getString(_schoolTimeConfigKey),
+      prefs.getString(_keyForPrefs(prefs, _schoolTimeConfigKey)),
     );
   }
 
   Future<void> saveSchoolTimeConfig(SchoolTimeConfig config) async {
     final prefs = await _prefs;
-    await prefs.setString(_schoolTimeConfigKey, json.encode(config.toJson()));
+    await prefs.setString(
+      _keyForPrefs(prefs, _schoolTimeConfigKey),
+      json.encode(config.toJson()),
+    );
   }
 
   Future<void> clearSchoolTimeConfig() async {
     final prefs = await _prefs;
-    await prefs.remove(_schoolTimeConfigKey);
-    await prefs.remove(_schoolTimeGeneratorSettingsKey);
+    await prefs.remove(_keyForPrefs(prefs, _schoolTimeConfigKey));
+    await prefs.remove(_keyForPrefs(prefs, _schoolTimeGeneratorSettingsKey));
   }
 
   Future<SchoolTimeGeneratorSettings> loadSchoolTimeGeneratorSettings() async {
     final prefs = await _prefs;
     return AppStorageCodec.decodeSchoolTimeGeneratorSettings(
-      prefs.getString(_schoolTimeGeneratorSettingsKey),
+      prefs.getString(_keyForPrefs(prefs, _schoolTimeGeneratorSettingsKey)),
     );
   }
 
@@ -474,7 +514,7 @@ class AppStorage {
   ) async {
     final prefs = await _prefs;
     await prefs.setString(
-      _schoolTimeGeneratorSettingsKey,
+      _keyForPrefs(prefs, _schoolTimeGeneratorSettingsKey),
       json.encode(settings.toJson()),
     );
   }
@@ -500,6 +540,11 @@ class AppStorage {
     String? semesterCode,
   }) async {
     final prefs = await _reloadedPrefs();
+    final semesterSyncRecordsKey = _keyForPrefs(prefs, _semesterSyncRecordsKey);
+    final lastStateSemesterCodeKey = _keyForPrefs(
+      prefs,
+      _lastStateSemesterCodeKey,
+    );
     final resolvedSemester =
         semesterCode?.trim().isNotEmpty == true
             ? semesterCode!.trim()
@@ -513,43 +558,59 @@ class AppStorage {
         resolvedSemester == null || resolvedSemester.isEmpty
             ? null
             : AppStorageCodec.decodeSemesterSyncRecordMap(
-              prefs.getString(_semesterSyncRecordsKey),
+              prefs.getString(semesterSyncRecordsKey),
             )[resolvedSemester];
-    final stateSemesterCode = prefs.getString(_lastStateSemesterCodeKey);
+    final stateSemesterCode = prefs.getString(lastStateSemesterCodeKey);
     final stateMatchesActive =
         resolvedSemester != null &&
         resolvedSemester.isNotEmpty &&
         stateSemesterCode == resolvedSemester;
 
     return StoredAutoSyncRecord(
-      frequency: prefs.getString(_frequencyKey) ?? 'daily',
-      customIntervalMinutes: prefs.getInt(_customIntervalMinutesKey),
+      frequency: prefs.getString(_keyForPrefs(prefs, _frequencyKey)) ?? 'daily',
+      customIntervalMinutes: prefs.getInt(
+        _keyForPrefs(prefs, _customIntervalMinutesKey),
+      ),
       lastFetchTime: semesterSyncRecord?.lastSyncTime,
       lastAttemptTime:
           stateMatchesActive
-              ? AppStorageCodec.readTime(prefs.getString(_lastAttemptTimeKey))
+              ? AppStorageCodec.readTime(
+                prefs.getString(_keyForPrefs(prefs, _lastAttemptTimeKey)),
+              )
               : null,
-      nextSyncTime: AppStorageCodec.readTime(prefs.getString(_nextSyncTimeKey)),
+      nextSyncTime: AppStorageCodec.readTime(
+        prefs.getString(_keyForPrefs(prefs, _nextSyncTimeKey)),
+      ),
       state:
           stateMatchesActive
-              ? prefs.getString(_lastStateKey)
+              ? prefs.getString(_keyForPrefs(prefs, _lastStateKey))
               : semesterSyncRecord != null
               ? 'success'
               : 'idle',
       message:
           stateMatchesActive
-              ? prefs.getString(_lastMessageKey)
+              ? prefs.getString(_keyForPrefs(prefs, _lastMessageKey))
               : semesterSyncRecord != null
               ? '当前学期已同步 ${semesterSyncRecord.count} 门课程'
               : '当前学期未同步',
-      lastError: stateMatchesActive ? prefs.getString(_lastErrorKey) : null,
-      lastSource: stateMatchesActive ? prefs.getString(_lastSourceKey) : null,
+      lastError:
+          stateMatchesActive
+              ? prefs.getString(_keyForPrefs(prefs, _lastErrorKey))
+              : null,
+      lastSource:
+          stateMatchesActive
+              ? prefs.getString(_keyForPrefs(prefs, _lastSourceKey))
+              : null,
       lastDiffSummary:
-          stateMatchesActive ? prefs.getString(_lastDiffSummaryKey) : null,
+          stateMatchesActive
+              ? prefs.getString(_keyForPrefs(prefs, _lastDiffSummaryKey))
+              : null,
       semesterCode: resolvedSemester,
       stateSemesterCode: stateSemesterCode,
       cookieSnapshot: await loadCookieSnapshot(),
-      rawScheduleJson: prefs.getString(_lastScheduleJsonKey),
+      rawScheduleJson: prefs.getString(
+        _keyForPrefs(prefs, _lastScheduleJsonKey),
+      ),
       semesterSyncRecord: semesterSyncRecord,
     );
   }
@@ -559,48 +620,65 @@ class AppStorage {
     int? customIntervalMinutes,
   }) async {
     final prefs = await _prefs;
-    await prefs.setString(_frequencyKey, frequency);
+    await prefs.setString(_keyForPrefs(prefs, _frequencyKey), frequency);
+    final customIntervalMinutesKey = _keyForPrefs(
+      prefs,
+      _customIntervalMinutesKey,
+    );
     if (customIntervalMinutes != null) {
-      await prefs.setInt(_customIntervalMinutesKey, customIntervalMinutes);
+      await prefs.setInt(customIntervalMinutesKey, customIntervalMinutes);
     } else if (frequency != 'custom') {
-      await prefs.remove(_customIntervalMinutesKey);
+      await prefs.remove(customIntervalMinutesKey);
     }
   }
 
   Future<void> applyAutoSyncStatusPatch(AutoSyncStatusPatch patch) async {
     if (!patch.hasAnyChange) return;
     final prefs = await _prefs;
+    final lastStateKey = _keyForPrefs(prefs, _lastStateKey);
+    final lastMessageKey = _keyForPrefs(prefs, _lastMessageKey);
+    final lastSourceKey = _keyForPrefs(prefs, _lastSourceKey);
+    final lastDiffSummaryKey = _keyForPrefs(prefs, _lastDiffSummaryKey);
+    final lastErrorKey = _keyForPrefs(prefs, _lastErrorKey);
+    final lastFetchTimeKey = _keyForPrefs(prefs, _lastFetchTimeKey);
+    final lastAttemptTimeKey = _keyForPrefs(prefs, _lastAttemptTimeKey);
+    final lastStateSemesterCodeKey = _keyForPrefs(
+      prefs,
+      _lastStateSemesterCodeKey,
+    );
+    final nextSyncTimeKey = _keyForPrefs(prefs, _nextSyncTimeKey);
+    final cookieSnapshotKey = _keyForPrefs(prefs, _cookieSnapshotKey);
     final resolvedSemester =
         patch.semesterCode?.trim().isNotEmpty == true
             ? patch.semesterCode!.trim()
             : _readActiveSemesterCode(prefs);
 
-    await _writeOptionalString(prefs, _lastStateKey, patch.state);
-    await _writeOptionalString(prefs, _lastMessageKey, patch.message);
-    await _writeOptionalString(prefs, _lastSourceKey, patch.source);
+    await _writeOptionalString(prefs, lastStateKey, patch.state);
+    await _writeOptionalString(prefs, lastMessageKey, patch.message);
+    await _writeOptionalString(prefs, lastSourceKey, patch.source);
 
     await _writeOrClearString(
       prefs,
-      _lastDiffSummaryKey,
+      lastDiffSummaryKey,
       value: patch.diffSummary,
       clear: patch.clearDiffSummary,
     );
     await _writeOrClearString(
       prefs,
-      _lastErrorKey,
+      lastErrorKey,
       value: patch.error,
       clear: patch.clearError,
     );
 
     if (patch.lastFetchTime != null) {
       await prefs.setString(
-        _lastFetchTimeKey,
+        lastFetchTimeKey,
         patch.lastFetchTime!.toIso8601String(),
       );
     }
 
     if (resolvedSemester != null && resolvedSemester.isNotEmpty) {
-      await prefs.setString(_lastStateSemesterCodeKey, resolvedSemester);
+      await prefs.setString(lastStateSemesterCodeKey, resolvedSemester);
     } else if (patch.state != null ||
         patch.message != null ||
         patch.source != null ||
@@ -610,26 +688,32 @@ class AppStorage {
         patch.clearDiffSummary ||
         patch.lastFetchTime != null ||
         patch.lastAttemptTime != null) {
-      await prefs.remove(_lastStateSemesterCodeKey);
+      await prefs.remove(lastStateSemesterCodeKey);
     }
 
     if (patch.lastAttemptTime != null) {
       await prefs.setString(
-        _lastAttemptTimeKey,
+        lastAttemptTimeKey,
         patch.lastAttemptTime!.toIso8601String(),
       );
     }
 
     await _writeOrClearString(
       prefs,
-      _nextSyncTimeKey,
+      nextSyncTimeKey,
       value: patch.nextSyncTime?.toIso8601String(),
       clear: patch.clearNextSyncTime,
     );
 
     if (patch.cookieSnapshot != null) {
-      await _persistCookieSnapshot(patch.cookieSnapshot!);
-      await prefs.remove(_cookieSnapshotKey);
+      // #C3: persist the cookie under the source the patch was created for
+      // (not whatever source is active at write time). Falls back to the
+      // active source only when the patch did not specify one.
+      await _persistCookieSnapshot(
+        patch.cookieSnapshot!,
+        overrideSource: patch.cookieSource,
+      );
+      await prefs.remove(cookieSnapshotKey);
     }
   }
 
@@ -650,6 +734,7 @@ class AppStorage {
     DateTime? nextSyncTime,
     bool clearNextSyncTime = false,
     String? cookieSnapshot,
+    ScheduleSource? cookieSource,
   }) {
     return applyAutoSyncStatusPatch(
       AutoSyncStatusPatch(
@@ -660,6 +745,7 @@ class AppStorage {
         error: error,
         semesterCode: semesterCode,
         cookieSnapshot: cookieSnapshot,
+        cookieSource: cookieSource,
         lastFetchTime: lastFetchTime,
         lastAttemptTime: lastAttemptTime,
         nextSyncTime: nextSyncTime,
@@ -694,50 +780,68 @@ class AppStorage {
 
   Future<void> saveLastFetchTime(DateTime time) async {
     final prefs = await _prefs;
-    await prefs.setString(_lastFetchTimeKey, time.toIso8601String());
+    await prefs.setString(
+      _keyForPrefs(prefs, _lastFetchTimeKey),
+      time.toIso8601String(),
+    );
   }
 
   Future<void> saveCookieSnapshot(String cookie) async {
-    await _cookieSnapshotStore.persist(cookie);
     final prefs = await _prefs;
-    await prefs.remove(_cookieSnapshotKey);
-    await prefs.remove(_syncInvalidationFlagKey);
+    final source = _readActiveScheduleSource(prefs);
+    await _cookieSnapshotStore.persist(cookie, source: source);
+    await prefs.remove(_sourceScopedKey(_cookieSnapshotKey, source));
+    await prefs.remove(_sourceScopedKey(_syncInvalidationFlagKey, source));
   }
 
   Future<bool> loadSyncInvalidationFlag() async {
     final prefs = await _reloadedPrefs();
-    return prefs.getBool(_syncInvalidationFlagKey) ?? false;
+    return prefs.getBool(_keyForPrefs(prefs, _syncInvalidationFlagKey)) ??
+        false;
   }
 
   Future<void> setSyncInvalidationFlag(bool value) async {
     final prefs = await _prefs;
+    final syncInvalidationFlagKey = _keyForPrefs(
+      prefs,
+      _syncInvalidationFlagKey,
+    );
     if (value) {
-      await prefs.setBool(_syncInvalidationFlagKey, true);
+      await prefs.setBool(syncInvalidationFlagKey, true);
       return;
     }
-    await prefs.remove(_syncInvalidationFlagKey);
+    await prefs.remove(syncInvalidationFlagKey);
   }
 
   Future<void> clearSyncInvalidationFlag() => setSyncInvalidationFlag(false);
 
   Future<bool> loadSyncWritingLock() async {
     final prefs = await _reloadedPrefs();
-    return prefs.getBool(_syncWritingLockKey) ?? false;
+    return prefs.getBool(_keyForPrefs(prefs, _syncWritingLockKey)) ?? false;
   }
 
   Future<void> setSyncWritingLock(bool value) async {
     final prefs = await _prefs;
+    final syncWritingLockKey = _keyForPrefs(prefs, _syncWritingLockKey);
     if (value) {
-      await prefs.setBool(_syncWritingLockKey, true);
+      await prefs.setBool(syncWritingLockKey, true);
       return;
     }
-    await prefs.remove(_syncWritingLockKey);
+    await prefs.remove(syncWritingLockKey);
   }
 
-  Future<String?> loadCookieSnapshot() => _cookieSnapshotStore.load();
+  Future<String?> loadCookieSnapshot() async {
+    final prefs = await _prefs;
+    return _cookieSnapshotStore.load(source: _readActiveScheduleSource(prefs));
+  }
 
-  Future<void> clearCookieSnapshot({bool strict = false}) =>
-      _cookieSnapshotStore.clear(strict: strict);
+  Future<void> clearCookieSnapshot({bool strict = false}) async {
+    final prefs = await _prefs;
+    await _cookieSnapshotStore.clear(
+      strict: strict,
+      source: _readActiveScheduleSource(prefs),
+    );
+  }
 
   Future<void> saveStudentId(String studentId) async {
     await _secureStorage.write(key: _studentIdKey, value: studentId);
@@ -811,17 +915,33 @@ class AppStorage {
   }
 
   Future<SharedPreferences> _reloadedPrefs() async {
+    // #P2: previously this unconditionally called `prefs.reload()` on
+    // Android, which re-parses the entire on-disk XML file (archive,
+    // rawScheduleJson, cookie, etc.) on EVERY read. With ~6+ reads on
+    // the startup path alone, this dominates cold-start time.
+    //
+    // SharedPreferences already maintains an in-memory cache that is
+    // updated by every setX() call (including the writes this class
+    // performs). Within-process reads therefore see the freshest values
+    // without reload().
+    //
+    // Cross-process writes from the native side (e.g. AutoSyncScheduler
+    // setting sync_invalidation_flag from a BroadcastReceiver) are picked
+    // up on the next app launch, or by callers that explicitly call
+    // [SharedPreferences.reload] (see [saveSemesterSyncRecord] and the
+    // reminder record flow which already do this).
     final prefs = await _prefs;
-    if (_isAndroid) await prefs.reload();
     return prefs;
   }
 
   String? _readSemesterCode(SharedPreferences prefs) {
-    return prefs.getString(_semesterKey) ?? prefs.getString(_legacySemesterKey);
+    return prefs.getString(_keyForPrefs(prefs, _semesterKey)) ??
+        prefs.getString(_keyForPrefs(prefs, _legacySemesterKey));
   }
 
   String? _readActiveSemesterCode(SharedPreferences prefs) {
-    return prefs.getString(_activeSemesterKey) ?? _readSemesterCode(prefs);
+    return prefs.getString(_keyForPrefs(prefs, _activeSemesterKey)) ??
+        _readSemesterCode(prefs);
   }
 
   Future<void> _applyActiveSemesterSnapshot(
@@ -829,31 +949,36 @@ class AppStorage {
     String? semesterCode,
     Map<String, dynamic>? entry,
   }) async {
+    final activeSemesterKey = _keyForPrefs(prefs, _activeSemesterKey);
+    final semesterKey = _keyForPrefs(prefs, _semesterKey);
+    final legacySemesterKey = _keyForPrefs(prefs, _legacySemesterKey);
+    final lastScheduleJsonKey = _keyForPrefs(prefs, _lastScheduleJsonKey);
+    final coursesKey = _keyForPrefs(prefs, _coursesKey);
     if (semesterCode == null || semesterCode.isEmpty) {
-      await prefs.remove(_activeSemesterKey);
-      await prefs.remove(_semesterKey);
-      await prefs.remove(_legacySemesterKey);
-      await prefs.remove(_lastScheduleJsonKey);
-      await prefs.remove(_coursesKey);
+      await prefs.remove(activeSemesterKey);
+      await prefs.remove(semesterKey);
+      await prefs.remove(legacySemesterKey);
+      await prefs.remove(lastScheduleJsonKey);
+      await prefs.remove(coursesKey);
       return;
     }
 
-    await prefs.setString(_activeSemesterKey, semesterCode);
-    await prefs.setString(_semesterKey, semesterCode);
-    await prefs.setString(_legacySemesterKey, semesterCode);
+    await prefs.setString(activeSemesterKey, semesterCode);
+    await prefs.setString(semesterKey, semesterCode);
+    await prefs.setString(legacySemesterKey, semesterCode);
 
     final rawScheduleJson = entry?['rawScheduleJson'] as String?;
     if (rawScheduleJson != null && rawScheduleJson.isNotEmpty) {
-      await prefs.setString(_lastScheduleJsonKey, rawScheduleJson);
+      await prefs.setString(lastScheduleJsonKey, rawScheduleJson);
     } else {
-      await prefs.remove(_lastScheduleJsonKey);
+      await prefs.remove(lastScheduleJsonKey);
     }
 
     final mirroredCourses = AppStorageCodec.encodeMirroredCourses(entry);
     if (mirroredCourses != null) {
-      await prefs.setStringList(_coursesKey, mirroredCourses);
+      await prefs.setStringList(coursesKey, mirroredCourses);
     } else {
-      await prefs.remove(_coursesKey);
+      await prefs.remove(coursesKey);
     }
   }
 
@@ -861,7 +986,7 @@ class AppStorage {
     SharedPreferences prefs,
   ) async {
     return AppStorageCodec.decodeScheduleArchiveMap(
-      prefs.getString(_scheduleArchiveKey),
+      prefs.getString(_keyForPrefs(prefs, _scheduleArchiveKey)),
     );
   }
 
@@ -873,16 +998,23 @@ class AppStorage {
     if (resolvedSemester == null || resolvedSemester.isEmpty) {
       return;
     }
+    final semesterSyncRecordsKey = _keyForPrefs(prefs, _semesterSyncRecordsKey);
+    final lastFetchTimeKey = _keyForPrefs(prefs, _lastFetchTimeKey);
+    final coursesKey = _keyForPrefs(prefs, _coursesKey);
+    final lastStateSemesterCodeKey = _keyForPrefs(
+      prefs,
+      _lastStateSemesterCodeKey,
+    );
 
     final records = AppStorageCodec.decodeSemesterSyncRecordMap(
-      prefs.getString(_semesterSyncRecordsKey),
+      prefs.getString(semesterSyncRecordsKey),
     );
     if (records.containsKey(resolvedSemester)) {
       return;
     }
 
     final lastFetchTime = AppStorageCodec.readTime(
-      prefs.getString(_lastFetchTimeKey),
+      prefs.getString(lastFetchTimeKey),
     );
     if (lastFetchTime == null) {
       return;
@@ -896,46 +1028,55 @@ class AppStorage {
     final count =
         storedSemester?.courses.length ??
         AppStorageCodec.decodeGlobalCourseMirror(
-          prefs.getStringList(_coursesKey),
+          prefs.getStringList(coursesKey),
         ).length;
     records[resolvedSemester] = SemesterSyncRecord(
       count: count,
       lastSyncTime: lastFetchTime,
     );
     await prefs.setString(
-      _semesterSyncRecordsKey,
+      semesterSyncRecordsKey,
       AppStorageCodec.encodeSemesterSyncRecordMap(records),
     );
-    await prefs.setString(_lastStateSemesterCodeKey, resolvedSemester);
+    await prefs.setString(lastStateSemesterCodeKey, resolvedSemester);
   }
 
   Future<bool> _migrateHasSyncedAtLeastOneSemester(
     SharedPreferences prefs,
   ) async {
+    final hasSyncedKey = _keyForPrefs(prefs, _hasSyncedAtLeastOneSemesterKey);
     final hasSemesterArchives =
         AppStorageCodec.decodeScheduleArchiveMap(
-          prefs.getString(_scheduleArchiveKey),
+          prefs.getString(_keyForPrefs(prefs, _scheduleArchiveKey)),
         ).isNotEmpty;
     final hasSyncRecords =
         AppStorageCodec.decodeSemesterSyncRecordMap(
-          prefs.getString(_semesterSyncRecordsKey),
+          prefs.getString(_keyForPrefs(prefs, _semesterSyncRecordsKey)),
         ).isNotEmpty;
     final hasSuccessfulFetch =
-        AppStorageCodec.readTime(prefs.getString(_lastFetchTimeKey)) != null;
-    final hasSuccessfulState = prefs.getString(_lastStateKey) == 'success';
+        AppStorageCodec.readTime(
+          prefs.getString(_keyForPrefs(prefs, _lastFetchTimeKey)),
+        ) !=
+        null;
+    final hasSuccessfulState =
+        prefs.getString(_keyForPrefs(prefs, _lastStateKey)) == 'success';
 
     final migrated =
         hasSemesterArchives ||
         hasSyncRecords ||
         hasSuccessfulFetch ||
         hasSuccessfulState;
-    await prefs.setBool(_hasSyncedAtLeastOneSemesterKey, migrated);
+    await prefs.setBool(hasSyncedKey, migrated);
     return migrated;
   }
 
-  Future<void> _persistCookieSnapshot(String cookie) async {
-    await _cookieSnapshotStore.persist(cookie);
+  Future<void> _persistCookieSnapshot(
+    String cookie, {
+    ScheduleSource? overrideSource,
+  }) async {
     final prefs = await _prefs;
-    await prefs.remove(_syncInvalidationFlagKey);
+    final source = overrideSource ?? _readActiveScheduleSource(prefs);
+    await _cookieSnapshotStore.persist(cookie, source: source);
+    await prefs.remove(_sourceScopedKey(_syncInvalidationFlagKey, source));
   }
 }

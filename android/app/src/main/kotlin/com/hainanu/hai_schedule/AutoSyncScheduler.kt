@@ -68,8 +68,10 @@ class AutoSyncScheduler : BroadcastReceiver() {
                         } else {
                             cancel(context)
                             synchronized(PREFS_WRITE_LOCK) {
-                                flutterPrefs(context).edit()
-                                    .remove(flutterKey(KEY_NEXT_SYNC))
+                                val prefs = flutterPrefs(context)
+                                val source = activeSource(prefs)
+                                prefs.edit()
+                                    .remove(flutterKey(KEY_NEXT_SYNC, source))
                                     .commit()
                             }
                         }
@@ -99,12 +101,39 @@ class AutoSyncScheduler : BroadcastReceiver() {
 
         private const val BASE_URL = "https://ehall.hainanu.edu.cn"
         private const val INDEX_URL = "https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/*default/index.do"
+
+        /**
+         * Hosts the background re-login is allowed to POST credentials to.
+         * Anything outside this list is rejected as a defence-in-depth measure
+         * against malicious or MITM'd login pages that inject a different
+         * <form action="..."> URL. (#S1)
+         */
+        private val ALLOWED_LOGIN_HOSTS: Set<String> = setOf(
+            "ehall.hainanu.edu.cn",
+            "authserver.hainanu.edu.cn",
+        )
+
+        /**
+         * Returns true if [url]'s host is in [ALLOWED_LOGIN_HOSTS] (case
+         * insensitive, port-stripped). Null/blank/unparseable input is
+         * treated as not allowed.
+         */
+        private fun isAllowedLoginHost(url: String?): Boolean {
+            if (url.isNullOrBlank()) return false
+            return try {
+                val host = java.net.URI(url).host?.lowercase(Locale.ROOT)
+                host != null && host in ALLOWED_LOGIN_HOSTS
+            } catch (_: Exception) {
+                false
+            }
+        }
         private const val API_URL = "https://ehall.hainanu.edu.cn/gsapp/sys/wdkbapp/modules/xskcb/xsjxrwcx.do"
         private const val WEBVIEW_USER_AGENT = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
 
         private const val PREFS_FLUTTER = "FlutterSharedPreferences"
         private const val KEY_FREQUENCY = "auto_sync_frequency"
         private const val KEY_CUSTOM_INTERVAL_MINUTES = "auto_sync_custom_interval_minutes"
+        private const val KEY_ACTIVE_SOURCE = "active_schedule_source"
         private const val KEY_LAST_FETCH = "last_fetch_time"
         private const val KEY_LAST_ATTEMPT = "last_auto_sync_attempt_time"
         private const val KEY_LAST_STATE = "last_auto_sync_state"
@@ -132,6 +161,28 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private const val DEFAULT_CUSTOM_INTERVAL_MINUTES = 12 * 60
         private const val MIN_CUSTOM_INTERVAL_MINUTES = 60
         private const val MAX_CUSTOM_INTERVAL_MINUTES = 30 * 24 * 60
+        private const val SOURCE_UNDERGRADUATE = "undergraduate"
+        private const val SOURCE_GRADUATE = "graduate"
+
+        private fun normalizeSource(source: String?): String {
+            return if (source == SOURCE_UNDERGRADUATE) SOURCE_UNDERGRADUATE else SOURCE_GRADUATE
+        }
+
+        private fun activeSource(prefs: SharedPreferences): String {
+            return normalizeSource(prefs.getString(flutterKey(KEY_ACTIVE_SOURCE), SOURCE_GRADUATE))
+        }
+
+        private fun resolveSource(prefs: SharedPreferences, source: String?): String {
+            return source?.let(::normalizeSource) ?: activeSource(prefs)
+        }
+
+        private fun sourceScopedKey(key: String, source: String): String {
+            return if (source == SOURCE_UNDERGRADUATE) "undergraduate.$key" else key
+        }
+
+        private fun flutterKey(key: String, source: String): String {
+            return "flutter.${sourceScopedKey(key, source)}"
+        }
 
         fun configure(
             context: Context,
@@ -140,24 +191,26 @@ class AutoSyncScheduler : BroadcastReceiver() {
             customIntervalMinutes: Int?,
             afterSuccessfulSync: Boolean,
             preserveExistingCustomSchedule: Boolean,
+            source: String? = null,
         ): String? {
             val prefs = flutterPrefs(context)
-            prefs.edit().putString(flutterKey(KEY_FREQUENCY), frequency).apply()
+            val resolvedSource = resolveSource(prefs, source)
+            prefs.edit().putString(flutterKey(KEY_FREQUENCY, resolvedSource), frequency).apply()
             if (customIntervalMinutes != null) {
                 prefs.edit()
-                    .putInt(flutterKey(KEY_CUSTOM_INTERVAL_MINUTES), customIntervalMinutes)
+                    .putInt(flutterKey(KEY_CUSTOM_INTERVAL_MINUTES, resolvedSource), customIntervalMinutes)
                     .apply()
             } else if (frequency != "custom") {
-                prefs.edit().remove(flutterKey(KEY_CUSTOM_INTERVAL_MINUTES)).apply()
+                prefs.edit().remove(flutterKey(KEY_CUSTOM_INTERVAL_MINUTES, resolvedSource)).apply()
             }
 
-            if (!enabled || frequency == "manual") {
-                cancel(context, clearNextSyncTime = true)
+            if (resolvedSource == SOURCE_UNDERGRADUATE || !enabled || frequency == "manual") {
+                cancel(context, clearNextSyncTime = true, source = resolvedSource)
                 return null
             }
 
-            if (isInvalidated(context)) {
-                cancel(context, clearNextSyncTime = true)
+            if (isInvalidated(context, resolvedSource)) {
+                cancel(context, clearNextSyncTime = true, source = resolvedSource)
                 return null
             }
 
@@ -167,6 +220,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 customIntervalMinutes = customIntervalMinutes,
                 afterSuccessfulSync = afterSuccessfulSync,
                 preserveExistingCustomSchedule = preserveExistingCustomSchedule,
+                source = resolvedSource,
             )
         }
 
@@ -176,23 +230,29 @@ class AutoSyncScheduler : BroadcastReceiver() {
             customIntervalMinutes: Int? = null,
             afterSuccessfulSync: Boolean,
             preserveExistingCustomSchedule: Boolean = true,
+            source: String? = null,
         ): String? {
             val prefs = flutterPrefs(context)
-            if (isInvalidated(context)) {
-                cancel(context, clearNextSyncTime = true)
+            val resolvedSource = resolveSource(prefs, source)
+            if (resolvedSource == SOURCE_UNDERGRADUATE) {
+                cancel(context, clearNextSyncTime = true, source = resolvedSource)
+                return null
+            }
+            if (isInvalidated(context, resolvedSource)) {
+                cancel(context, clearNextSyncTime = true, source = resolvedSource)
                 return null
             }
             val resolvedFrequency = frequency
-                ?: prefs.getString(flutterKey(KEY_FREQUENCY), "daily")
+                ?: prefs.getString(flutterKey(KEY_FREQUENCY, resolvedSource), "daily")
                 ?: "daily"
             val resolvedCustomIntervalMinutes = customIntervalMinutes
                 ?: prefs.getInt(
-                    flutterKey(KEY_CUSTOM_INTERVAL_MINUTES),
+                    flutterKey(KEY_CUSTOM_INTERVAL_MINUTES, resolvedSource),
                     DEFAULT_CUSTOM_INTERVAL_MINUTES,
                 )
 
             if (resolvedFrequency == "manual") {
-                cancel(context, clearNextSyncTime = true)
+                cancel(context, clearNextSyncTime = true, source = resolvedSource)
                 return null
             }
 
@@ -202,6 +262,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 customIntervalMinutes = resolvedCustomIntervalMinutes,
                 afterSuccessfulSync = afterSuccessfulSync,
                 preserveExistingCustomSchedule = preserveExistingCustomSchedule,
+                source = resolvedSource,
             )
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val pendingIntent = createPendingIntent(context)
@@ -217,18 +278,20 @@ class AutoSyncScheduler : BroadcastReceiver() {
             )
 
             val nextIso = toIsoString(triggerAt)
-            prefs.edit().putString(flutterKey(KEY_NEXT_SYNC), nextIso).apply()
+            prefs.edit().putString(flutterKey(KEY_NEXT_SYNC, resolvedSource), nextIso).apply()
             logd("后台同步已调度: $resolvedFrequency at $nextIso")
             return nextIso
         }
 
-        fun cancel(context: Context, clearNextSyncTime: Boolean = false) {
+        fun cancel(context: Context, clearNextSyncTime: Boolean = false, source: String? = null) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             alarmManager.cancel(createPendingIntent(context))
             if (clearNextSyncTime) {
                 synchronized(PREFS_WRITE_LOCK) {
-                    flutterPrefs(context).edit()
-                        .remove(flutterKey(KEY_NEXT_SYNC))
+                    val prefs = flutterPrefs(context)
+                    val resolvedSource = resolveSource(prefs, source)
+                    prefs.edit()
+                        .remove(flutterKey(KEY_NEXT_SYNC, resolvedSource))
                         .commit()
                 }
             }
@@ -239,26 +302,42 @@ class AutoSyncScheduler : BroadcastReceiver() {
             retryDepth: Int = 0,
         ): SyncExecutionResult {
             logd("开始执行后台同步")
-            if (isInvalidated(context)) {
+            val prefs = flutterPrefs(context)
+            val source = activeSource(prefs)
+            val semester = prefs.getString(flutterKey(KEY_ACTIVE_SEMESTER, source), null)
+                ?: prefs.getString(flutterKey(KEY_LAST_SEMESTER, source), null)
+                ?: prefs.getString(flutterKey(KEY_LEGACY_SEMESTER, source), null)
+            if (source == SOURCE_UNDERGRADUATE) {
+                logd("后台同步终止: 本科课表使用前台登录抓取链路")
+                writeState(
+                    context = context,
+                    state = "login_required",
+                    message = "本科课表请打开应用前台登录刷新",
+                    error = null,
+                    semester = semester,
+                    source = source,
+                )
+                return SyncExecutionResult(
+                    succeeded = false,
+                    shouldReschedule = false,
+                )
+            }
+            if (isInvalidated(context, source)) {
                 logd("后台同步终止: 执行阶段命中凭据失效标记")
                 return SyncExecutionResult(
                     succeeded = false,
                     shouldReschedule = false,
                 )
             }
-            val prefs = flutterPrefs(context)
-            val semester = prefs.getString(flutterKey(KEY_ACTIVE_SEMESTER), null)
-                ?: prefs.getString(flutterKey(KEY_LAST_SEMESTER), null)
-                ?: prefs.getString(flutterKey(KEY_LEGACY_SEMESTER), null)
             logd("当前目标学期: ${semester ?: "<empty>"}")
 
             synchronized(PREFS_WRITE_LOCK) {
                 prefs.edit()
-                    .putString(flutterKey(KEY_LAST_ATTEMPT), toIsoString(System.currentTimeMillis()))
-                    .putString(flutterKey(KEY_LAST_STATE), "syncing")
-                    .putString(flutterKey(KEY_LAST_SOURCE), "background")
-                    .putString(flutterKey(KEY_LAST_MESSAGE), "后台正在同步课表...")
-                    .putString(flutterKey(KEY_LAST_STATE_SEMESTER), semester)
+                    .putString(flutterKey(KEY_LAST_ATTEMPT, source), toIsoString(System.currentTimeMillis()))
+                    .putString(flutterKey(KEY_LAST_STATE, source), "syncing")
+                    .putString(flutterKey(KEY_LAST_SOURCE, source), "background")
+                    .putString(flutterKey(KEY_LAST_MESSAGE, source), "后台正在同步课表...")
+                    .putString(flutterKey(KEY_LAST_STATE_SEMESTER, source), semester)
                     .commit()
             }
 
@@ -270,6 +349,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     message = "缺少学期信息，请先手动登录抓取一次",
                     error = null,
                     semester = semester,
+                    source = source,
                 )
                 return SyncExecutionResult(succeeded = false)
             }
@@ -277,21 +357,21 @@ class AutoSyncScheduler : BroadcastReceiver() {
             val cookie = try {
                 val liveCookie = readMergedLiveCookie()
                 if (!liveCookie.isNullOrBlank()) {
-                    persistCookieSnapshot(context, prefs, liveCookie)
+                    persistCookieSnapshot(context, prefs, liveCookie, source)
                     liveCookie
                 } else {
-                    loadStoredCookieSnapshot(context, prefs)
+                    loadStoredCookieSnapshot(context, prefs, source)
                 }
             } catch (t: Throwable) {
-                loadStoredCookieSnapshot(context, prefs)
+                loadStoredCookieSnapshot(context, prefs, source)
             }
 
             if (cookie.isNullOrBlank()) {
                 logd("未读取到有效 cookie，尝试后台续登")
                 val reloginCookie = try {
-                    tryBackgroundRelogin(context)
+                    tryBackgroundRelogin(context, source)
                 } catch (e: InvalidCredentialsException) {
-                    handleInvalidCredentials(context, prefs, semester, e.message)
+                    handleInvalidCredentials(context, prefs, semester, e.message, source)
                     return SyncExecutionResult(
                         succeeded = false,
                         shouldReschedule = false,
@@ -299,7 +379,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 }
                 if (!reloginCookie.isNullOrBlank()) {
                     logd("后台续登成功，准备重试同步")
-                    persistCookieSnapshot(context, prefs, reloginCookie)
+                    persistCookieSnapshot(context, prefs, reloginCookie, source)
                     if (retryDepth >= 1) {
                         logd("后台同步重试次数已达上限，终止重试")
                         writeState(
@@ -308,19 +388,21 @@ class AutoSyncScheduler : BroadcastReceiver() {
                             message = "后台同步重试次数过多，请手动刷新",
                             error = null,
                             semester = semester,
+                            source = source,
                         )
                         return SyncExecutionResult(succeeded = false)
                     }
                     return performSync(context, retryDepth = retryDepth + 1)
                 }
                 logd("后台续登失败，无法继续同步")
-                clearPersistedCookieSnapshot(context, prefs)
+                clearPersistedCookieSnapshot(context, prefs, source)
                 writeState(
                     context,
                     state = "login_required",
                     message = "后台未读取到有效登录态，请先登录并刷新课表一次",
                     error = null,
                     semester = semester,
+                    source = source,
                 )
                 return SyncExecutionResult(succeeded = false)
             }
@@ -332,9 +414,9 @@ class AutoSyncScheduler : BroadcastReceiver() {
             if (code != "0") {
                 logd("现有登录态无效，尝试后台续登后重试")
                 val reloginCookie = try {
-                    tryBackgroundRelogin(context)
+                    tryBackgroundRelogin(context, source)
                 } catch (e: InvalidCredentialsException) {
-                    handleInvalidCredentials(context, prefs, semester, e.message)
+                    handleInvalidCredentials(context, prefs, semester, e.message, source)
                     return SyncExecutionResult(
                         succeeded = false,
                         shouldReschedule = false,
@@ -342,7 +424,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 }
                 if (!reloginCookie.isNullOrBlank()) {
                     logd("后台续登成功，正在重试课表接口")
-                    persistCookieSnapshot(context, prefs, reloginCookie)
+                    persistCookieSnapshot(context, prefs, reloginCookie, source)
                     val retryJson = fetchSchedulePayload(reloginCookie, semester)
                     val retryText = retryJson.toString()
                     logd("重试课表接口返回 code=${retryJson.optString("code")}")
@@ -354,18 +436,20 @@ class AutoSyncScheduler : BroadcastReceiver() {
                                 semester = semester,
                                 root = retryJson,
                                 rawScheduleJson = retryText,
+                                source = source,
                             ),
                         )
                     }
                 }
                 logd("后台同步失败: 登录态仍无效")
-                clearPersistedCookieSnapshot(context, prefs)
+                clearPersistedCookieSnapshot(context, prefs, source)
                 writeState(
                     context,
                     state = "login_required",
                     message = DEFAULT_LOGIN_EXPIRED_MESSAGE,
                     error = "code=$code",
                     semester = semester,
+                    source = source,
                 )
                 return SyncExecutionResult(succeeded = false)
             }
@@ -377,6 +461,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     semester = semester,
                     root = json,
                     rawScheduleJson = responseText,
+                    source = source,
                 ),
             )
         }
@@ -387,25 +472,26 @@ class AutoSyncScheduler : BroadcastReceiver() {
             semester: String,
             root: JSONObject,
             rawScheduleJson: String,
+            source: String,
         ): Boolean {
             val courses = parseCourses(root)
-            val previousCourses = loadArchivedCourses(prefs, semester)
+            val previousCourses = loadArchivedCourses(prefs, semester, source)
             val diffSummary = buildCourseDiffSummary(previousCourses, courses)
             val message = buildSuccessMessage(courses.size, diffSummary)
             val nowIso = toIsoString(System.currentTimeMillis())
 
-            setSyncWritingLock(prefs, true)
+            setSyncWritingLock(prefs, true, source)
             try {
                 synchronized(PREFS_WRITE_LOCK) {
                     prefs.edit()
-                        .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), rawScheduleJson)
-                        .putString(flutterKey(KEY_LAST_FETCH), nowIso)
-                        .putString(flutterKey(KEY_LAST_STATE), "success")
-                        .putString(flutterKey(KEY_LAST_SOURCE), "background")
-                        .putString(flutterKey(KEY_LAST_MESSAGE), message)
-                        .putString(flutterKey(KEY_LAST_DIFF_SUMMARY), diffSummary)
-                        .putString(flutterKey(KEY_LAST_STATE_SEMESTER), semester)
-                        .remove(flutterKey(KEY_LAST_ERROR))
+                        .putString(flutterKey(KEY_LAST_SCHEDULE_JSON, source), rawScheduleJson)
+                        .putString(flutterKey(KEY_LAST_FETCH, source), nowIso)
+                        .putString(flutterKey(KEY_LAST_STATE, source), "success")
+                        .putString(flutterKey(KEY_LAST_SOURCE, source), "background")
+                        .putString(flutterKey(KEY_LAST_MESSAGE, source), message)
+                        .putString(flutterKey(KEY_LAST_DIFF_SUMMARY, source), diffSummary)
+                        .putString(flutterKey(KEY_LAST_STATE_SEMESTER, source), semester)
+                        .remove(flutterKey(KEY_LAST_ERROR, source))
                         .commit()
                 }
 
@@ -414,12 +500,13 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     semester = semester,
                     count = courses.size,
                     lastSyncTimeIso = nowIso,
+                    source = source,
                 )
-                persistScheduleArchive(context, semester, rawScheduleJson, courses)
+                persistScheduleArchive(context, semester, rawScheduleJson, courses, source)
             } finally {
-                setSyncWritingLock(prefs, false)
+                setSyncWritingLock(prefs, false, source)
             }
-            saveProjectionPayload(context, semester, courses)
+            saveProjectionPayload(context, semester, courses, source)
             ClassReminderScheduler.rebuildFromStoredProjection(context)
             ClassSilenceScheduler.rebuildFromStoredProjection(context)
             TodayScheduleWidgetProvider.refreshAll(context)
@@ -439,25 +526,28 @@ class AutoSyncScheduler : BroadcastReceiver() {
             message: String,
             error: String?,
             semester: String? = null,
+            source: String? = null,
         ) {
-            val editor = flutterPrefs(context).edit()
-                .putString(flutterKey(KEY_LAST_STATE), state)
-                .putString(flutterKey(KEY_LAST_SOURCE), "background")
-                .putString(flutterKey(KEY_LAST_MESSAGE), message)
+            val prefs = flutterPrefs(context)
+            val resolvedSource = resolveSource(prefs, source)
+            val editor = prefs.edit()
+                .putString(flutterKey(KEY_LAST_STATE, resolvedSource), state)
+                .putString(flutterKey(KEY_LAST_SOURCE, resolvedSource), "background")
+                .putString(flutterKey(KEY_LAST_MESSAGE, resolvedSource), message)
 
             if (!semester.isNullOrBlank()) {
-                editor.putString(flutterKey(KEY_LAST_STATE_SEMESTER), semester)
+                editor.putString(flutterKey(KEY_LAST_STATE_SEMESTER, resolvedSource), semester)
             } else {
-                editor.remove(flutterKey(KEY_LAST_STATE_SEMESTER))
+                editor.remove(flutterKey(KEY_LAST_STATE_SEMESTER, resolvedSource))
             }
 
             if (state != "success") {
-                editor.remove(flutterKey(KEY_LAST_DIFF_SUMMARY))
+                editor.remove(flutterKey(KEY_LAST_DIFF_SUMMARY, resolvedSource))
             }
             if (error.isNullOrBlank()) {
-                editor.remove(flutterKey(KEY_LAST_ERROR))
+                editor.remove(flutterKey(KEY_LAST_ERROR, resolvedSource))
             } else {
-                editor.putString(flutterKey(KEY_LAST_ERROR), error)
+                editor.putString(flutterKey(KEY_LAST_ERROR, resolvedSource), error)
             }
             synchronized(PREFS_WRITE_LOCK) {
                 editor.commit()
@@ -482,13 +572,14 @@ class AutoSyncScheduler : BroadcastReceiver() {
             context: Context,
             prefs: SharedPreferences,
             cookie: String,
+            source: String,
         ) {
-            NativeCredentialStore.saveCookieSnapshot(context, cookie)
+            NativeCredentialStore.saveCookieSnapshot(context, cookie, source)
             synchronized(PREFS_WRITE_LOCK) {
                 prefs.edit()
-                    .remove(flutterKey(KEY_COOKIE_SNAPSHOT))
-                    .remove(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED))
-                    .remove(flutterKey(KEY_SYNC_INVALIDATION_FLAG))
+                    .remove(flutterKey(KEY_COOKIE_SNAPSHOT, source))
+                    .remove(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED, source))
+                    .remove(flutterKey(KEY_SYNC_INVALIDATION_FLAG, source))
                     .commit()
             }
         }
@@ -496,12 +587,13 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private fun clearPersistedCookieSnapshot(
             context: Context,
             prefs: SharedPreferences,
+            source: String,
         ) {
-            NativeCredentialStore.clearCookieSnapshot(context)
+            NativeCredentialStore.clearCookieSnapshot(context, source)
             synchronized(PREFS_WRITE_LOCK) {
                 prefs.edit()
-                    .remove(flutterKey(KEY_COOKIE_SNAPSHOT))
-                    .putBoolean(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED), true)
+                    .remove(flutterKey(KEY_COOKIE_SNAPSHOT, source))
+                    .putBoolean(flutterKey(KEY_COOKIE_SNAPSHOT_INVALIDATED, source), true)
                     .commit()
             }
         }
@@ -509,21 +601,24 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private fun setSyncWritingLock(
             prefs: SharedPreferences,
             writing: Boolean,
+            source: String,
         ) {
             synchronized(PREFS_WRITE_LOCK) {
                 val editor = prefs.edit()
                 if (writing) {
-                    editor.putBoolean(flutterKey(KEY_SYNC_WRITING_LOCK), true)
+                    editor.putBoolean(flutterKey(KEY_SYNC_WRITING_LOCK, source), true)
                 } else {
-                    editor.remove(flutterKey(KEY_SYNC_WRITING_LOCK))
+                    editor.remove(flutterKey(KEY_SYNC_WRITING_LOCK, source))
                 }
                 editor.commit()
             }
         }
 
-        fun isInvalidated(context: Context): Boolean {
-            return flutterPrefs(context).getBoolean(
-                flutterKey(KEY_SYNC_INVALIDATION_FLAG),
+        fun isInvalidated(context: Context, source: String? = null): Boolean {
+            val prefs = flutterPrefs(context)
+            val resolvedSource = resolveSource(prefs, source)
+            return prefs.getBoolean(
+                flutterKey(KEY_SYNC_INVALIDATION_FLAG, resolvedSource),
                 false,
             )
         }
@@ -531,20 +626,21 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private fun loadStoredCookieSnapshot(
             context: Context,
             prefs: SharedPreferences,
+            source: String,
         ): String? {
-            val secure = NativeCredentialStore.loadCookieSnapshot(context)
+            val secure = NativeCredentialStore.loadCookieSnapshot(context, source)
             if (!secure.isNullOrBlank()) {
                 synchronized(PREFS_WRITE_LOCK) {
-                    prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT)).commit()
+                    prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT, source)).commit()
                 }
                 return secure
             }
 
-            val legacy = prefs.getString(flutterKey(KEY_COOKIE_SNAPSHOT), null)
+            val legacy = prefs.getString(flutterKey(KEY_COOKIE_SNAPSHOT, source), null)
             if (!legacy.isNullOrBlank()) {
-                NativeCredentialStore.saveCookieSnapshot(context, legacy)
+                NativeCredentialStore.saveCookieSnapshot(context, legacy, source)
                 synchronized(PREFS_WRITE_LOCK) {
-                    prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT)).commit()
+                    prefs.edit().remove(flutterKey(KEY_COOKIE_SNAPSHOT, source)).commit()
                 }
                 return legacy
             }
@@ -566,8 +662,8 @@ class AutoSyncScheduler : BroadcastReceiver() {
             return merged.ifBlank { null }
         }
 
-        private fun tryBackgroundRelogin(context: Context): String? {
-            val credential = NativeCredentialStore.load(context) ?: return null
+        private fun tryBackgroundRelogin(context: Context, source: String): String? {
+            val credential = NativeCredentialStore.load(context, source) ?: return null
             return try {
                 logd("读取到已保存凭据，开始后台续登")
                 val cookieJar = linkedMapOf<String, String>()
@@ -579,6 +675,16 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 logd("后台续登已获取登录页: ${loginPage.url}")
                 val form = parseLoginForm(loginPage.url, loginPage.body) ?: return null
                 logd("后台续登已解析登录表单: ${form.actionUrl}")
+
+                // Defence-in-depth: only POST credentials to allow-listed
+                // hosts. A MITM'd or rogue portal page may inject an arbitrary
+                // <form action="...">; the background re-login refuses to
+                // submit to any host that is not part of the university
+                // authserver surface. (#S1)
+                if (!isAllowedLoginHost(form.actionUrl)) {
+                    logd("后台续登拒绝:表单 action host 不在白名单内: ${form.actionUrl}")
+                    return null
+                }
 
                 val fields = LinkedHashMap(form.hiddenFields)
                 fields["username"] = credential.first
@@ -1003,10 +1109,11 @@ class AutoSyncScheduler : BroadcastReceiver() {
             semester: String,
             rawScheduleJson: String,
             courses: List<ParsedCourse>,
+            source: String,
         ) {
             val prefs = flutterPrefs(context)
             synchronized(PREFS_WRITE_LOCK) {
-                val archiveRaw = prefs.getString(flutterKey(KEY_SCHEDULE_ARCHIVE), null)
+                val archiveRaw = prefs.getString(flutterKey(KEY_SCHEDULE_ARCHIVE, source), null)
                 val archive = try {
                     if (archiveRaw.isNullOrBlank()) JSONObject() else JSONObject(archiveRaw)
                 } catch (_: Throwable) {
@@ -1024,11 +1131,11 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 archive.put(semester, entry)
 
                 prefs.edit()
-                    .putString(flutterKey(KEY_SCHEDULE_ARCHIVE), archive.toString())
-                    .putString(flutterKey(KEY_ACTIVE_SEMESTER), semester)
-                    .putString(flutterKey(KEY_LAST_SEMESTER), semester)
-                    .putString(flutterKey(KEY_LEGACY_SEMESTER), semester)
-                    .putString(flutterKey(KEY_LAST_SCHEDULE_JSON), rawScheduleJson)
+                    .putString(flutterKey(KEY_SCHEDULE_ARCHIVE, source), archive.toString())
+                    .putString(flutterKey(KEY_ACTIVE_SEMESTER, source), semester)
+                    .putString(flutterKey(KEY_LAST_SEMESTER, source), semester)
+                    .putString(flutterKey(KEY_LEGACY_SEMESTER, source), semester)
+                    .putString(flutterKey(KEY_LAST_SCHEDULE_JSON, source), rawScheduleJson)
                     .commit()
             }
         }
@@ -1038,9 +1145,10 @@ class AutoSyncScheduler : BroadcastReceiver() {
             semester: String,
             count: Int,
             lastSyncTimeIso: String,
+            source: String,
         ) {
             synchronized(PREFS_WRITE_LOCK) {
-                val raw = prefs.getString(flutterKey(KEY_SEMESTER_SYNC_RECORDS), null)
+                val raw = prefs.getString(flutterKey(KEY_SEMESTER_SYNC_RECORDS, source), null)
                 val records = try {
                     if (raw.isNullOrBlank()) JSONObject() else JSONObject(raw)
                 } catch (_: Throwable) {
@@ -1051,7 +1159,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                 entry.put("lastSyncTime", lastSyncTimeIso)
                 records.put(semester, entry)
                 prefs.edit()
-                    .putString(flutterKey(KEY_SEMESTER_SYNC_RECORDS), records.toString())
+                    .putString(flutterKey(KEY_SEMESTER_SYNC_RECORDS, source), records.toString())
                     .commit()
             }
         }
@@ -1061,14 +1169,15 @@ class AutoSyncScheduler : BroadcastReceiver() {
             prefs: SharedPreferences,
             semester: String,
             message: String?,
+            source: String,
         ) {
             Log.w(TAG, "后台续登检测到错误凭据，停止后续自动同步")
-            NativeCredentialStore.clear(context)
-            clearPersistedCookieSnapshot(context, prefs)
+            NativeCredentialStore.clear(context, source)
+            clearPersistedCookieSnapshot(context, prefs, source)
             synchronized(PREFS_WRITE_LOCK) {
-                prefs.edit().remove(flutterKey(KEY_NEXT_SYNC)).commit()
+                prefs.edit().remove(flutterKey(KEY_NEXT_SYNC, source)).commit()
             }
-            cancel(context)
+            cancel(context, source = source)
             writeState(
                 context = context,
                 state = "login_required",
@@ -1076,6 +1185,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     ?: invalidCredentialsMessage,
                 error = "invalid_credentials",
                 semester = semester,
+                source = source,
             )
         }
 
@@ -1083,30 +1193,33 @@ class AutoSyncScheduler : BroadcastReceiver() {
             context: Context,
             semester: String,
             rawScheduleJson: String,
+            source: String,
         ) {
             val courses = try {
                 parseCourses(JSONObject(rawScheduleJson))
             } catch (_: Throwable) {
                 emptyList()
             }
-            persistScheduleArchive(context, semester, rawScheduleJson, courses)
+            persistScheduleArchive(context, semester, rawScheduleJson, courses, source)
         }
 
         private fun saveProjectionPayload(
             context: Context,
             semester: String,
             courses: List<ParsedCourse>,
+            source: String,
         ) {
+            val prefs = flutterPrefs(context)
             val payload = ScheduleProjectionSupport.createPayload(
                 generatedAt = toIsoString(System.currentTimeMillis()),
                 semesterStart = ScheduleProjectionSupport.semesterStartForCode(semester),
                 totalWeeks = DEFAULT_TOTAL_WEEKS,
                 classTimes = ScheduleProjectionSupport.loadClassTimes(
-                    flutterPrefs(context).getString(flutterKey(KEY_SCHOOL_TIME_CONFIG), null),
+                    prefs.getString(flutterKey(KEY_SCHOOL_TIME_CONFIG, source), null),
                 ),
                 slots = buildProjectionSlots(courses),
                 overrides = ScheduleProjectionSupport.parseOverrides(
-                    flutterPrefs(context).getString(flutterKey(KEY_SCHEDULE_OVERRIDES), null),
+                    prefs.getString(flutterKey(KEY_SCHEDULE_OVERRIDES, source), null),
                     semester,
                 ),
             )
@@ -1144,8 +1257,9 @@ class AutoSyncScheduler : BroadcastReceiver() {
         private fun loadArchivedCourses(
             prefs: SharedPreferences,
             semester: String,
+            source: String,
         ): List<ParsedCourse> {
-            val archiveRaw = prefs.getString(flutterKey(KEY_SCHEDULE_ARCHIVE), null)
+            val archiveRaw = prefs.getString(flutterKey(KEY_SCHEDULE_ARCHIVE, source), null)
             val archive = try {
                 if (archiveRaw.isNullOrBlank()) JSONObject() else JSONObject(archiveRaw)
             } catch (_: Throwable) {
@@ -1231,6 +1345,7 @@ class AutoSyncScheduler : BroadcastReceiver() {
             customIntervalMinutes: Int?,
             afterSuccessfulSync: Boolean,
             preserveExistingCustomSchedule: Boolean,
+            source: String,
         ): Long {
             val now = Calendar.getInstance()
             if (frequency == "custom") {
@@ -1239,17 +1354,17 @@ class AutoSyncScheduler : BroadcastReceiver() {
                     normalizeCustomIntervalMinutes(customIntervalMinutes) * 60_000L
                 if (!afterSuccessfulSync && preserveExistingCustomSchedule) {
                     val existingNextMillis = parseIsoString(
-                        prefs.getString(flutterKey(KEY_NEXT_SYNC), null),
+                        prefs.getString(flutterKey(KEY_NEXT_SYNC, source), null),
                     )
                     if (existingNextMillis != null && existingNextMillis > nowMillis) {
                         return existingNextMillis
                     }
 
                     val lastFetchMillis = parseIsoString(
-                        prefs.getString(flutterKey(KEY_LAST_FETCH), null),
+                        prefs.getString(flutterKey(KEY_LAST_FETCH, source), null),
                     )
                     val lastAttemptMillis = parseIsoString(
-                        prefs.getString(flutterKey(KEY_LAST_ATTEMPT), null),
+                        prefs.getString(flutterKey(KEY_LAST_ATTEMPT, source), null),
                     )
                     val anchorMillis =
                         maxOf(lastFetchMillis ?: Long.MIN_VALUE, lastAttemptMillis ?: Long.MIN_VALUE)

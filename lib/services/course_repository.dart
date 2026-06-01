@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:hai_schedule/models/course.dart';
 import 'package:hai_schedule/models/schedule_parser.dart';
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/models/semester_option.dart';
+import 'package:hai_schedule/models/undergraduate_schedule_parser.dart';
 import 'package:hai_schedule/services/api_service.dart';
 import 'package:hai_schedule/services/app_storage.dart';
 import 'package:hai_schedule/services/portal_redirect_exception.dart';
@@ -68,10 +70,18 @@ class CourseRepository {
   Future<CourseFetchResult> syncCourse({
     required String semester,
     String? cookie,
+    ScheduleSource source = ScheduleSource.graduate,
     SemesterCatalogUpdateCallback? onSemesterCatalogUpdated,
   }) async {
     if (cookie != null && cookie.isNotEmpty) {
       updateCookie(cookie);
+    }
+
+    if (source.isUndergraduate) {
+      return fetchUndergraduateSchedule(
+        semester: semester,
+        onSemesterCatalogUpdated: onSemesterCatalogUpdated,
+      );
     }
 
     // 每次同步都主动拉取最新的学期目录，确保 provider 回调被调用、
@@ -80,6 +90,47 @@ class CourseRepository {
     await fetchSemesterCatalog(onCatalogUpdated: onSemesterCatalogUpdated);
 
     return fetchGraduateSchedule(semester: semester);
+  }
+
+  Future<CourseFetchResult> fetchUndergraduateSchedule({
+    required String semester,
+    String? cookie,
+    SemesterCatalogUpdateCallback? onSemesterCatalogUpdated,
+  }) async {
+    if (cookie != null && cookie.isNotEmpty) {
+      updateCookie(cookie);
+    }
+
+    final page = await _apiService.fetchUndergraduateSchedulePage(
+      semester: semester,
+    );
+    final parsed = UndergraduateScheduleParser.parseHtml(page.body);
+    final courses = parsed.courses;
+    if (courses.isEmpty) {
+      throw ApiException('未解析到课程数据，请检查是否有选课');
+    }
+
+    if (parsed.semesterOptions.isNotEmpty) {
+      await _storage.saveSemesterCatalog(parsed.semesterOptions);
+    }
+    // #C1: always notify the callback, even when no semester options were
+    // parsed. The graduate branch already does this unconditionally
+    // (syncCourse → fetchSemesterCatalog). Without this, after a successful
+    // undergrad sync the in-memory ScheduleProvider.knownSemesterCatalog
+    // can permanently lag behind disk.
+    if (onSemesterCatalogUpdated != null) {
+      await onSemesterCatalogUpdated(await _storage.loadSemesterCatalog());
+    }
+
+    return CourseFetchResult(
+      rawData: <String, dynamic>{
+        'source': ScheduleSource.undergraduate.value,
+        'semester':
+            parsed.semesterCode.isNotEmpty ? parsed.semesterCode : semester,
+      },
+      rawJson: page.body,
+      courses: courses,
+    );
   }
 
   Future<CourseFetchResult> fetchGraduateSchedule({

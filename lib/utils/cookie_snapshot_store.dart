@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:hai_schedule/models/schedule_source.dart';
 import 'package:hai_schedule/utils/app_platform.dart';
 import 'package:hai_schedule/utils/app_storage_schema.dart';
 
@@ -23,8 +24,7 @@ class CookieSnapshotStore {
     bool Function()? isAndroid,
   }) : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
        _prefsLoader = prefsLoader ?? SharedPreferences.getInstance,
-       _isAndroidResolver =
-           isAndroid ?? (() => AppPlatform.instance.isAndroid);
+       _isAndroidResolver = isAndroid ?? (() => AppPlatform.instance.isAndroid);
 
   static const _nativeChannel = MethodChannel(
     'hai_schedule/native_credentials',
@@ -44,38 +44,42 @@ class CookieSnapshotStore {
 
   /// 读取 Cookie，按优先级回填到上一层。失效标记若为 true 则一次性清空所有
   /// 副本并返回 null。
-  Future<String?> load() async {
+  Future<String?> load({
+    ScheduleSource source = ScheduleSource.graduate,
+  }) async {
     final prefs = await _prefsLoader();
-    final invalidated = prefs.getBool(invalidatedKey) ?? false;
+    final cookieKey = _keyForSource(cookieSnapshotKey, source);
+    final invalidatedKeyForSource = _keyForSource(invalidatedKey, source);
+    final invalidated = prefs.getBool(invalidatedKeyForSource) ?? false;
     if (invalidated) {
-      await _clearNative();
-      await _secureStorage.delete(key: cookieSnapshotKey);
-      await prefs.remove(cookieSnapshotKey);
-      await prefs.remove(invalidatedKey);
+      await _clearNative(source: source);
+      await _secureStorage.delete(key: cookieKey);
+      await prefs.remove(cookieKey);
+      await prefs.remove(invalidatedKeyForSource);
       return null;
     }
 
-    final native = await _readFromNative();
+    final native = await _readFromNative(source: source);
     if (native != null && native.isNotEmpty) {
-      await _secureStorage.write(key: cookieSnapshotKey, value: native);
-      await prefs.remove(cookieSnapshotKey);
-      await prefs.remove(invalidatedKey);
+      await _secureStorage.write(key: cookieKey, value: native);
+      await prefs.remove(cookieKey);
+      await prefs.remove(invalidatedKeyForSource);
       return native;
     }
 
-    final secure = await _secureStorage.read(key: cookieSnapshotKey);
+    final secure = await _secureStorage.read(key: cookieKey);
     if (secure != null && secure.isNotEmpty) {
-      await _writeToNative(secure);
-      await prefs.remove(cookieSnapshotKey);
-      await prefs.remove(invalidatedKey);
+      await _writeToNative(secure, source: source);
+      await prefs.remove(cookieKey);
+      await prefs.remove(invalidatedKeyForSource);
       return secure;
     }
 
-    final legacy = prefs.getString(cookieSnapshotKey);
+    final legacy = prefs.getString(cookieKey);
     if (legacy != null && legacy.isNotEmpty) {
-      await persist(legacy);
-      await prefs.remove(cookieSnapshotKey);
-      await prefs.remove(invalidatedKey);
+      await persist(legacy, source: source);
+      await prefs.remove(cookieKey);
+      await prefs.remove(invalidatedKeyForSource);
       return legacy;
     }
     return null;
@@ -83,27 +87,65 @@ class CookieSnapshotStore {
 
   /// 写入 Cookie，同步落到 native + secure 两层。
   /// 同时清掉 SharedPreferences 中的旧值与失效标记。
-  Future<void> persist(String cookie) async {
-    await _writeToNative(cookie);
-    await _secureStorage.write(key: cookieSnapshotKey, value: cookie);
+  Future<void> persist(
+    String cookie, {
+    ScheduleSource source = ScheduleSource.graduate,
+  }) async {
+    final cookieKey = _keyForSource(cookieSnapshotKey, source);
+    await _writeToNative(cookie, source: source);
+    await _secureStorage.write(key: cookieKey, value: cookie);
     final prefs = await _prefsLoader();
-    await prefs.remove(invalidatedKey);
+    await prefs.remove(_keyForSource(invalidatedKey, source));
   }
 
   /// 清空所有 Cookie 副本。
-  Future<void> clear({bool strict = false}) async {
-    await _clearNative(strict: strict);
-    await _secureStorage.delete(key: cookieSnapshotKey);
-    final prefs = await _prefsLoader();
-    await prefs.remove(cookieSnapshotKey);
-    await prefs.remove(invalidatedKey);
+  Future<void> clear({
+    bool strict = false,
+    ScheduleSource source = ScheduleSource.graduate,
+  }) async {
+    final cookieKey = _keyForSource(cookieSnapshotKey, source);
+    final invalidatedKeyForSource = _keyForSource(invalidatedKey, source);
+    // #C11: in strict mode _clearNative may rethrow on PlatformException.
+    // We must still wipe the Dart-side layers (secure storage, prefs
+    // invalidate key) so that a subsequent load() does not return the
+    // stale cookie. Use try/finally for the native call, then let the
+    // Dart-side cleanup run unconditionally. The native error is
+    // re-raised at the end for callers that want to log it.
+    Object? nativeError;
+    StackTrace? nativeStack;
+    try {
+      await _clearNative(strict: strict, source: source);
+    } catch (e, st) {
+      nativeError = e;
+      nativeStack = st;
+    }
+    try {
+      await _secureStorage.delete(key: cookieKey);
+      final prefs = await _prefsLoader();
+      await prefs.remove(cookieKey);
+      await prefs.remove(invalidatedKeyForSource);
+    } catch (_) {
+      // Best-effort: if Dart-side cleanup itself fails, the native
+      // error (if any) is still the more important signal.
+    }
+    if (nativeError != null) {
+      // ignore: only_throw_errors
+      Error.throwWithStackTrace(nativeError, nativeStack ?? StackTrace.current);
+    }
   }
 
-  Future<bool> _writeToNative(String cookie) async {
+  static String _keyForSource(String key, ScheduleSource source) =>
+      source.isGraduate ? key : '${source.value}.$key';
+
+  Future<bool> _writeToNative(
+    String cookie, {
+    required ScheduleSource source,
+  }) async {
     if (!_isAndroid) return false;
     try {
       await _nativeChannel.invokeMethod<void>('saveCookieSnapshot', {
         'cookie': cookie,
+        'source': source.value,
       });
       return true;
     } on MissingPluginException {
@@ -113,11 +155,12 @@ class CookieSnapshotStore {
     }
   }
 
-  Future<String?> _readFromNative() async {
+  Future<String?> _readFromNative({required ScheduleSource source}) async {
     if (!_isAndroid) return null;
     try {
       final value = await _nativeChannel.invokeMethod<String>(
         'loadCookieSnapshot',
+        {'source': source.value},
       );
       if (value == null || value.isEmpty) return null;
       return value;
@@ -128,10 +171,15 @@ class CookieSnapshotStore {
     }
   }
 
-  Future<void> _clearNative({bool strict = false}) async {
+  Future<void> _clearNative({
+    bool strict = false,
+    required ScheduleSource source,
+  }) async {
     if (!_isAndroid) return;
     try {
-      await _nativeChannel.invokeMethod<void>('clearCookieSnapshot');
+      await _nativeChannel.invokeMethod<void>('clearCookieSnapshot', {
+        'source': source.value,
+      });
     } on MissingPluginException {
       if (strict) rethrow;
     } on PlatformException {

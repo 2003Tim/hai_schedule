@@ -1,3 +1,5 @@
+import 'package:hai_schedule/models/schedule_source.dart';
+
 /// 描述对自动同步状态记录的局部更新意图。
 ///
 /// 字段为 null 表示"不修改"，clearXxx 为 true 表示"显式清除"。
@@ -11,6 +13,7 @@ class AutoSyncStatusPatch {
     this.diffSummary,
     this.error,
     this.cookieSnapshot,
+    this.cookieSource,
     this.semesterCode,
     this.lastFetchTime,
     this.lastAttemptTime,
@@ -26,6 +29,14 @@ class AutoSyncStatusPatch {
   final String? diffSummary;
   final String? error;
   final String? cookieSnapshot;
+
+  /// Which [ScheduleSource] the [cookieSnapshot] belongs to. When set, the
+  /// persistence layer MUST use this value instead of reading the current
+  /// active source from prefs (#C3: prevents the cookie from being written
+  /// under the wrong source if the user switched sources between patch
+  /// creation and apply).
+  final ScheduleSource? cookieSource;
+
   final String? semesterCode;
   final DateTime? lastFetchTime;
   final DateTime? lastAttemptTime;
