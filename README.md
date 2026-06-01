@@ -1,5 +1,7 @@
 # HaiSchedule — 海大课表
 
+> 语言 / Languages: **简体中文** · [English](README.en.md)
+
 海南大学课表应用，基于 Flutter，支持 Android 和 Windows 双平台。
 
 ---
